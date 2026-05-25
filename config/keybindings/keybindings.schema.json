@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "files-workbench2:keybindings",
+  "title": "Files Workbench 2 — Keybindings",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["key", "command"],
+    "additionalProperties": false,
+    "properties": {
+      "key": {
+        "type": "string",
+        "description": "Key combination using '+' as separator. Modifiers: ctrl, shift, alt, meta. Example: 'ctrl+shift+p'."
+      },
+      "command": {
+        "type": "string",
+        "description": "Command identifier to execute."
+      },
+      "when": {
+        "type": "string",
+        "description": "Optional context condition. Recognized values: always, itemSelected, directoryFocused, tabActive, treeFocused, inputFocused."
+      },
+      "args": {
+        "description": "Optional arguments passed to the command handler.",
+        "type": ["object", "string", "number", "boolean", "null"]
+      }
+    }
+  }
+}

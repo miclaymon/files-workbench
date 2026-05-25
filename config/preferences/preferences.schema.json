@@ -1,0 +1,162 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "files-workbench2:preferences",
+  "title": "Files Workbench 2 — Preferences",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "developerMode": {
+      "title": "Developer Mode",
+      "type": "boolean",
+      "description": "Show developer tools and diagnostic overlays.",
+      "default": false
+    },
+    "theme": {
+      "title": "Theme",
+      "type": "string",
+      "enum": ["system", "dark", "light", "black"],
+      "description": "Built-in UI theme. 'system' follows the OS preference. Custom themes can be added to config/themes/.",
+      "default": "dark"
+    },
+    "explorer": {
+      "title": "Explorer",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "showFiles": {
+          "title": "Show Files in Explorer Tree",
+          "type": "boolean",
+          "description": "Show files in the explorer tree (default: directories only).",
+          "default": false
+        },
+        "showIcons": {
+          "title": "Show Icons",
+          "type": "boolean",
+          "description": "Show file/folder icons in the explorer tree.",
+          "default": true
+        },
+        "alwaysShowCheckboxes": {
+          "title": "Always Show Checkboxes",
+          "type": "boolean",
+          "description": "Always show item checkboxes in directory views (default: show on hover/select).",
+          "default": false
+        },
+        "showHiddenFiles": {
+          "title": "Show Hidden Files",
+          "type": "boolean",
+          "description": "Show files and folders whose name begins with a dot.",
+          "default": false
+        },
+        "autoOpenReadme": {
+          "title": "Auto-open README.md",
+          "type": "boolean",
+          "description": "Automatically open README.md when navigating into a directory that contains one.",
+          "default": false
+        },
+        "layout": {
+          "title": "Default Layout",
+          "type": "string",
+          "enum": ["grid-xs", "grid-sm", "grid", "grid-md", "grid-lg", "grid-xl", "grid-xxl", "list", "details", "gallery-grid", "gallery-mosaic", "feed"],
+          "description": "Default directory view layout.",
+          "default": "grid"
+        },
+        "dragDelay": {
+          "title": "Drag Activation Delay (ms)",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000,
+          "description": "Milliseconds of mousedown hold before a drag gesture activates.",
+          "default": 200
+        },
+        "indentScale": {
+          "title": "Tree Indent Scale",
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 3.0,
+          "description": "Scales the per-level indentation in the explorer tree. 1.0 = default (14 px per level).",
+          "default": 1.0
+        }
+      }
+    },
+    "excludedCategories": {
+      "title": "Excluded Categories",
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "File/folder category names to exclude from directory listings.",
+      "default": ["System"]
+    },
+    "preview": {
+      "title": "Preview Panel",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "title": "Enable Preview Panel",
+          "type": "boolean",
+          "description": "Show the preview panel.",
+          "default": true
+        },
+        "maxPreviewBytes": {
+          "title": "Max Text Preview Size",
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 10485760,
+          "description": "Maximum bytes to auto-load for text/code previews. Files larger than this show a warning with a manual load button. Does not apply to media files.",
+          "default": 10000
+        },
+        "editorFontSize": {
+          "title": "Editor Font Size",
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 32,
+          "description": "Font size in pixels for the code/text preview editor.",
+          "default": 13
+        }
+      }
+    },
+    "cache": {
+      "title": "Cache",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "title": "Enable Response Cache",
+          "type": "boolean",
+          "description": "Cache API responses in a local SQLite database to speed up repeated directory listings and metadata lookups.",
+          "default": true
+        },
+        "defaultTtlSeconds": {
+          "title": "Default Cache TTL (seconds)",
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 300,
+          "description": "How long API responses are kept in cache before being re-fetched. Individual endpoint types may use shorter TTLs.",
+          "default": 30
+        },
+        "maxSizeMb": {
+          "title": "Max Cache Size (MB)",
+          "type": "integer",
+          "minimum": 50,
+          "maximum": 20000,
+          "description": "Maximum total disk space for the thumbnail and response cache combined. Oldest entries are evicted when the limit is exceeded.",
+          "default": 500
+        }
+      }
+    },
+    "experimental": {
+      "title": "Experimental",
+      "type": "object",
+      "x-devOnly": true,
+      "description": "Unstable features that may change or be removed.",
+      "additionalProperties": false,
+      "properties": {
+        "showSystemFiles": {
+          "title": "Show System Files (Developer)",
+          "type": "boolean",
+          "description": "Show OS system files and protected paths. Requires Developer Mode.",
+          "default": false
+        }
+      }
+    }
+  }
+}

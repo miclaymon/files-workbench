@@ -1,0 +1,31 @@
+{
+  "name": "Black",
+  "type": "dark",
+  "description": "True-black theme optimised for OLED displays.",
+  "colors": {
+    "--bg": "#000000",
+    "--panel": "#0d0d0d",
+    "--panel-2": "#141414",
+    "--border": "#2a2a2a",
+    "--border-hover": "#444444",
+    "--text": "#e0e0e0",
+    "--text-muted": "#808080",
+    "--accent": "#007acc",
+    "--danger": "#f14c4c",
+    "--activitybar-background": "#0d0d0d",
+    "--sidebar-background": "#0d0d0d",
+    "--editor-background": "#000000",
+    "--tab-background": "#0d0d0d",
+    "--panel-background": "#0d0d0d",
+    "--header-background": "#111111",
+    "--hover-background": "#1a1a1a",
+    "--dropdown-background": "#0d0d0d",
+    "--input-background": "#000000",
+    "--tooltip-background": "#141414",
+    "--surface": "#0d0d0d",
+    "--surface-alt": "#141414",
+    "--scrollbar-thumb": "#2e2e2e",
+    "--scrollbar-thumb-hover": "#3c3c3c",
+    "--scrollbar-background": "#000000"
+  }
+}

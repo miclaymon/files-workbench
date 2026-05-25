@@ -1,0 +1,49 @@
+{
+  "name": "files-workbench2-client",
+  "version": "0.1.0",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "dev:web": "nuxt dev",
+    "build": "nuxt build",
+    "build:electron": "nuxt generate && electron-builder",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@mdi/js": "^7.4.47",
+    "monaco-editor": "^0.55.1",
+    "video.js": "^8.23.7",
+    "wavesurfer.js": "^7.12.7",
+    "uuid": "^14.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "^34.0.0",
+    "electron-builder": "^25.0.0",
+    "nuxt": "~3.13.2",
+    "vue": "^3.5.0"
+  },
+  "build": {
+    "appId": "com.files-workbench2.app",
+    "productName": "Files Workbench 2",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      ".output/public/**/*"
+    ],
+    "linux": {
+      "target": "AppImage"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  }
+}

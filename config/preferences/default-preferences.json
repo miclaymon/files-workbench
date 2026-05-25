@@ -1,0 +1,28 @@
+{
+  "developerMode": false,
+  "theme": "dark",
+  "explorer": {
+    "showFiles": false,
+    "showIcons": true,
+    "alwaysShowCheckboxes": false,
+    "showHiddenFiles": false,
+    "autoOpenReadme": false,
+    "layout": "grid",
+    "dragDelay": 200,
+    "indentScale": 1.0
+  },
+  "excludedCategories": ["System"],
+  "preview": {
+    "enabled": true,
+    "maxPreviewBytes": 10000,
+    "editorFontSize": 13
+  },
+  "cache": {
+    "enabled": true,
+    "defaultTtlSeconds": 30,
+    "maxSizeMb": 500
+  },
+  "experimental": {
+    "showSystemFiles": false
+  }
+}

@@ -1,0 +1,26 @@
+node_modules/
+.nuxt/
+.output/
+dist-electron/
+.env
+.env.local
+
+# User-specific config overrides (not committed; defaults live alongside them)
+config/preferences/user-preferences.json
+config/keybindings/user-keybindings.json
+
+# Python virtualenv and bytecode
+server/v1/.venv/
+**/__pycache__/
+*.pyc
+
+# Go build artifacts
+server/v2/files-workbench
+
+# Claude Code local settings
+.claude/
+
+# Server log output
+server/logs/
+server/v1/logs/
+server/v2/logs/

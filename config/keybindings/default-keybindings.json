@@ -1,0 +1,19 @@
+[
+  { "key": "ctrl+c",       "command": "copy",            "when": "itemSelected" },
+  { "key": "ctrl+x",       "command": "cut",             "when": "itemSelected" },
+  { "key": "ctrl+v",       "command": "paste",           "when": "directoryFocused" },
+  { "key": "delete",       "command": "delete",          "when": "itemSelected" },
+  { "key": "f2",           "command": "rename",          "when": "itemSelected" },
+  { "key": "enter",        "command": "open",            "when": "itemSelected" },
+  { "key": "escape",       "command": "clearSelection",  "when": "itemSelected" },
+  { "key": "ctrl+a",       "command": "selectAll",       "when": "directoryFocused" },
+  { "key": "ctrl+t",       "command": "newTab",          "when": "always" },
+  { "key": "ctrl+w",       "command": "closeTab",        "when": "tabActive" },
+  { "key": "ctrl+tab",     "command": "nextTab",         "when": "always" },
+  { "key": "ctrl+shift+tab","command": "previousTab",   "when": "always" },
+  { "key": "alt+left",     "command": "navigateBack",    "when": "directoryFocused" },
+  { "key": "alt+right",    "command": "navigateForward", "when": "directoryFocused" },
+  { "key": "alt+up",       "command": "navigateUp",      "when": "directoryFocused" },
+  { "key": "ctrl+shift+p", "command": "commandPalette",  "when": "always" },
+  { "key": "ctrl+,",       "command": "openPreferences", "when": "always" }
+]

@@ -1,0 +1,30 @@
+{
+  "name": "Dark",
+  "type": "dark",
+  "colors": {
+    "--bg": "#181818",
+    "--panel": "#252526",
+    "--panel-2": "#2d2d2d",
+    "--border": "#3c3c3c",
+    "--border-hover": "#5a5a5a",
+    "--text": "#cccccc",
+    "--text-muted": "#9da0a6",
+    "--accent": "#007acc",
+    "--danger": "#f14c4c",
+    "--activitybar-background": "#333333",
+    "--sidebar-background": "#252526",
+    "--editor-background": "#1e1e1e",
+    "--tab-background": "#252526",
+    "--panel-background": "#2d2d2d",
+    "--header-background": "#2d2d30",
+    "--hover-background": "#2a2d2e",
+    "--dropdown-background": "#252526",
+    "--input-background": "#1e1e1e",
+    "--tooltip-background": "#1e1e1e",
+    "--surface": "#252526",
+    "--surface-alt": "#2d2d2d",
+    "--scrollbar-thumb": "#424242",
+    "--scrollbar-thumb-hover": "#4c4c4c",
+    "--scrollbar-background": "#1e1e1e"
+  }
+}
