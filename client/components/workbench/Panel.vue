@@ -4,7 +4,6 @@
       <div
         class="panel-activity-bar"
         :role="props.maxActivities > 1 ? 'tablist' : undefined"
-        :class="{ 'drop-active': dropActive }"
         @dragover="onDragOver"
         @dragleave="onDragLeave"
         @drop="onDrop"
@@ -13,13 +12,20 @@
           v-for="activity in activities"
           :key="activity.id"
           class="panel-activity-tab"
-          :class="{ active: modelValue === activity.id }"
+          :class="{
+            active:       modelValue === activity.id,
+            'is-dragging': draggedId === activity.id,
+            'drop-before': dropTargetId === activity.id && dropBefore,
+            'drop-after':  dropTargetId === activity.id && !dropBefore,
+          }"
+          :data-id="activity.id"
           role="tab"
           :aria-selected="modelValue === activity.id"
           :title="activity.label"
           draggable="true"
           @click="emit('update:modelValue', activity.id)"
           @dragstart="onDragStart(activity, $event)"
+          @dragend="onDragEnd"
         >
           <svg v-if="activity.icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" class="activity-icon">
             <path :d="activity.icon" />
@@ -51,7 +57,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 
 const props = defineProps({
   activities: { type: Array, required: true },
@@ -59,41 +65,62 @@ const props = defineProps({
   maxActivities: { type: Number, default: Infinity },
 })
 
-const emit = defineEmits(['update:modelValue', 'add-activity', 'activity-drop'])
+const emit = defineEmits(['update:modelValue', 'add-activity', 'reorder'])
 
-const dropActive = ref(false)
+const draggedId    = ref(null)
+const dropTargetId = ref(null)
+const dropBefore   = ref(true)
 
-const canAddActivity = computed(() => props.activities.length < props.maxActivities)
+const MIME = 'application/x-panel-activity'
 
 function onDragStart(activity, event) {
-  event.dataTransfer.setData('application/x-panel-activity', JSON.stringify({ activityId: activity.id }))
+  draggedId.value = activity.id
+  event.dataTransfer.setData(MIME, JSON.stringify({ activityId: activity.id }))
   event.dataTransfer.effectAllowed = 'move'
 }
 
+function onDragEnd() {
+  draggedId.value    = null
+  dropTargetId.value = null
+}
+
 function onDragOver(event) {
-  if (!canAddActivity.value) return
-  if (!event.dataTransfer.types.includes('application/x-panel-activity')) return
+  if (!event.dataTransfer.types.includes(MIME)) return
   event.preventDefault()
   event.dataTransfer.dropEffect = 'move'
-  dropActive.value = true
+
+  // Determine which tab (if any) the cursor is over and whether it's left or right half
+  const tabEl = event.target.closest('.panel-activity-tab')
+  if (tabEl) {
+    const id = tabEl.dataset.id
+    if (id && id !== draggedId.value) {
+      const rect = tabEl.getBoundingClientRect()
+      dropBefore.value   = event.clientX < rect.left + rect.width / 2
+      dropTargetId.value = id
+      return
+    }
+  }
+  dropTargetId.value = null
 }
 
 function onDragLeave(event) {
   if (!event.currentTarget.contains(event.relatedTarget)) {
-    dropActive.value = false
+    dropTargetId.value = null
   }
 }
 
 function onDrop(event) {
-  dropActive.value = false
-  if (!canAddActivity.value) return
-  const raw = event.dataTransfer.getData('application/x-panel-activity')
+  const raw = event.dataTransfer.getData(MIME)
   if (!raw) return
   event.preventDefault()
   try {
     const { activityId } = JSON.parse(raw)
-    emit('activity-drop', activityId)
+    if (dropTargetId.value && activityId !== dropTargetId.value) {
+      emit('reorder', { activityId, targetId: dropTargetId.value, before: dropBefore.value })
+    }
   } catch {}
+  draggedId.value    = null
+  dropTargetId.value = null
 }
 </script>
 
@@ -175,7 +202,9 @@ function onDrop(event) {
 }
 .panel-activity-add:hover { opacity: 0.8; }
 
-.panel-activity-bar.drop-active { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.panel-activity-tab.is-dragging { opacity: 0.3; }
+.panel-activity-tab.drop-before { box-shadow: -2px 0 0 var(--accent); }
+.panel-activity-tab.drop-after  { box-shadow:  2px 0 0 var(--accent); }
 
 .panel-actions {
   display: flex;

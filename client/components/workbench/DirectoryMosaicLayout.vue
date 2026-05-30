@@ -8,6 +8,9 @@
       @click="onItemClick($event, item)"
       @contextmenu.prevent="$emit('contextmenu', { event: $event, item })"
       @dblclick="onDblClick(item)"
+      @mouseenter="props.hoverPreviewEnabled && item.thumbnail ? startHover(item, $event.currentTarget, props.hoverPreviewDelayMs) : null"
+      @mouseleave="endHover"
+      @mousedown="cancelPending"
     >
       <div class="mosaic-thumb">
         <img
@@ -24,24 +27,38 @@
         <svg v-if="!item.thumbnail || imageStates[item.path] === 'failed'" class="fallback-icon" viewBox="0 0 24 24" fill="currentColor">
           <path :d="iconPath(item)" />
         </svg>
+        <svg v-if="isVideo(item) && item.thumbnail && imageStates[item.path] !== 'failed'" class="video-badge" viewBox="0 0 24 24" fill="currentColor">
+          <path :d="mdiPlayCircle" />
+        </svg>
       </div>
       <div class="mosaic-name">{{ item.name }}</div>
     </div>
   </div>
+
+  <DirectoryHoverPreview :item="hpItem" :triggerRect="hpRect" />
 </template>
 
 <script setup>
 import { reactive } from 'vue'
-import { mdiFile, mdiFolder, mdiLinkVariant } from '@mdi/js'
+import { mdiFile, mdiFolder, mdiLinkVariant, mdiPlayCircle } from '@mdi/js'
+import { useHoverPreview } from '~/composables/useHoverPreview.js'
+import DirectoryHoverPreview from './DirectoryHoverPreview.vue'
+
+const VIDEO_EXTS = new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts'])
+function isVideo(item) { return VIDEO_EXTS.has(item.name?.split('.').pop()?.toLowerCase() ?? '') }
 
 const props = defineProps({
   items: { type: Array, required: true },
   selectedItems: { type: Array, required: true },
   focusedItem: { type: Object, default: null },
   alwaysShowCheckboxes: { type: Boolean, default: false },
+  hoverPreviewEnabled: { type: Boolean, default: true },
+  hoverPreviewDelayMs: { type: Number, default: 2000 },
 })
 
 const emit = defineEmits(['select', 'focus', 'contextmenu', 'navigate', 'rename'])
+
+const { activeItem: hpItem, triggerRect: hpRect, startHover, endHover, cancelPending } = useHoverPreview()
 
 const imageStates = reactive({})
 props.items.forEach(item => {
@@ -112,6 +129,7 @@ function onKeyDown(event) {
 }
 
 .mosaic-thumb {
+  position: relative;
   width: 100%;
   display: flex;
   align-items: center;
@@ -128,6 +146,16 @@ function onKeyDown(event) {
 }
 
 .fallback-icon { width: 40px; height: 40px; color: #9e9e9e; margin: 12px; }
+
+.video-badge {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  color: white;
+  opacity: 0.85;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6));
+  pointer-events: none;
+}
 
 .mosaic-name {
   font-size: 11px;

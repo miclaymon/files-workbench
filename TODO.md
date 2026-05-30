@@ -21,12 +21,13 @@
 - [x] Adjust layout structure so that preview panel is not inside of workspace-body, but is instead a sibling of the other sidebar  editor-area inline
 - [x] Footer status bar should show "Directory: #,### items | ## GB" and (if num selected items > 0) "Selected:" ## items selected | ## GB" on the left side (where "Ready" is now). We can still show Connected in the bottom right, but it should indicate that acutal connection status to the server.
 - [ ] Explorer panel: new root nodes: Favorites, Recently accessed, Network (SMB, FTP, SFTP), Cloud (to be implemented later: Google Drive, OneDrive, Proton Drive)
-- [ ] Directory View: other layouts: `grid-xs`, `grid-sm`, `grid-md` (current), `grid-lg`, `grid-xl`, `grid-xxl`, `details`, `list`, `gallery-grid`, `gallery-mosaic`, `feed`, `content`
-- [ ] Grid item hover to show a hovering preview of media
+- [x] Directory View: other layouts: `grid-xs`, `grid-sm`, `grid-md` (current), `grid-lg`, `grid-xl`, `grid-xxl`, `details`, `list`, `gallery-grid`, `gallery-mosaic`, `feed`, `content`
+- [x] Grid item hover to show a hovering preview of media
 - [ ] Support for directory customizations and custom thumbnails (.directory and desktop.ini files, with custom extension to .directory under `[Files Workbench]`)
 - [ ] Other improvements to tabs and tab views
 - [ ] Keybinds to toggle side bars and panel; keybind customization; kyebind custom events hooks (events are dispatched and bubble up through DOM like normal events but can be hook into or captured on the way up by some components)
 - [ ] Improvements to Home page
+  - [ ] Working storage space indicators
 - [ ] Intergration with `vscode-material-icon-theme` (https://github.com/material-extensions/vscode-material-icon-theme/releases) to automatically apply custom folder icons based on the same rules and icons from that extension
 - [ ] Service worker to help with handling networking
   - [ ] Service worker has a WebSocket connection to the server for more realtime data transfer (listing directories, fetching metadata, sending commands to perform file operations, etc.)
@@ -35,13 +36,15 @@
 - [ ] Command pallete: search, recents, actions, queries
 - [ ] Aggressive pre-fetching feature: hovering over an item will prefetch the preview API endpoint to warm it up and potentially get the server to cache to repsonse
 - [ ] Breadcrumbs: if longer than render area, show ellipses ('...') instead of middle items and the ellipses expand to just show a stacked list of the hidden items
+- [ ] Pinned items in directories
+- [ ] Storage side menu option
 
 - [ ] File operations functionality: rename, delete, move, copy/cut/paste
 
 - [ ] MacOS: .app archive -> .plist (metadata)
 - [ ] Archive exploration (.zip, .rar, .tar, .gz, .7z)
 - [ ] 
-- [ ] .git
+- [ ] .git plugin/features
 - [ ] Background file indexing and search optimization
 
 - [ ] PowerRename(TM)
@@ -50,4 +53,5 @@
 - [ ] Launch Electron app with `--read-only` flag which disables renaming, deleting, moving, creating (pasting) files. The user can only view and copy files.
 
 - [ ] MCP
-
+- [] System file open handler
+- [ ] Disk operations: format and create partitions, mount drives (`gparted`)

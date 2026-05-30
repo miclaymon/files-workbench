@@ -167,6 +167,26 @@ func simpleListDir(dirPath string, excluded []string, includeMetadata, showHidde
 	return items
 }
 
+func handleFsDirSize(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		jsonErr(w, http.StatusBadRequest, "path required")
+		return
+	}
+	if isExcluded(path, nil) {
+		jsonErr(w, http.StatusForbidden, "Path is blacklisted")
+		return
+	}
+	var total int64
+	filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() {
+			total += info.Size()
+		}
+		return nil
+	})
+	jsonOK(w, map[string]any{"size": total})
+}
+
 func handleFsPreview(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	path := q.Get("path")

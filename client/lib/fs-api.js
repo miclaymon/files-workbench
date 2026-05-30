@@ -68,6 +68,10 @@ export function fsStat(path) {
   return _get(`/_api/${API_V}/fs/stat`, { path })
 }
 
+export function fsDirSize(path, signal) {
+  return _get(`/_api/${API_V}/fs/dir_size`, { path }, signal)
+}
+
 // opts: { includeMetadata, showHidden, excludeCategories, signal }
 const LIST_DIR_PAGE_SIZE = 16
 

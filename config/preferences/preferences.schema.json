@@ -75,6 +75,20 @@
           "maximum": 3.0,
           "description": "Scales the per-level indentation in the explorer tree. 1.0 = default (14 px per level).",
           "default": 1.0
+        },
+        "hoverPreviewEnabled": {
+          "title": "Hover Preview",
+          "type": "boolean",
+          "description": "Show an expanded preview popup when hovering over a thumbnail for the configured delay. Videos autoplay silently.",
+          "default": true
+        },
+        "hoverPreviewDelayMs": {
+          "title": "Hover Preview Delay (ms)",
+          "type": "integer",
+          "minimum": 300,
+          "maximum": 5000,
+          "description": "How long the cursor must rest on a thumbnail before the hover preview appears.",
+          "default": 1000
         }
       }
     },

@@ -1,7 +1,37 @@
 <template>
-  <div class="dl" :data-layout="layout" :style="cssVars" tabindex="0" @keydown="onKeyDown" ref="dlRef">
+  <div class="dl-wrap" :style="cssVars" tabindex="0" @keydown="onKeyDown">
 
-    <!-- Column header — only visible in details layout -->
+    <!-- Non-columnar header (Grid / Gallery / Mosaic / Feed) — outside the scroll container -->
+    <div v-if="!isColumnarLayout" class="dl-nc-header">
+      <input
+        type="range" min="0" max="100" step="5"
+        :value="zoomLevel"
+        @input="emit('zoom-change', Number($event.target.value))"
+        @click.stop @mousedown.stop
+        class="dl-nc-zoom"
+        title="Zoom"
+      />
+      <button
+        class="dl-nc-sort-btn"
+        :class="{ 'dl-nc-sort-btn--active': isSortNonDefault }"
+        @click.stop="toggleSortDropdown"
+        ref="sortDropdownBtnRef"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0">
+          <path d="M3 18h6v-2H3v2zm0-5h9v-2H3v2zm0-7v2h18V6H3z"/>
+        </svg>
+        {{ SORT_FIELD_LABELS.find(f => f.key === sortField)?.label ?? 'Name' }}{{ isSortNonDefault ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '' }}
+      </button>
+      <button class="dl-hdr-icon-btn" :class="{ 'dl-hdr-icon-btn--active': filterActive }" @click.stop="emit('filter-click', $event.currentTarget)" title="Filter">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M4.25 5.61C6.27 8.2 10 13 10 13v6c0 .55.45 1 1 1h2c.55 0 1-.45 1-1v-6s3.72-4.8 5.74-7.39A.998.998 0 0 0 18.95 4H5.04a1 1 0 0 0-.79 1.61z"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="dl" :data-layout="layout" @scroll.passive="onNestedScroll" ref="dlRef">
+
+    <!-- Column header — visible in details/list/nested layouts via CSS -->
     <div class="dl-header">
       <template v-if="layout === 'details'">
         <label class="dl-hdr-check-wrap" @click.stop @mousedown.stop>
@@ -9,24 +39,78 @@
         </label>
         <span class="dl-hdr-thumb-gap" />
       </template>
-      <span v-else class="dl-hdr-spacer" />
+      <span v-else-if="isColumnarLayout" class="dl-hdr-spacer" />
 
-      <span class="dl-col-name">Name</span>
+      <template v-if="isColumnarLayout">
+        <button class="dl-col-name dl-hdr-col-btn" @click.stop="onColSort('name')">
+          Name<span v-if="sortField === 'name'" class="dl-sort-arrow">{{ sortDir === 'asc' ? ' ↑' : ' ↓' }}</span>
+        </button>
 
-      <template v-if="layout === 'details'">
-        <span v-if="visibleColumns.has('size')" class="dl-col-size">Size</span>
-        <span v-if="visibleColumns.has('date')" class="dl-col-date">Modified</span>
-        <button class="dl-hdr-menu-btn" @click.stop="toggleColumnMenu" ref="columnMenuBtnRef" title="Columns">⋮</button>
-      </template>
-      <template v-else>
-        <span class="dl-col-size">Size</span>
-        <span class="dl-col-date">Modified</span>
+        <template v-if="layout === 'details'">
+          <button v-if="visibleColumns.has('size')" class="dl-col-size dl-hdr-col-btn" @click.stop="onColSort('size')">
+            Size<span v-if="sortField === 'size'" class="dl-sort-arrow">{{ sortDir === 'asc' ? ' ↑' : ' ↓' }}</span>
+          </button>
+          <button v-if="visibleColumns.has('date')" class="dl-col-date dl-hdr-col-btn" @click.stop="onColSort('modified')">
+            Modified<span v-if="sortField === 'modified'" class="dl-sort-arrow">{{ sortDir === 'asc' ? ' ↑' : ' ↓' }}</span>
+          </button>
+        </template>
+        <template v-else>
+          <button class="dl-col-size dl-hdr-col-btn" @click.stop="onColSort('size')">
+            Size<span v-if="sortField === 'size'" class="dl-sort-arrow">{{ sortDir === 'asc' ? ' ↑' : ' ↓' }}</span>
+          </button>
+          <button class="dl-col-date dl-hdr-col-btn" @click.stop="onColSort('modified')">
+            Modified<span v-if="sortField === 'modified'" class="dl-sort-arrow">{{ sortDir === 'asc' ? ' ↑' : ' ↓' }}</span>
+          </button>
+        </template>
+
+        <button class="dl-hdr-icon-btn" :class="{ 'dl-hdr-icon-btn--active': filterActive }" @click.stop="emit('filter-click', $event.currentTarget)" title="Filter">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M4.25 5.61C6.27 8.2 10 13 10 13v6c0 .55.45 1 1 1h2c.55 0 1-.45 1-1v-6s3.72-4.8 5.74-7.39A.998.998 0 0 0 18.95 4H5.04a1 1 0 0 0-.79 1.61z"/>
+          </svg>
+        </button>
+        <button v-if="layout === 'details'" class="dl-hdr-menu-btn" @click.stop="toggleColumnMenu" ref="columnMenuBtnRef" title="Columns">⋮</button>
       </template>
     </div>
 
+    <!-- JS-driven sticky ancestor overlay for nested layout -->
+    <!-- v-show keeps element in DOM so transform is never reset by Vue recreating the element -->
+    <div v-show="layout === 'nested' && stickyDirs.length"
+         class="dl-nest-sticky-ctx"
+         ref="stickyCtxRef">
+      <div v-for="dir in stickyDirs" :key="dir.path"
+           class="dl-item dl-item--ctx"
+           @click="(e) => onItemClick(e, dir)"
+           @contextmenu.prevent="$emit('contextmenu', { event: $event, item: dir })">
+        <label class="dl-check" style="visibility:hidden" @click.stop @mousedown.stop>
+          <input type="checkbox" disabled />
+        </label>
+        <span v-for="(_, i) in (dir._depth ?? 0)" :key="i" class="dl-nest-guide" />
+        <button class="dl-nest-toggle" @click.stop="toggleNested(dir)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path :d="mdiChevronDown" />
+          </svg>
+        </button>
+        <div class="dl-thumb">
+          <img v-if="dir.thumbnail && imageStates[dir.path] === 'loaded'"
+               crossorigin="anonymous" :src="dir.thumbnail" :alt="dir.name"
+               class="dl-img" style="opacity:1" />
+          <svg v-else class="dl-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path :d="iconPath(dir)" />
+          </svg>
+        </div>
+        <div class="dl-body">
+          <span class="dl-name">{{ dir.name }}</span>
+          <div class="dl-meta">
+            <span class="dl-size">{{ dir.size != null ? formatBytes(dir.size) : '…' }}</span>
+            <span class="dl-date">{{ dir.modified ? formatDate(dir.modified) : '' }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div
-      v-for="item in displayItems"
-      :key="item.path"
+      v-for="item in activeItems"
+      :key="item.path + (item._depth ?? 0)"
       class="dl-item"
       :data-path="item.path"
       :class="{
@@ -35,11 +119,11 @@
         'dl-item--dragging': draggingPath === item.path,
         'dl-item--hidden':   item.hidden,
       }"
-      @mousedown="(e) => onMouseDown(e, item)"
+      @mousedown="(e) => { cancelPending(); onMouseDown(e, item) }"
       @click="(e) => onItemClick(e, item)"
       @contextmenu.prevent="$emit('contextmenu', { event: $event, item })"
-      @mouseenter="hoverItem = item"
-      @mouseleave="hoverItem = null"
+      @mouseenter="hoverItem = item; hpStart(item, $event.currentTarget)"
+      @mouseleave="hoverItem = null; endHover()"
     >
       <!-- Checkbox -->
       <label
@@ -54,6 +138,28 @@
           @change="(e) => onCheckboxChange(e, item)"
         />
       </label>
+
+      <!-- Nested indent guides + expand toggle -->
+      <template v-if="layout === 'nested'">
+        <span v-for="(_, i) in (item._depth ?? 0)" :key="i"
+              class="dl-nest-guide"
+              :class="{
+                'dl-nest-guide--last':   i === (item._depth ?? 0) - 1,
+                'dl-nest-guide--corner': i === (item._depth ?? 0) - 1 && item._lastChild,
+              }" />
+        <button
+          v-if="item.kind === 'dir'"
+          class="dl-nest-toggle"
+          @click.stop="toggleNested(item)"
+          :disabled="nestedLoadingPaths.has(item.path)"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path v-if="expandedPaths.has(item.path)" :d="mdiChevronDown"/>
+            <path v-else :d="mdiChevronRight"/>
+          </svg>
+        </button>
+        <span v-else class="dl-nest-leaf" />
+      </template>
 
       <!-- Thumbnail -->
       <div class="dl-thumb">
@@ -75,6 +181,11 @@
           fill="currentColor"
         >
           <path :d="iconPath(item)" />
+        </svg>
+        <!-- Video badge -->
+        <svg v-if="isVideoItem(item) && item.thumbnail && imageStates[item.path] === 'loaded'"
+             class="dl-video-badge" viewBox="0 0 24 24" fill="currentColor">
+          <path :d="mdiPlayCircle" />
         </svg>
       </div>
 
@@ -101,7 +212,7 @@
           <span
             class="dl-size"
             :class="{ 'dl-col--hidden': layout === 'details' && !visibleColumns.has('size') }"
-          >{{ item.kind === 'file' ? formatBytes(item.size) : '—' }}</span>
+          >{{ item.size != null ? formatBytes(item.size) : (item.kind === 'dir' ? '…' : '—') }}</span>
           <span
             class="dl-date"
             :class="{ 'dl-col--hidden': layout === 'details' && !visibleColumns.has('date') }"
@@ -113,7 +224,20 @@
       <div class="dl-overlay">
         <span class="dl-overlay-name">{{ item.name }}</span>
       </div>
+
+      <!-- Hover preview: fixed-position, grows from thumbnail center -->
+      <Transition name="hp-expand">
+        <div
+          v-if="hpItem?.path === item.path && hpRect && hpMediaReady"
+          class="dl-hp-overlay"
+          :style="{ left: (hpRect.left + hpRect.width / 2) + 'px', top: (hpRect.top + hpRect.height / 2) + 'px' }"
+        >
+          <video v-if="isVideoItem(item)" :src="hpSrc(item)" autoplay loop muted playsinline class="dl-hp-media" />
+          <img v-else :src="hpSrc(item)" class="dl-hp-media" draggable="false" />
+        </div>
+      </Transition>
     </div>
+
 
     <!-- Column picker dropdown -->
     <div v-if="columnMenuVisible" class="dl-col-picker" :style="columnMenuStyle" ref="columnMenuRef">
@@ -127,14 +251,33 @@
       </label>
     </div>
 
-  </div>
+    <!-- Sort dropdown for non-columnar views -->
+    <div v-if="sortDropdownVisible" class="dl-sort-dropdown" :style="sortDropdownStyle" ref="sortDropdownRef">
+      <button
+        v-for="f in SORT_FIELD_LABELS"
+        :key="f.key"
+        class="dl-sort-dd-item"
+        :class="{ 'dl-sort-dd-item--active': sortField === f.key }"
+        @click.stop="onSortDropdownPick(f.key)"
+      >
+        {{ f.label }}<span v-if="sortField === f.key" class="dl-sort-dd-arrow">{{ sortDir === 'asc' ? ' ↑' : ' ↓' }}</span>
+      </button>
+      <div class="dl-sort-dd-sep" />
+      <button class="dl-sort-dd-item" @click.stop="emit('sort-change', { field: 'name', dir: 'asc' }); sortDropdownVisible = false">Reset</button>
+    </div>
+
+    </div><!-- end .dl -->
+  </div><!-- end .dl-wrap -->
 </template>
 
 <script setup>
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { mdiFile, mdiFolder, mdiLinkVariant } from '@mdi/js'
+import { mdiChevronDown, mdiChevronRight, mdiFile, mdiFolder, mdiLinkVariant, mdiPlayCircle } from '@mdi/js'
 import { useClickDebounce } from '~/composables/useClickDebounce.js'
+import { useHoverPreview } from '~/composables/useHoverPreview.js'
 import { useDrag } from '~/composables/useDrag.js'
+import { fsListDir } from '~/lib/fs-api.js'
+import { MEDIA_BASE } from '~/lib/api-config.js'
 
 const MEDIA_EXTS = new Set([
   'png','jpg','jpeg','webp','gif','bmp','ico','avif',
@@ -142,31 +285,148 @@ const MEDIA_EXTS = new Set([
   'mp3','m4a','flac','ogg','opus','aac','wav','aiff','wma',
 ])
 
+// Separate sets used to pick the right thumbnail endpoint for nested children
+const _THUMB_IMG  = new Set(['png','jpg','jpeg','webp','gif','bmp','ico','avif'])
+const _THUMB_MEDIA = new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts','mp3','m4a','flac','ogg','opus','aac','wav','aiff','wma'])
+const _THUMB_SIZE = 256
+
+function _withThumbnails(items) {
+  // Detect whether the server has thumbnails enabled by finding a media file in the
+  // current top-level items and checking if it received a thumbnail URL. If no media
+  // files exist at the top level we can't tell, so we add URLs optimistically and let
+  // onImgError fall back to the file icon if the server doesn't support them.
+  const topLevelMediaItem = props.items.find(i => {
+    const ext = i.name.split('.').pop()?.toLowerCase()
+    return _THUMB_IMG.has(ext) || _THUMB_MEDIA.has(ext)
+  })
+  const enabled = topLevelMediaItem ? topLevelMediaItem.thumbnail != null : true
+  if (!enabled) return items
+  return items.map(item => {
+    const ext = item.name.split('.').pop()?.toLowerCase()
+    const thumbnail = _THUMB_IMG.has(ext)
+      ? `${MEDIA_BASE}/image?path=${encodeURIComponent(item.path)}&size=${_THUMB_SIZE}`
+      : _THUMB_MEDIA.has(ext)
+      ? `${MEDIA_BASE}/thumbnail?path=${encodeURIComponent(item.path)}&size=${_THUMB_SIZE}`
+      : null
+    return { ...item, thumbnail, icon: item.icon ?? null }
+  })
+}
+
 const props = defineProps({
   items: { type: Array, required: true },
   selectedItems: { type: Array, required: true },
   focusedItem: { type: Object, default: null },
   alwaysShowCheckboxes: { type: Boolean, default: false },
   layout: { type: String, default: 'grid' },
+  zoomLevel: { type: Number, default: 50 },
+  hoverPreviewEnabled: { type: Boolean, default: true },
+  hoverPreviewDelayMs: { type: Number, default: 2000 },
+  sortField: { type: String, default: 'name' },
+  sortDir: { type: String, default: 'asc' },
+  filterText: { type: String, default: '' },
+  filterActive: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['select', 'focus', 'contextmenu', 'navigate', 'rename'])
+const emit = defineEmits(['select', 'focus', 'contextmenu', 'navigate', 'rename', 'zoom-change', 'sort-change', 'filter-change', 'filter-click', 'copy', 'cut', 'paste'])
 
-// ── Layout CSS vars ───────────────────────────────────────────────────────
-const GRID_CONFIG = {
-  'grid-xs':  { minCell: 72,  iconSize: 36  },
-  'grid-sm':  { minCell: 96,  iconSize: 48  },
-  'grid':     { minCell: 120, iconSize: 64  },
-  'grid-md':  { minCell: 120, iconSize: 64  },
-  'grid-lg':  { minCell: 160, iconSize: 88  },
-  'grid-xl':  { minCell: 200, iconSize: 112 },
-  'grid-xxl': { minCell: 260, iconSize: 148 },
+// ── Hover preview ─────────────────────────────────────────────────────────────
+const VIDEO_EXTS = new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts'])
+function isVideoItem(item) { return VIDEO_EXTS.has(item.name?.split('.').pop()?.toLowerCase() ?? '') }
+
+const { activeItem: hpItem, triggerRect: hpRect, startHover, endHover, cancelPending } = useHoverPreview()
+
+// True once the preloaded media has loaded into the browser, so the overlay
+// only appears when the img element already has its natural dimensions — preventing
+// the snap caused by translate(-50%,-50%) being 0 on a 0×0 element.
+const hpMediaReady = ref(false)
+
+function preloadMedia(item) {
+  hpMediaReady.value = false
+  const url = `${MEDIA_BASE}/preview?path=${encodeURIComponent(item.path)}`
+  if (isVideoItem(item)) {
+    fetch(url, { method: 'GET', headers: { Range: 'bytes=0-65535' } }).catch(() => {})
+    hpMediaReady.value = true  // can't await video dimensions; show immediately
+  } else {
+    const img = new Image()
+    img.onload = () => { hpMediaReady.value = true }
+    img.onerror = () => { hpMediaReady.value = true }  // still show on error
+    img.src = url
+    if (img.complete && img.naturalWidth) hpMediaReady.value = true  // already cached
+  }
 }
 
+function hpStart(item, itemEl) {
+  if (!props.hoverPreviewEnabled || !item.thumbnail) return
+  hpMediaReady.value = false
+  const thumbEl = itemEl.querySelector('.dl-thumb') ?? itemEl
+  const preloadMs = Math.min(500, Math.round(props.hoverPreviewDelayMs / 2))
+  startHover(item, thumbEl, props.hoverPreviewDelayMs, preloadMs, preloadMedia)
+}
+
+function hpSrc(item) {
+  return `${MEDIA_BASE}/preview?path=${encodeURIComponent(item.path)}`
+}
+
+// ── Sort / filter header ──────────────────────────────────────────────────────
+const isColumnarLayout = computed(() =>
+  props.layout === 'list' || props.layout === 'details' || props.layout === 'nested'
+)
+const isSortNonDefault = computed(() => props.sortField !== 'name' || props.sortDir !== 'asc')
+
+const SORT_FIELD_LABELS = [
+  { key: 'name',     label: 'Name' },
+  { key: 'size',     label: 'Size' },
+  { key: 'type',     label: 'Type' },
+  { key: 'modified', label: 'Modified' },
+  { key: 'created',  label: 'Created' },
+  { key: 'accessed', label: 'Accessed' },
+]
+
+function onColSort(field) {
+  const dir = props.sortField === field && props.sortDir === 'asc' ? 'desc' : 'asc'
+  emit('sort-change', { field, dir })
+}
+
+// Sort dropdown for non-columnar views
+const sortDropdownVisible = ref(false)
+const sortDropdownStyle = ref({})
+const sortDropdownBtnRef = ref(null)
+const sortDropdownRef = ref(null)
+
+function toggleSortDropdown() {
+  if (sortDropdownVisible.value) { sortDropdownVisible.value = false; return }
+  const rect = sortDropdownBtnRef.value?.getBoundingClientRect()
+  if (rect) sortDropdownStyle.value = { position: 'fixed', top: rect.bottom + 4 + 'px', left: rect.left + 'px', zIndex: 100 }
+  sortDropdownVisible.value = true
+}
+
+function closeSortDropdown(e) {
+  if (!sortDropdownVisible.value) return
+  if (sortDropdownRef.value?.contains(e.target) || sortDropdownBtnRef.value?.contains(e.target)) return
+  sortDropdownVisible.value = false
+}
+
+function onSortDropdownPick(field) {
+  onColSort(field)
+  sortDropdownVisible.value = false
+}
+
+// ── Zoom-driven CSS vars (all layout sizes derive from zoomLevel 0–100) ──
 const cssVars = computed(() => {
-  const cfg = GRID_CONFIG[props.layout]
-  return cfg ? { '--min-cell': cfg.minCell + 'px', '--icon-size': cfg.iconSize + 'px' } : {}
+  const z = props.zoomLevel ?? 50
+  return {
+    '--min-cell':      Math.round(72  + z * 1.88) + 'px',  // 72–260px
+    '--icon-size':     Math.round(36  + z * 1.12) + 'px',  // 36–148px
+    '--gallery-cell':  Math.round(100 + z * 2)    + 'px',  // 100–300px
+    '--mosaic-width':  Math.round(100 + z * 2)    + 'px',  // 100–300px
+    '--feed-min-card': Math.round(180 + z * 2.7)  + 'px',  // 180–450px
+    '--row-height':    Math.round(22  + z * 0.26) + 'px',  // 22–48px
+    '--nested-row':    Math.round(36  + z * 0.20) + 'px',  // 36–56px
+    '--nested-thumb':  Math.round(28  + z * 0.14) + 'px',  // 28–42px
+  }
 })
+
+const nestedRowPx = computed(() => Math.round(36 + (props.zoomLevel ?? 50) * 0.20))
 
 // ── Container ref (for IntersectionObserver root) ─────────────────────────
 const dlRef = ref(null)
@@ -202,6 +462,10 @@ onMounted(() => {
     rootMargin: '300px 0px',
   })
   _observeAll()
+  // With v-show the overlay element exists immediately — set its initial transform
+  if (stickyCtxRef.value) {
+    stickyCtxRef.value.style.transform = `translateY(${nestedRowPx.value}px)`
+  }
 })
 
 onUnmounted(() => { _observer?.disconnect(); _observer = null })
@@ -232,6 +496,128 @@ const displayItems = computed(() => {
   return props.items
 })
 
+// ── Nested view ───────────────────────────────────────────────────────────
+const expandedPaths = ref(new Set())
+const nestedChildren = ref(new Map())
+const nestedLoadingPaths = ref(new Set())
+const nestedScrollTop = ref(0)
+const stickyCtxRef = ref(null)
+
+function onNestedScroll(e) {
+  if (props.layout !== 'nested') return
+  const st = e.target.scrollTop
+
+  // Direct GPU transform — no Vue overhead, no frame lag
+  if (stickyCtxRef.value) {
+    stickyCtxRef.value.style.transform = `translateY(${st + nestedRowPx.value}px)`
+  }
+
+  // Synchronous reactive update — Vue 3 batches this as a microtask that flushes
+  // before the next paint, so stickyDirs content is always fresh in the same frame
+  nestedScrollTop.value = st
+}
+
+// Re-sync transform when zoom changes while not scrolling
+watch(nestedRowPx, rowH => {
+  if (stickyCtxRef.value) {
+    stickyCtxRef.value.style.transform = `translateY(${nestedScrollTop.value + rowH}px)`
+  }
+})
+
+// Dirs that have scrolled above the visible area but whose subtree is still visible.
+// Rendered as a JS-positioned overlay so they correctly un-stick when their section ends.
+const stickyDirs = computed(() => {
+  if (props.layout !== 'nested') return []
+  const rowH = nestedRowPx.value
+  const items = activeItems.value
+  const st = nestedScrollTop.value
+
+  const result = []
+  for (let i = 0; i < items.length; i++) {
+    // Item tops start after the header: item[i] is at scroll-y (i+1)*rowH
+    const itemTop = (i + 1) * rowH
+    if (itemTop > st) break  // item is still at or below the viewport top — done
+
+    const item = items[i]
+    if (item.kind !== 'dir' || !expandedPaths.value.has(item.path)) continue
+
+    // Find index of the last descendant of this dir
+    const depth = item._depth ?? 0
+    let lastDescIdx = i
+    for (let j = i + 1; j < items.length; j++) {
+      if ((items[j]._depth ?? 0) <= depth) break
+      lastDescIdx = j
+    }
+
+    // The subtree must still have items visible (last desc bottom is below viewport top)
+    if ((lastDescIdx + 2) * rowH > st) result.push(item)
+  }
+  return result
+})
+
+const nestedDisplayItems = computed(() => {
+  function buildList(items, depth) {
+    const result = []
+    for (const item of items) {
+      result.push({ ...item, _depth: depth })
+      if (item.kind === 'dir' && expandedPaths.value.has(item.path)) {
+        const children = nestedChildren.value.get(item.path) ?? []
+        result.push(...buildList(children, depth + 1))
+      }
+    }
+    return result
+  }
+  const flat = buildList(props.items, 0)
+  // Mark each item as last child: true if the next item with depth <= this item's depth
+  // has a smaller depth (or no such item exists), meaning no more siblings follow.
+  for (let i = 0; i < flat.length; i++) {
+    const d = flat[i]._depth
+    let isLast = true
+    for (let j = i + 1; j < flat.length; j++) {
+      if (flat[j]._depth <= d) { isLast = flat[j]._depth < d; break }
+    }
+    flat[i]._lastChild = isLast
+  }
+  return flat
+})
+
+async function toggleNested(item) {
+  if (item.kind !== 'dir') return
+  const paths = new Set(expandedPaths.value)
+  if (paths.has(item.path)) {
+    paths.delete(item.path)
+    expandedPaths.value = paths
+    return
+  }
+  paths.add(item.path)
+  expandedPaths.value = paths
+  if (!nestedChildren.value.has(item.path)) {
+    nestedLoadingPaths.value = new Set(nestedLoadingPaths.value).add(item.path)
+    try {
+      const result = await fsListDir(item.path, { includeMetadata: true })
+      const children = _withThumbnails(result.items ?? [])
+      children.forEach(child => { if (child.thumbnail && !imageStates[child.path]) imageStates[child.path] = 'idle' })
+      const map = new Map(nestedChildren.value)
+      map.set(item.path, children)
+      nestedChildren.value = map
+      if (_observer) _observeAll()
+    } catch {
+      const p = new Set(expandedPaths.value)
+      p.delete(item.path)
+      expandedPaths.value = p
+    } finally {
+      const l = new Set(nestedLoadingPaths.value)
+      l.delete(item.path)
+      nestedLoadingPaths.value = l
+    }
+  }
+}
+
+// Active item list — nested uses its own flattened tree, others use displayItems
+const activeItems = computed(() =>
+  props.layout === 'nested' ? nestedDisplayItems.value : displayItems.value
+)
+
 // ── Selection mode ────────────────────────────────────────────────────────
 const selectionMode = ref(false)
 
@@ -241,8 +627,10 @@ watch(() => props.selectedItems, (items) => {
 })
 
 watch(() => props.items, () => {
-  // Items change = navigation — exit selection mode
   selectionMode.value = false
+  expandedPaths.value = new Set()
+  nestedChildren.value = new Map()
+  nestedScrollTop.value = 0
 })
 
 const effectiveShowCheckboxes = computed(() => props.alwaysShowCheckboxes || selectionMode.value)
@@ -282,12 +670,18 @@ function closeColumnMenu(e) {
   columnMenuVisible.value = false
 }
 
-onMounted(() => document.addEventListener('click', closeColumnMenu))
-onUnmounted(() => document.removeEventListener('click', closeColumnMenu))
+onMounted(() => {
+  document.addEventListener('click', closeColumnMenu)
+  document.addEventListener('click', closeSortDropdown)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', closeColumnMenu)
+  document.removeEventListener('click', closeSortDropdown)
+})
 
 // ── Select-all ────────────────────────────────────────────────────────────
 const allSelected = computed(() =>
-  displayItems.value.length > 0 && displayItems.value.every(item => isSelected(item))
+  activeItems.value.length > 0 && activeItems.value.every(item => isSelected(item))
 )
 
 function onSelectAll(e) {
@@ -420,6 +814,57 @@ function cancelRename() { renamingPath.value = null }
 
 // ── Keyboard nav ──────────────────────────────────────────────────────────
 function onKeyDown(event) {
+  if (event.ctrlKey || event.metaKey) {
+    if (event.key === '=' || event.key === '+') {
+      event.preventDefault()
+      emit('zoom-change', Math.min(100, (props.zoomLevel ?? 50) + 5))
+      return
+    }
+    if (event.key === '-') {
+      event.preventDefault()
+      emit('zoom-change', Math.max(0, (props.zoomLevel ?? 50) - 5))
+      return
+    }
+    if (event.key === '0') {
+      event.preventDefault()
+      emit('zoom-change', 50)
+      return
+    }
+    if (event.key === 'a' || event.key === 'A') {
+      event.preventDefault()
+      emit('select', { items: activeItems.value, mode: 'replace' })
+      return
+    }
+    if (event.key === 'c') {
+      if (props.selectedItems.length > 0) {
+        event.preventDefault()
+        emit('copy', props.selectedItems)
+      }
+      return
+    }
+    if (event.key === 'x') {
+      if (props.selectedItems.length > 0) {
+        event.preventDefault()
+        emit('cut', props.selectedItems)
+      }
+      return
+    }
+    if (event.key === 'v') {
+      event.preventDefault()
+      emit('paste')
+      return
+    }
+  }
+  if (event.key === 'F2') {
+    event.preventDefault()
+    if (props.selectedItems.length > 1) {
+      emit('rename', { items: props.selectedItems })
+    } else {
+      const target = props.focusedItem ?? props.selectedItems[0]
+      if (target) startRename(target)
+    }
+    return
+  }
   if (event.key === 'Insert') {
     event.preventDefault()
     selectionMode.value = !selectionMode.value
@@ -443,6 +888,17 @@ function onKeyDown(event) {
 </script>
 
 <style scoped>
+/* ── Outer wrapper — owns tabindex/focus ring, holds header + scroll area ── */
+
+.dl-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  outline: none;
+}
+.dl-wrap:focus { box-shadow: inset 0 0 0 1px var(--accent); }
+
 /* ── Container — default: grid ────────────────────────────────────────── */
 
 .dl {
@@ -456,11 +912,10 @@ function onKeyDown(event) {
   align-content: start;
   outline: none;
 }
-.dl:focus { box-shadow: inset 0 0 0 1px var(--accent); }
 
 .dl-header { display: none; }
 
-/* list / details */
+/* list / details / nested */
 .dl[data-layout="list"],
 .dl[data-layout="details"] {
   display: flex;
@@ -474,8 +929,9 @@ function onKeyDown(event) {
   overflow-x: auto;
 }
 
-/* details column header */
-.dl[data-layout="details"] .dl-header {
+/* Shared header styles for columnar layouts */
+.dl[data-layout="details"] .dl-header,
+.dl[data-layout="list"] .dl-header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -492,8 +948,8 @@ function onKeyDown(event) {
   z-index: 20;
   flex-shrink: 0;
   user-select: none;
-  min-width: 420px;
 }
+.dl[data-layout="details"] .dl-header { min-width: 420px; }
 
 .dl-hdr-check-wrap {
   display: flex;
@@ -509,10 +965,114 @@ function onKeyDown(event) {
 
 /* spacer = check-width + gap + thumb-width for non-details header (list etc.) */
 .dl-hdr-spacer { width: calc(14px + 8px + 18px); flex-shrink: 0; }
+.dl[data-layout="nested"] .dl-hdr-spacer { width: calc(20px + 18px + var(--nested-thumb, 30px) + 6px); }
 
 .dl-col-name { flex: 1; min-width: 0; }
 .dl-col-size { width: 80px; text-align: right; padding-right: 16px; flex-shrink: 0; }
 .dl-col-date { width: 130px; flex-shrink: 0; }
+
+/* Sortable column header buttons */
+.dl-hdr-col-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+.dl-hdr-col-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.dl-sort-arrow { color: var(--accent); font-size: 10px; }
+
+/* Non-columnar header (Grid / Gallery / Mosaic / Feed) */
+.dl-nc-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  user-select: none;
+}
+.dl-nc-sort-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.dl-nc-sort-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.dl-nc-sort-btn--active { color: var(--accent); border-color: rgba(0,122,204,0.3); }
+.dl-nc-zoom {
+  width: 80px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Icon button used in both columnar and non-columnar headers (filter, etc.) */
+.dl-hdr-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.dl-hdr-icon-btn:hover { background: var(--hover-background, rgba(255,255,255,0.07)); color: var(--text); border-color: var(--border); }
+.dl-hdr-icon-btn--active { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+/* Sort dropdown for non-columnar views */
+.dl-sort-dropdown {
+  background: var(--surface-alt, #2d2d30);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  min-width: 140px;
+}
+.dl-sort-dd-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 5px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 3px;
+  user-select: none;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  text-align: left;
+}
+.dl-sort-dd-item:hover { background: rgba(255,255,255,0.06); }
+.dl-sort-dd-item--active { color: var(--accent); }
+.dl-sort-dd-arrow { font-size: 11px; color: var(--accent); }
+.dl-sort-dd-sep { border-top: 1px solid var(--border); margin: 4px 0; }
 
 .dl-hdr-menu-btn {
   background: transparent;
@@ -524,9 +1084,11 @@ function onKeyDown(event) {
   line-height: 1;
   flex-shrink: 0;
   border-radius: 3px;
-  margin-left: auto;
 }
 .dl-hdr-menu-btn:hover { color: var(--text); background: var(--hover-background); }
+
+/* In columnar headers the filter icon button pushes itself right */
+.dl-header .dl-hdr-icon-btn { margin-left: auto; }
 
 /* ── Column picker dropdown ───────────────────────────────────────────── */
 .dl-col-picker {
@@ -553,8 +1115,8 @@ function onKeyDown(event) {
 /* gallery-grid */
 .dl[data-layout="gallery-grid"] {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  grid-auto-rows: 180px;
+  grid-template-columns: repeat(auto-fill, minmax(var(--gallery-cell, 180px), 1fr));
+  grid-auto-rows: var(--gallery-cell, 180px);
   gap: 4px;
   padding: 8px;
   align-content: start;
@@ -573,7 +1135,7 @@ function onKeyDown(event) {
 /* feed */
 .dl[data-layout="feed"] {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--feed-min-card, 280px), 1fr));
   gap: 8px;
   padding: 12px;
   align-content: start;
@@ -639,6 +1201,19 @@ function onKeyDown(event) {
   -webkit-user-drag: none;
 }
 .dl-icon { color: #9e9e9e; width: 48px; height: 48px; }
+.dl-video-badge {
+  position: absolute;
+  width: auto;
+  height: clamp(12px, 50%, 48px);
+  color: white;
+  opacity: 0.5;
+  transition: opacity 0.1s;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.65));
+  pointer-events: none;
+}
+.dl-item:hover .dl-video-badge {
+  opacity: 0.75;
+}
 .dl-skeleton {
   position: absolute;
   inset: 0;
@@ -696,7 +1271,7 @@ span[contenteditable]:focus-within {
   border-radius: 3px;
   border: 1px solid transparent;
   border-bottom-color: rgba(128,128,128,0.07);
-  height: 30px;
+  height: var(--row-height, 30px);
 }
 .dl[data-layout="list"] .dl-item:hover { border-color: transparent; border-bottom-color: rgba(128,128,128,0.07); }
 .dl[data-layout="list"] .dl-item.dl-item--selected { border-bottom-color: rgba(128,128,128,0.07); }
@@ -726,7 +1301,7 @@ span[contenteditable]:focus-within {
   border-radius: 0;
   border: none;
   border-bottom: 1px solid rgba(128,128,128,0.07);
-  height: 30px;
+  height: var(--row-height, 30px);
   min-width: 420px;
 }
 
@@ -768,7 +1343,7 @@ span[contenteditable]:focus-within {
 .dl[data-layout="gallery-mosaic"] .dl-item {
   display: flex;
   flex-direction: column;
-  width: 180px;
+  width: var(--mosaic-width, 180px);
   flex-shrink: 0;
   align-items: stretch;
   padding: 0;
@@ -838,4 +1413,161 @@ span[contenteditable]:focus-within {
 .dl[data-layout="feed"] .dl-meta { display: flex; gap: 8px; margin-top: 4px; }
 .dl[data-layout="feed"] .dl-size,
 .dl[data-layout="feed"] .dl-date { font-size: 11px; color: var(--text-muted); }
+
+/* ── Nested ───────────────────────────────────────────────────────────── */
+
+.dl[data-layout="nested"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow-x: auto;
+}
+
+.dl[data-layout="nested"] .dl-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  height: var(--nested-row, 38px);
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.dl[data-layout="nested"] .dl-item {
+  flex-direction: row;
+  align-items: center;
+  padding: 0 8px 0 8px;
+  border-radius: 0;
+  border: none;
+  border-bottom: 1px solid rgba(128,128,128,0.07);
+  height: var(--nested-row, 38px);
+  gap: 3px;
+}
+/* JS-driven sticky ancestor overlay — positioned via scrollTop binding, not CSS sticky */
+.dl[data-layout="nested"] { position: relative; }
+.dl-nest-sticky-ctx {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0; /* transform handles the actual position — never change top */
+  z-index: 55;
+  will-change: transform;
+}
+.dl-item--ctx {
+  background: var(--surface);
+  border-bottom-color: rgba(128,128,128,0.18);
+  cursor: pointer;
+}
+.dl-item--ctx:hover { background: rgba(255,255,255,0.05); }
+
+/* One guide span per depth level — each draws a vertical hairline via ::before */
+.dl-nest-guide {
+  width: 16px;
+  flex-shrink: 0;
+  align-self: stretch;
+  position: relative;
+}
+.dl-nest-guide::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(128, 128, 128, 0.22);
+}
+.dl-nest-guide--corner::before { bottom: 50%; } /* L-shape: line stops at mid-point */
+.dl-nest-guide--last::after {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 50%;
+  width: 27px; /* spans rest of guide (9px) + toggle/leaf (18px) */
+  height: 1px;
+  background: rgba(128, 128, 128, 0.22);
+}
+
+/* Expand/collapse toggle */
+.dl-nest-toggle {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: 3px;
+}
+.dl-nest-toggle:hover:not(:disabled) { color: var(--text); background: rgba(255,255,255,0.08); }
+.dl-nest-toggle:disabled { opacity: 0.5; cursor: default; }
+
+/* Leaf spacer — aligns files with expandable dirs */
+.dl-nest-leaf { width: 18px; flex-shrink: 0; display: inline-block; }
+
+.dl[data-layout="nested"] .dl-check { position: static; display: flex; align-items: center; flex-shrink: 0; margin: 0 2px; }
+.dl[data-layout="nested"] .dl-thumb {
+  width: var(--nested-thumb, 30px);
+  height: var(--nested-thumb, 30px);
+  background: var(--surface-alt);
+  flex-shrink: 0;
+  border-radius: 3px;
+  margin-right: 6px;
+}
+.dl[data-layout="nested"] .dl-img { object-fit: cover; border-radius: 3px; }
+.dl[data-layout="nested"] .dl-icon { width: 20px; height: 20px; }
+.dl[data-layout="nested"] .dl-skeleton { display: block; border-radius: 3px; }
+.dl[data-layout="nested"] .dl-body { display: flex; align-items: center; flex: 1; margin-top: 0; min-width: 0; }
+.dl[data-layout="nested"] .dl-name {
+  flex: 1; font-size: 13px; text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: block; -webkit-line-clamp: unset;
+}
+.dl[data-layout="nested"] .dl-meta { display: flex; flex-shrink: 0; margin-left: 0; }
+.dl[data-layout="nested"] .dl-size { width: 80px; text-align: right; padding-right: 16px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.dl[data-layout="nested"] .dl-date { width: 130px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.dl[data-layout="nested"] .dl-overlay { display: none; }
+
+/* ── Hover preview ────────────────────────────────────────────────────── */
+
+.dl-hp-overlay {
+  position: fixed;
+  z-index: 9100;
+  pointer-events: none;
+  /* Centered on thumbnail; media sizes this naturally (no letterboxing) */
+  transform: translate(-50%, -50%);
+  transform-origin: center center;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65), 0 2px 10px rgba(0, 0, 0, 0.4);
+  background: #111;
+}
+.dl-hp-media {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(600px, 88vw);
+  max-height: min(500px, 85vh);
+}
+
+/* Spring in from thumbnail point, quick fade out */
+.hp-expand-enter-active { transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s ease; }
+.hp-expand-leave-active { transition: transform 0.1s ease, opacity 0.08s ease; }
+.hp-expand-enter-from,
+.hp-expand-leave-to { transform: translate(-50%, -50%) scale(0.1); opacity: 0; }
 </style>

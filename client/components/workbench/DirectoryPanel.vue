@@ -48,38 +48,12 @@
       />
 
       <div class="layout-buttons">
-        <!-- Sort -->
-        <Tooltip content="Sort" :delay="300">
-          <button
-            class="nav-button"
-            :class="{ active: isSortNonDefault }"
-            @click.stop="toggleSortMenu"
-            ref="sortBtnRef"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M3 18h6v-2H3v2zm0-5h9v-2H3v2zm0-7v2h18V6H3zm16 9.41V10h-2v7.59l-2.29-2.3-1.42 1.42L17 20.17l3.71-3.46-1.42-1.42L17 17.41z"/>
-            </svg>
-          </button>
-        </Tooltip>
-
-        <!-- Filter -->
-        <Tooltip content="Filter" :delay="300">
-          <button
-            class="nav-button"
-            :class="{ active: isFilterActive }"
-            @click.stop="toggleFilterMenu"
-            ref="filterBtnRef"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M4.25 5.61C6.27 8.2 10 13 10 13v6c0 .55.45 1 1 1h2c.55 0 1-.45 1-1v-6s3.72-4.8 5.74-7.39A.998.998 0 0 0 18.95 4H5.04a1 1 0 0 0-.79 1.61z"/>
-            </svg>
-          </button>
-        </Tooltip>
-
-        <!-- Layout picker -->
-        <Tooltip :content="'Layout: ' + (LAYOUT_META[layout]?.label ?? layout)" :delay="300">
+        <!-- View picker -->
+        <Tooltip :content="'View: ' + (LAYOUT_META[layout]?.label ?? layout)" :delay="300">
           <button class="nav-button layout-picker-btn" @click.stop="toggleLayoutMenu" ref="layoutBtnRef">
-            <svg v-html="LAYOUT_META[layout]?.icon ?? LAYOUT_META['grid'].icon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" />
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+            </svg>
           </button>
         </Tooltip>
       </div>
@@ -116,11 +90,25 @@
       :focusedItem="localFocusedItem"
       :alwaysShowCheckboxes="alwaysShowCheckboxes"
       :layout="layout"
+      :zoomLevel="zoomLevel"
+      :hoverPreviewEnabled="hoverPreviewEnabled"
+      :hoverPreviewDelayMs="hoverPreviewDelayMs"
+      :sortField="sortField"
+      :sortDir="sortDir"
+      :filterText="filterText"
+      :filterActive="isFilterActive"
       @select="handleSelect"
       @focus="handleFocus"
       @contextmenu="handleContextMenu"
       @navigate="handleNavigate"
       @rename="$emit('rename', $event)"
+      @zoom-change="zoomLevel = $event"
+      @sort-change="handleSortChange"
+      @filter-change="filterText = $event"
+      @filter-click="handleFilterClick"
+      @copy="$emit('copy', $event)"
+      @cut="$emit('cut', $event)"
+      @paste="$emit('paste')"
     />
 
     <FloatingMenu
@@ -143,33 +131,8 @@
       @item-click="layoutMenuVisible = false"
     />
 
-    <!-- Sort menu -->
+    <!-- Filter panel -->
     <Teleport to="body">
-      <div
-        v-if="sortMenuVisible"
-        class="dp-floating-menu"
-        :style="{ top: sortMenuPos.y + 'px', left: sortMenuPos.x + 'px' }"
-        ref="sortMenuRef"
-      >
-        <button
-          v-for="field in SORT_FIELDS"
-          :key="field.key"
-          class="dp-menu-item"
-          :class="{ 'dp-menu-item--active': sortField === field.key }"
-          @click="setSortField(field.key)"
-        >
-          <span class="dp-menu-item-label">{{ field.label }}</span>
-          <span class="dp-menu-item-badge" v-if="sortField === field.key">
-            {{ sortDir === 'asc' ? '↑' : '↓' }}
-          </span>
-        </button>
-        <div class="dp-menu-sep" />
-        <button class="dp-menu-item" @click="clearSort">
-          <span class="dp-menu-item-label">Reset to default</span>
-        </button>
-      </div>
-
-      <!-- Filter panel -->
       <div
         v-if="filterMenuVisible"
         class="dp-floating-panel"
@@ -230,12 +193,13 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import DirectoryLayout from './DirectoryLayout.vue'
 import BreadcrumbFullPath from './BreadcrumbFullPath.vue'
 import Tooltip from './Tooltip.vue'
 import FloatingMenu from './FloatingMenu.vue'
 import { mdiFolder } from '@mdi/js'
+import { fsDirSize } from '~/lib/fs-api.js'
 
 const props = defineProps({
   items: { type: Array, required: true },
@@ -244,12 +208,14 @@ const props = defineProps({
   layout: { type: String, default: 'grid' },
   showDebug: { type: Boolean, default: false },
   alwaysShowCheckboxes: { type: Boolean, default: false },
+  hoverPreviewEnabled: { type: Boolean, default: true },
+  hoverPreviewDelayMs: { type: Number, default: 2000 },
   currentPath: { type: String, default: '' },
   navigationHistory: { type: Object, default: () => ({ previous: [], next: [] }) },
   changeTabPath: { type: Function, default: null },
 })
 
-const emit = defineEmits(['select', 'focus', 'contextmenu', 'navigate', 'navigate-up', 'navigate-previous', 'navigate-next', 'update:layout', 'rename'])
+const emit = defineEmits(['select', 'focus', 'contextmenu', 'navigate', 'navigate-up', 'navigate-previous', 'navigate-next', 'update:layout', 'rename', 'copy', 'cut', 'paste'])
 
 const currentLayout = DirectoryLayout
 
@@ -261,19 +227,16 @@ const ICON_GALLERY = '<path d="M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z
 const ICON_MOSAIC = '<path d="M3 3h5v8H3zm7 0h4v5h-4zm6 0h5v5h-5zM3 13h5v8H3zm7 3h4v5h-4zm6-3h5v8h-5zm-6-5h4v5h-4z"/>'
 const ICON_FEED = '<path d="M3 4h18v4H3zm0 6h8v4H3zm10 0h8v4h-8zM3 16h8v4H3zm10 0h8v4h-8z"/>'
 
+const ICON_NESTED = '<path d="M3 5h18v2H3zm4 4h14v2H7zm-4 4h18v2H3zm4 4h14v2H7z"/>'
+
 const LAYOUT_META = {
-  'grid-xs':        { label: 'Grid XS',  icon: ICON_GRID,    group: 'grid' },
-  'grid-sm':        { label: 'Grid SM',  icon: ICON_GRID,    group: 'grid' },
-  'grid':           { label: 'Grid',     icon: ICON_GRID,    group: 'grid' },
-  'grid-md':        { label: 'Grid MD',  icon: ICON_GRID,    group: 'grid' },
-  'grid-lg':        { label: 'Grid LG',  icon: ICON_GRID,    group: 'grid' },
-  'grid-xl':        { label: 'Grid XL',  icon: ICON_GRID,    group: 'grid' },
-  'grid-xxl':       { label: 'Grid XXL', icon: ICON_GRID,    group: 'grid' },
-  'list':           { label: 'List',     icon: ICON_LIST,    group: 'list' },
-  'details':        { label: 'Details',  icon: ICON_TABLE,   group: 'list' },
-  'gallery-grid':   { label: 'Gallery',  icon: ICON_GALLERY, group: 'gallery' },
-  'gallery-mosaic': { label: 'Mosaic',   icon: ICON_MOSAIC,  group: 'gallery' },
-  'feed':           { label: 'Feed',     icon: ICON_FEED,    group: 'feed' },
+  'grid':           { label: 'Grid',    icon: ICON_GRID    },
+  'list':           { label: 'List',    icon: ICON_LIST    },
+  'details':        { label: 'Details', icon: ICON_TABLE   },
+  'nested':         { label: 'Nested',  icon: ICON_NESTED  },
+  'gallery-grid':   { label: 'Gallery', icon: ICON_GALLERY },
+  'gallery-mosaic': { label: 'Mosaic',  icon: ICON_MOSAIC  },
+  'feed':           { label: 'Feed',    icon: ICON_FEED    },
 }
 
 const layoutBtnRef = ref(null)
@@ -306,53 +269,56 @@ const SORT_FIELDS = [
   { key: 'accessed', label: 'Date Accessed' },
 ]
 
+// ── Directory sizes (loaded async) ───────────────────────────────────────
+// undefined = loading, number = loaded bytes, null = failed
+const dirSizes = reactive({})
+let _dirSizeCtrl = null
+
+watch(() => props.items, (items) => {
+  _dirSizeCtrl?.abort()
+  const ctrl = new AbortController()
+  _dirSizeCtrl = ctrl
+  for (const item of items) {
+    if (item.kind !== 'dir') continue
+    if (dirSizes[item.path] !== undefined) continue
+    fsDirSize(item.path, ctrl.signal)
+      .then(r => { if (!ctrl.signal.aborted) dirSizes[item.path] = r.size })
+      .catch(() => { if (!ctrl.signal.aborted) dirSizes[item.path] = null })
+  }
+}, { immediate: true })
+
 const sortField = ref('name')
 const sortDir = ref('asc')
-const sortMenuVisible = ref(false)
-const sortMenuPos = ref({ x: 0, y: 0 })
-const sortBtnRef = ref(null)
-const sortMenuRef = ref(null)
 
-function toggleSortMenu() {
-  if (sortMenuVisible.value) { sortMenuVisible.value = false; return }
-  closeFilterMenu()
-  const rect = sortBtnRef.value?.getBoundingClientRect()
-  if (rect) sortMenuPos.value = { x: rect.left, y: rect.bottom + 4 }
-  sortMenuVisible.value = true
-}
-
-function closeSortMenu() { sortMenuVisible.value = false }
-
-function setSortField(field) {
-  if (sortField.value === field) {
-    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
-  } else {
-    sortField.value = field
-    sortDir.value = 'asc'
-  }
-  sortMenuVisible.value = false
+function handleSortChange({ field, dir }) {
+  sortField.value = field
+  sortDir.value = dir
 }
 
 function clearSort() {
   sortField.value = 'name'
   sortDir.value = 'asc'
-  sortMenuVisible.value = false
 }
+
+const filterText = ref('')
 
 const isSortNonDefault = computed(() => sortField.value !== 'name' || sortDir.value !== 'asc')
 
 // ── Filter ────────────────────────────────────────────────────────────────
 const TYPE_GROUPS = {
-  images:    new Set(['png','jpg','jpeg','webp','gif','bmp','ico','avif','svg','tiff','raw','heic','heif']),
-  videos:    new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts']),
-  audio:     new Set(['mp3','m4a','flac','ogg','opus','aac','wav','aiff','wma']),
-  documents: new Set(['pdf','doc','docx','xls','xlsx','ppt','pptx','txt','md','rtf','odt','ods','odp','csv']),
-  archives:  new Set(['zip','tar','gz','bz2','7z','rar','xz','dmg','iso','tar.gz','tar.bz2']),
-  code:      new Set(['js','ts','vue','jsx','tsx','py','go','rs','java','c','cpp','h','hpp','css','html','json','yaml','yml','toml','sh','bash','rb','php','swift','kt']),
+  images:      new Set(['png','jpg','jpeg','webp','gif','bmp','ico','avif','svg','tiff','raw','heic','heif']),
+  videos:      new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts']),
+  audio:       new Set(['mp3','m4a','flac','ogg','opus','aac','wav','aiff','wma']),
+  documents:   new Set(['pdf','doc','docx','xls','xlsx','ppt','pptx','txt','md','rtf','odt','ods','odp','csv']),
+  archives:    new Set(['zip','tar','gz','bz2','7z','rar','xz','iso','tar.gz','tar.bz2']),
+  code:        new Set(['js','ts','vue','jsx','tsx','py','go','rs','java','c','cpp','h','hpp','css','html','json','yaml','yml','toml','sh','bash','rb','php','swift','kt']),
+  apps:        new Set(['appimage','deb','rpm','exe','msi','pkg','flatpak','snap','apk']),
+  directories: null, // matched by item.kind === 'dir'
 }
 const TYPE_GROUP_LABELS = {
   images: 'Images', videos: 'Videos', audio: 'Audio',
   documents: 'Documents', archives: 'Archives', code: 'Code',
+  apps: 'Apps', directories: 'Directories',
 }
 
 const SIZE_PRESETS = {
@@ -377,18 +343,14 @@ const filterDatePreset = ref('')
 
 const filterMenuVisible = ref(false)
 const filterMenuPos = ref({ y: 0, right: 0 })
-const filterBtnRef = ref(null)
 const filterPanelRef = ref(null)
 
-function toggleFilterMenu() {
+function handleFilterClick(btnEl) {
   if (filterMenuVisible.value) { filterMenuVisible.value = false; return }
-  closeSortMenu()
-  const rect = filterBtnRef.value?.getBoundingClientRect()
-  if (rect) filterMenuPos.value = { y: rect.bottom + 4, right: window.innerWidth - rect.right }
+  const rect = btnEl.getBoundingClientRect()
+  filterMenuPos.value = { y: rect.bottom + 4, right: window.innerWidth - rect.right }
   filterMenuVisible.value = true
 }
-
-function closeFilterMenu() { filterMenuVisible.value = false }
 
 function toggleFilterType(type) {
   const s = new Set(filterTypes.value)
@@ -404,21 +366,29 @@ function clearFilter() {
 }
 
 const isFilterActive = computed(() =>
-  filterTypes.value.size > 0 || filterSizePreset.value !== '' || filterDatePreset.value !== ''
+  filterTypes.value.size > 0 || filterSizePreset.value !== '' || filterDatePreset.value !== '' || filterText.value !== ''
 )
 
 const showActiveBar = computed(() => isSortNonDefault.value || isFilterActive.value)
 
 // ── Sort + Filter applied ─────────────────────────────────────────────────
 const processedItems = computed(() => {
-  let result = [...props.items]
+  // Inject async-loaded dir sizes so sort and display both benefit
+  let result = props.items.map(item =>
+    item.kind === 'dir' && dirSizes[item.path] != null
+      ? { ...item, size: dirSizes[item.path] }
+      : item
+  )
 
   // Type filter
   if (filterTypes.value.size > 0) {
     result = result.filter(item => {
-      if (item.kind === 'dir') return true
-      const ext = item.name.split('.').pop()?.toLowerCase() ?? ''
-      return [...filterTypes.value].some(g => TYPE_GROUPS[g]?.has(ext))
+      return [...filterTypes.value].some(g => {
+        if (g === 'directories') return item.kind === 'dir'
+        if (item.kind === 'dir') return true // dirs always shown alongside file-type filters
+        const ext = item.name.split('.').pop()?.toLowerCase() ?? ''
+        return TYPE_GROUPS[g]?.has(ext)
+      })
     })
   }
 
@@ -442,10 +412,18 @@ const processedItems = computed(() => {
     })
   }
 
-  // Sort — directories always first
+  // Text filter (name search)
+  if (filterText.value.trim()) {
+    const q = filterText.value.trim().toLowerCase()
+    result = result.filter(item => item.name.toLowerCase().includes(q))
+  }
+
+  // Sort — dirs always first unless sorting by size (then sort everything together)
   result.sort((a, b) => {
-    if (a.kind === 'dir' && b.kind !== 'dir') return -1
-    if (a.kind !== 'dir' && b.kind === 'dir') return 1
+    if (sortField.value !== 'size') {
+      if (a.kind === 'dir' && b.kind !== 'dir') return -1
+      if (a.kind !== 'dir' && b.kind === 'dir') return 1
+    }
 
     const dir = sortDir.value === 'asc' ? 1 : -1
 
@@ -456,7 +434,7 @@ const processedItems = computed(() => {
         return dir * na.localeCompare(nb)
       }
       case 'size':
-        return dir * ((a.size ?? 0) - (b.size ?? 0))
+        return dir * ((a.size ?? -1) - (b.size ?? -1))
       case 'type': {
         const ea = a.name.split('.').pop()?.toLowerCase() ?? ''
         const eb = b.name.split('.').pop()?.toLowerCase() ?? ''
@@ -476,12 +454,27 @@ const processedItems = computed(() => {
   return result
 })
 
+// ── Zoom ──────────────────────────────────────────────────────────────────
+const zoomLevel = ref(50)
+
 // ── Close menus on outside click ──────────────────────────────────────────
 function onDocClick(e) {
-  if (sortMenuVisible.value && !sortMenuRef.value?.contains(e.target) && !sortBtnRef.value?.contains(e.target))
-    sortMenuVisible.value = false
-  if (filterMenuVisible.value && !filterPanelRef.value?.contains(e.target) && !filterBtnRef.value?.contains(e.target))
+  if (filterMenuVisible.value && !filterPanelRef.value?.contains(e.target))
     filterMenuVisible.value = false
+}
+
+function onDocKeyDown(e) {
+  if (!e.ctrlKey && !e.metaKey) return
+  if (e.key === '=' || e.key === '+') {
+    e.preventDefault()
+    zoomLevel.value = Math.min(100, zoomLevel.value + 5)
+  } else if (e.key === '-') {
+    e.preventDefault()
+    zoomLevel.value = Math.max(0, zoomLevel.value - 5)
+  } else if (e.key === '0') {
+    e.preventDefault()
+    zoomLevel.value = 50
+  }
 }
 
 // ── Selection state ───────────────────────────────────────────────────────
@@ -622,10 +615,12 @@ watch(() => props.selectedItems, (v) => { localSelectedItems.value = v })
 onMounted(() => {
   document.addEventListener('mouseup', clearLongPressTimers)
   document.addEventListener('click', onDocClick, true)
+  document.addEventListener('keydown', onDocKeyDown)
 })
 onUnmounted(() => {
   document.removeEventListener('mouseup', clearLongPressTimers)
   document.removeEventListener('click', onDocClick, true)
+  document.removeEventListener('keydown', onDocKeyDown)
   clearLongPressTimers()
 })
 </script>
@@ -725,40 +720,6 @@ onUnmounted(() => {
 }
 .clear-all-btn:hover { color: var(--text); background: rgba(255,255,255,0.08); }
 
-/* ── Sort menu (floating) ─────────────────────────────────────────────── */
-.dp-floating-menu {
-  position: fixed;
-  z-index: 300;
-  background: var(--surface-alt, #2d2d30);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 4px;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.4);
-  min-width: 160px;
-}
-
-.dp-menu-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 6px 10px;
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--text);
-  text-align: left;
-  gap: 12px;
-}
-.dp-menu-item:hover { background: rgba(255,255,255,0.07); }
-.dp-menu-item--active { color: var(--accent); }
-.dp-menu-item--active .dp-menu-item-label { font-weight: 500; }
-.dp-menu-item-badge { font-size: 14px; flex-shrink: 0; }
-
-.dp-menu-sep { height: 1px; background: var(--border); margin: 4px 0; }
-
 /* ── Filter panel (floating) ──────────────────────────────────────────── */
 .dp-floating-panel {
   position: fixed;
@@ -829,4 +790,5 @@ onUnmounted(() => {
   width: 100%;
 }
 .dp-clear-btn:hover { border-color: var(--accent); color: var(--accent); }
+
 </style>

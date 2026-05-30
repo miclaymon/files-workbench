@@ -11,6 +11,8 @@
       :focusedItem="props.focusedItem"
       :layout="prefs.layout ?? 'grid'"
       :alwaysShowCheckboxes="prefs.alwaysShowCheckboxes"
+      :hoverPreviewEnabled="prefs.hoverPreviewEnabled ?? true"
+      :hoverPreviewDelayMs="prefs.hoverPreviewDelayMs ?? 2000"
       :currentPath="props.path"
       :navigationHistory="navigationHistory"
       :changeTabPath="changeTabPath"

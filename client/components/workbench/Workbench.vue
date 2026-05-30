@@ -39,6 +39,9 @@
           <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activeActivity === 'search' }" title="Search" @click="toggleActivity('search')">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiMagnify" /></svg>
           </a>
+          <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activeActivity === 'storage' }" title="Storage" @click="toggleActivity('storage')">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiHarddisk" /></svg>
+          </a>
         </div>
         <div class="activitybar-bottom">
           <a ref="settingsButton" href="javascript:void(0)" class="activitybar-icon" title="Settings" @click.stop="showMenuDelayed('settings')">
@@ -61,10 +64,12 @@
             :isTreeView="true"
             :excludedCategories="prefs.excludedCategories"
             :indentScale="prefs.explorer.indentScale ?? 1.0"
+            :explorerState="explorerContext"
             @select="handleExplorerSelect"
             @dblclick="handleDoubleClick"
             @contextmenu="showItemContextMenu"
             @rename="handleRename"
+            @state-change="updateExplorerContext"
           />
           <div v-else-if="activeActivity === 'search'" class="sidebar-placeholder">
             Search panel coming soon…
@@ -150,7 +155,7 @@
         <!-- Right pane -->
         <div class="resize-handle resize-handle--col" @mousedown="onResizeRightpane" />
         <div class="rightpane" :style="{ width: rightpaneWidth + 'px' }">
-          <Panel :activities="rightPanelActivities" v-model="rightPanel" :maxActivities="4">
+          <Panel :activities="rightPanelActivities" v-model="rightPanel" :maxActivities="4" @reorder="reorderRightPanel">
             <template #preview>
               <PreviewPanel :selectedItems="selectedItems" :editorFontSize="prefs.preview?.editorFontSize ?? 13" />
             </template>
@@ -208,14 +213,11 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { mdiHarddisk, mdiSegment, mdiMagnify, mdiFolder, mdiMessage, mdiCog, mdiClose, mdiEye, mdiInformation } from '@mdi/js'
 import { useDragAndDrop } from '~/composables/useDragAndDrop.js'
-import { useWorkbenchState } from '~/composables/useWorkbenchState.js'
+import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
 import { usePreferences } from '~/composables/usePreferences.js'
 import { fsStat, fsOpenWithSystem, fsCreateDir } from '~/lib/fs-api.js'
-import { v4 as uuidv4 } from 'uuid'
 
-function uuid() {
-  return uuidv4();
-}
+function uuid() { return uuidv4() }
 
 const isElectron = computed(() => !!window.electron)
 
@@ -251,14 +253,41 @@ async function pingServer() {
 
 const status = ref({ left: 'Ready', right: 'Connected' })
 
-// Layout state (persisted)
-const { sidebarVisible, sidebarWidth, activeActivity, rightpaneWidth, rightPanel, bottompaneHeight } = useWorkbenchState()
+// Layout state (persisted via workspace)
+const {
+  sidebarVisible, sidebarWidth, activeActivity,
+  rightpaneWidth, rightPanel, bottompaneHeight,
+  rightPanelActivityIds,
+  explorerContext, updateExplorerContext,
+  getInitialTabs, getInitialActiveTabId, saveTabs,
+} = useWorkspaces()
 
-const rightPanelActivities = [
-  { id: 'preview', icon: mdiEye, label: 'Preview' },
-  { id: 'details', icon: mdiInformation, label: 'Details' },
-  { id: 'chat', icon: mdiMessage, label: 'Chat' },
-]
+// Icon registry for well-known right-panel activities
+const PANEL_ACTIVITY_REGISTRY = {
+  preview: { icon: mdiEye,         label: 'Preview' },
+  details: { icon: mdiInformation, label: 'Details' },
+  chat:    { icon: mdiMessage,      label: 'Chat'    },
+}
+
+const rightPanelActivities = computed({
+  get: () => rightPanelActivityIds.value.map(id => ({
+    id,
+    icon:  PANEL_ACTIVITY_REGISTRY[id]?.icon,
+    label: PANEL_ACTIVITY_REGISTRY[id]?.label ?? id,
+  })),
+  set: list => { rightPanelActivityIds.value = list.map(a => a.id) },
+})
+
+function reorderRightPanel({ activityId, targetId, before }) {
+  const list = [...rightPanelActivities.value]
+  const fromIdx = list.findIndex(a => a.id === activityId)
+  const toIdx   = list.findIndex(a => a.id === targetId)
+  if (fromIdx === -1 || toIdx === -1) return
+  const [item] = list.splice(fromIdx, 1)
+  const insertAt = list.findIndex(a => a.id === targetId)
+  list.splice(before ? insertAt : insertAt + 1, 0, item)
+  rightPanelActivities.value = list
+}
 
 function startResize(event, sizeRef, { axis = 'x', sign = 1, min = 60 } = {}) {
   event.preventDefault()
@@ -299,12 +328,24 @@ const selectedItems = ref([])
 const focusedItem = ref(null)
 const selectedDetails = ref(null)
 
-// Tab state
+// Tab state — initialised from the active workspace
 const directoryTabRef = ref(null)
 const explorerPanelRef = ref(null)
-const tabs = ref([{ id: 'home', kind: 'home', title: 'Home', selectedItems: [], focusedItem: null, selectedPath: '' }])
-const activeTabId = ref('home')
-const activeTab = computed(() => tabs.value.find(t => t.id === activeTabId.value))
+const tabs       = ref(getInitialTabs())
+const activeTabId = ref(getInitialActiveTabId() ?? tabs.value[0]?.id ?? 'home')
+const activeTab  = computed(() => tabs.value.find(t => t.id === activeTabId.value))
+
+// Persist tab changes to workspace.
+// We track a lightweight signature so we never deep-watch large selectedItems arrays.
+// Selected items are captured via their paths (cheap string join).
+const _tabSignature = computed(() =>
+  tabs.value.map(t =>
+    `${t.id}:${t.kind}:${t.title}:${t.path ?? ''}:${t.mode ?? ''}:`
+    + (t.selectedItems ?? []).map(i => i.path ?? i.name).join(',')
+    + `:${t.focusedItem?.path ?? ''}`
+  ).join('|') + '||' + activeTabId.value
+)
+watch(_tabSignature, () => saveTabs(tabs.value, activeTabId.value))
 
 // Clear dir stats when navigating away from a dir tab
 watch(activeTab, (tab) => {
@@ -444,9 +485,20 @@ async function savePreferences(newPrefs) {
   setTimeout(() => { status.value.left = 'Ready' }, 2000)
 }
 
-onMounted(() => {
+onMounted(async () => {
   pingServer()
   _pingInterval = setInterval(pingServer, 10000)
+
+  // Restore selection state from the active tab on startup
+  const tab = activeTab.value
+  if (tab?.kind === 'dir') {
+    selectedItems.value  = tab.selectedItems ?? []
+    focusedItem.value    = tab.focusedItem   ?? null
+    selectedPath.value   = tab.selectedPath  ?? tab.path ?? ''
+    if (selectedPath.value) {
+      try { selectedDetails.value = await fsStat(selectedPath.value) } catch { selectedDetails.value = null }
+    }
+  }
 })
 
 onUnmounted(() => {

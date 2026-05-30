@@ -8,6 +8,9 @@
       @click="onItemClick($event, item)"
       @contextmenu.prevent="$emit('contextmenu', { event: $event, item })"
       @dblclick="onDblClick(item)"
+      @mouseenter="hpEnabled && item.thumbnail ? startHover(item, $event.currentTarget, hpDelayMs) : null"
+      @mouseleave="endHover"
+      @mousedown="cancelPending"
     >
       <div class="gallery-thumb">
         <img
@@ -25,6 +28,9 @@
         <svg v-if="!item.thumbnail || imageStates[item.path] === 'failed'" class="fallback-icon" viewBox="0 0 24 24" fill="currentColor">
           <path :d="iconPath(item)" />
         </svg>
+        <svg v-if="isVideo(item) && item.thumbnail && imageStates[item.path] !== 'failed'" class="video-badge" viewBox="0 0 24 24" fill="currentColor">
+          <path :d="mdiPlayCircle" />
+        </svg>
       </div>
       <div class="gallery-name-overlay">
         <span class="gallery-name-text">{{ item.name }}</span>
@@ -34,20 +40,33 @@
       </div>
     </div>
   </div>
+
+  <DirectoryHoverPreview :item="hpItem" :triggerRect="hpRect" />
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
-import { mdiFile, mdiFolder, mdiLinkVariant } from '@mdi/js'
+import { ref, reactive, computed } from 'vue'
+import { mdiFile, mdiFolder, mdiLinkVariant, mdiPlayCircle } from '@mdi/js'
+import { useHoverPreview } from '~/composables/useHoverPreview.js'
+import DirectoryHoverPreview from './DirectoryHoverPreview.vue'
+
+const VIDEO_EXTS = new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts'])
+function isVideo(item) { return VIDEO_EXTS.has(item.name?.split('.').pop()?.toLowerCase() ?? '') }
 
 const props = defineProps({
   items: { type: Array, required: true },
   selectedItems: { type: Array, required: true },
   focusedItem: { type: Object, default: null },
   alwaysShowCheckboxes: { type: Boolean, default: false },
+  hoverPreviewEnabled: { type: Boolean, default: true },
+  hoverPreviewDelayMs: { type: Number, default: 2000 },
 })
 
 const emit = defineEmits(['select', 'focus', 'contextmenu', 'navigate', 'rename'])
+
+const { activeItem: hpItem, triggerRect: hpRect, startHover, endHover, cancelPending } = useHoverPreview()
+const hpEnabled = computed(() => props.hoverPreviewEnabled)
+const hpDelayMs = computed(() => props.hoverPreviewDelayMs)
 
 const imageStates = reactive({})
 
@@ -130,6 +149,7 @@ function onKeyDown(event) {
 }
 
 .gallery-thumb {
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
@@ -147,6 +167,16 @@ function onKeyDown(event) {
 }
 
 .fallback-icon { width: 48px; height: 48px; color: #9e9e9e; }
+
+.video-badge {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  color: white;
+  opacity: 0.85;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6));
+  pointer-events: none;
+}
 
 .skeleton-placeholder {
   position: absolute;

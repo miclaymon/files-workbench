@@ -13,6 +13,8 @@ const DEFAULTS = {
     layout: 'grid',
     dragDelay: 200,
     indentScale: 1.0,
+    hoverPreviewEnabled: true,
+    hoverPreviewDelayMs: 1000,
   },
   excludedCategories: ['System'],
   preview: {

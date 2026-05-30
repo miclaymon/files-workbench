@@ -23,27 +23,14 @@ import { computed, ref, watch } from 'vue'
 import TreeList from './TreeList.vue'
 import { explorerList } from '~/lib/explorer-api.js'
 
-const STORAGE_KEY = 'workbench-explorer-tree'
+// Falls back to legacy localStorage key when no explorerState prop is supplied
+const LEGACY_KEY = 'workbench-explorer-tree'
 
-function loadStoredState() {
+function loadLegacyState() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    return JSON.parse(raw)
+    const raw = localStorage.getItem(LEGACY_KEY)
+    return raw ? JSON.parse(raw) : null
   } catch { return null }
-}
-
-let _saveTimer = null
-function scheduleSave(expandedSet, childrenMap) {
-  clearTimeout(_saveTimer)
-  _saveTimer = setTimeout(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        expanded: [...expandedSet],
-        childrenByPath: childrenMap,
-      }))
-    } catch {}
-  }, 400)
 }
 
 const props = defineProps({
@@ -54,13 +41,16 @@ const props = defineProps({
   clipboardData: { type: Object, default: null },
   excludedCategories: { type: Array, default: () => ['System'] },
   indentScale: { type: Number, default: 1.0 },
+  // When supplied by the workspace, overrides legacy localStorage
+  explorerState: { type: Object, default: null },
 })
 
-const emit = defineEmits(['select', 'open', 'selectAll', 'paste', 'rename'])
+const emit = defineEmits(['select', 'open', 'selectAll', 'paste', 'rename', 'state-change'])
 
-const stored = loadStoredState()
-const expanded = ref(new Set(stored?.expanded ?? []))
-const childrenByPath = ref(stored?.childrenByPath ?? {})
+// Prefer workspace-provided state; fall back to legacy key
+const _initial = props.explorerState ?? loadLegacyState()
+const expanded       = ref(new Set(_initial?.expandedNodes ?? _initial?.expanded ?? []))
+const childrenByPath = ref(_initial?.childrenByPath ?? {})
 
 async function listDir(path) {
   try {
@@ -122,7 +112,7 @@ async function onToggleExpand({ expandKey, path }) {
     }
   }
   expanded.value = new Set(expanded.value)
-  scheduleSave(expanded.value, childrenByPath.value)
+  emit('state-change', { expandedNodes: [...expanded.value], childrenByPath: childrenByPath.value })
 }
 
 function onPaste() { emit('paste') }

@@ -69,6 +69,7 @@ func registerRoutes(mux *http.ServeMux) {
 	// Filesystem
 	mux.HandleFunc("GET "+apiPrefix+"/fs/stat", handleFsStat)
 	mux.HandleFunc("GET "+apiPrefix+"/fs/list_dir", handleFsListDir)
+	mux.HandleFunc("GET "+apiPrefix+"/fs/dir_size", handleFsDirSize)
 	mux.HandleFunc("GET "+apiPrefix+"/fs/preview", handleFsPreview)
 	mux.HandleFunc("POST "+apiPrefix+"/fs/open_with_system", handleFsOpenWithSystem)
 	mux.HandleFunc("POST "+apiPrefix+"/fs/create_file", handleFsCreateFile)

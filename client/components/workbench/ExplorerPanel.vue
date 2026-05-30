@@ -24,6 +24,7 @@
         :clipboardData="clipboardData"
         :excludedCategories="excludedCategories"
         :indentScale="indentScale"
+        :explorerState="explorerState"
         @select="$emit('select', $event)"
         @open="$emit('dblclick', $event)"
         @contextmenu="$emit('contextmenu', $event)"
@@ -31,6 +32,7 @@
         @selectAll="$emit('selectAll', $event)"
         @paste="$emit('paste', $event)"
         @rename="$emit('rename', $event)"
+        @state-change="$emit('state-change', $event)"
       />
       <div v-else class="state-message">Flat list view not yet implemented.</div>
     </template>
@@ -57,9 +59,10 @@ const props = defineProps({
   clipboardData: { type: Object, default: null },
   excludedCategories: { type: Array, default: () => ['System'] },
   indentScale: { type: Number, default: 1.0 },
+  explorerState: { type: Object, default: null },
 })
 
-const emit = defineEmits(['select', 'dblclick', 'contextmenu', 'toggleSelect', 'selectAll', 'paste', 'rename'])
+const emit = defineEmits(['select', 'dblclick', 'contextmenu', 'toggleSelect', 'selectAll', 'paste', 'rename', 'state-change'])
 
 const loading = ref(false)
 const error = ref('')

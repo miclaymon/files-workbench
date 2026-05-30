@@ -1,11 +1,12 @@
 <template>
   <div
+    ref="rootEl"
     class="grid-item"
     :class="{ selected: isSelected, focused: isFocused, dragging: draggingPath === props.item.path, hidden: props.item.hidden }"
-    @mousedown="(e) => onMouseDown(e, props.item)"
+    @mousedown="(e) => { cancelPending(); onMouseDown(e, props.item) }"
     @click="onItemClick"
-    @mouseenter="hoverFocus = item"
-    @mouseleave="hoverFocus = null"
+    @mouseenter="onMouseEnter"
+    @mouseleave="onMouseLeave"
   >
     <div class="item-checkbox" v-show="showCheckbox">
       <input
@@ -33,6 +34,9 @@
         <svg v-if="!imageSrc || imageState === 'failed'" class="fallback-icon" viewBox="0 0 24 24" fill="currentColor" :style="{ width: iconSize, height: iconSize, maxWidth: '80%', maxHeight: '80%' }">
           <path :d="iconPath" />
         </svg>
+        <svg v-if="isVideo && imageSrc && imageState !== 'failed'" class="video-badge" viewBox="0 0 24 24" fill="currentColor">
+          <path :d="mdiPlayCircle" />
+        </svg>
       </div>
 
       <div class="item-name" :class="{ renaming: isRenaming }">
@@ -56,13 +60,19 @@
       </div>
     </div>
   </div>
+
+  <DirectoryHoverPreview :item="hpItem" :triggerRect="hpRect" />
 </template>
 
 <script setup>
 import { ref, computed, watch, inject, nextTick } from 'vue'
-import { mdiFile, mdiFolder, mdiLinkVariant } from '@mdi/js'
+import { mdiFile, mdiFolder, mdiLinkVariant, mdiPlayCircle } from '@mdi/js'
 import { useClickDebounce } from '~/composables/useClickDebounce.js'
 import { useDrag } from '~/composables/useDrag.js'
+import { useHoverPreview } from '~/composables/useHoverPreview.js'
+import DirectoryHoverPreview from './DirectoryHoverPreview.vue'
+
+const VIDEO_EXTS = new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts'])
 
 const onThumbnailSettled = inject('onThumbnailSettled', null)
 
@@ -72,12 +82,28 @@ const props = defineProps({
   focusedItem: { type: Object, default: null },
   alwaysShowCheckboxes: { type: Boolean, default: false },
   iconSize: { type: String, default: '64px' },
+  hoverPreviewEnabled: { type: Boolean, default: true },
+  hoverPreviewDelayMs: { type: Number, default: 2000 },
 })
 
 const emit = defineEmits(['select', 'focus', 'contextmenu', 'navigate', 'rename'])
 
 const hoverFocus = ref(null)
 const imageState = ref('')
+
+const { activeItem: hpItem, triggerRect: hpRect, startHover, endHover, cancelPending } = useHoverPreview()
+const rootEl = ref(null)
+
+function onMouseEnter() {
+  hoverFocus.value = props.item
+  if (props.hoverPreviewEnabled && imageSrc.value) {
+    startHover(props.item, rootEl.value, props.hoverPreviewDelayMs)
+  }
+}
+function onMouseLeave() {
+  hoverFocus.value = null
+  endHover()
+}
 
 const isSelected = computed(() => props.selectedItems.some(s => s.path === props.item.path))
 const isFocused = computed(() => props.focusedItem?.path === props.item.path)
@@ -96,6 +122,10 @@ const iconPath = computed(() => {
     default: return mdiFile
   }
 })
+
+const isVideo = computed(() =>
+  VIDEO_EXTS.has(props.item.name?.split('.').pop()?.toLowerCase() ?? '')
+)
 
 watch(() => props.item, () => {
   imageState.value = imageSrc.value ? 'loading' : ''
@@ -267,6 +297,16 @@ function onCheckboxChange(event) {
 }
 
 .fallback-icon { color: #9e9e9e; }
+
+.video-badge {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  color: white;
+  opacity: 0.85;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6));
+  pointer-events: none;
+}
 
 .item-name {
   font-size: 12px;
