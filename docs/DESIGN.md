@@ -115,6 +115,22 @@ Functional areas:
 
 Thumbnail generation is handled by `thumbnail.go` and results are stored in a disk-based cache keyed by file path, size, and type. `blacklist.go` loads path exclusion rules from a server-side config file rather than URL parameters.
 
+### Directory customization
+
+`customization.go` reads platform-specific directory customization files at listing time — no extra round-trip needed:
+
+| File | Platform | Parsed fields |
+|---|---|---|
+| `.directory` | KDE/Dolphin (freedesktop.org) | `Name`, `Icon`, `Comment` from `[Desktop Entry]` |
+| `desktop.ini` | Windows | `IconResource`/`IconFile`, `InfoTip` from `[.ShellClassInfo]` |
+| `.DS_Store` | macOS | presence only (binary format) |
+
+These reads bypass the blacklist intentionally — the blacklist controls what appears in listing responses; `readDirCustomization` is an internal server read that enriches parent directory metadata.
+
+The `customization` field is embedded in every directory item returned by `list_dir` and the Explorer APIs. `PUT /_api/v2/fs/customization` writes or updates the `.directory` file, using pointer fields in the JSON body so `null` = keep existing value, `""` = clear the field.
+
+The client resolves customization icons via `useCustomIcon.js`: absolute paths are served through `fs/preview`; Dolphin `folder-<color>` names map to CSS colors and render as inline `<svg fill="currentColor">` (bypassing the icon pack `<img>` since CSS `color` cannot tint an image element). Icon priority: custom path → folder-color SVG → icon pack → MDI default.
+
 ### Icon pack plugin system
 
 `plugins.go` loads third-party icon packs from `config/plugins/` at startup. Each plugin directory contains a `plugin.json` manifest. The only supported adapter is `vscode-icon-theme`, which reads a VSCode extension icon theme JSON file and builds lookup tables for file extensions, file names, and folder names.

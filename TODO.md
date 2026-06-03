@@ -48,7 +48,9 @@
 - [ ] .git plugin/features
 - [ ] Background file indexing and search optimization
 
-- [ ] PowerRename(TM)
+- [ ] Truly break up into separate `files-workbench-core` project which has `files-workbench-core-linux`, `files-workbench-core-windows`, `files-workbench-core-darwin` and a separate `files-workbench-ui` which should be able to connect to any of the core processes using the same standardized methods even if the core has different code for each platform (Windows has NTFS file table, MacOS has journal, Linux...doesn't)
+
+- [ ] PowerRename(TM) + Macros
 - [ ] LLM chat
 
 - [ ] Launch Electron app with `--read-only` flag which disables renaming, deleting, moving, creating (pasting) files. The user can only view and copy files.

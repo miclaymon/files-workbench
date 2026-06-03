@@ -77,6 +77,8 @@ func registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+apiPrefix+"/fs/create_file", handleFsCreateFile)
 	mux.HandleFunc("POST "+apiPrefix+"/fs/create_dir", handleFsCreateDir)
 	mux.HandleFunc("POST "+apiPrefix+"/fs/write_file", handleFsWriteFile)
+	mux.HandleFunc("GET "+apiPrefix+"/fs/customization", handleFsCustomizationGet)
+	mux.HandleFunc("PUT "+apiPrefix+"/fs/customization", handleFsCustomizationPut)
 
 	// Media
 	mux.HandleFunc("GET "+apiPrefix+"/media/capabilities", handleMediaCapabilities)

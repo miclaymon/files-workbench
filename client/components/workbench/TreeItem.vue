@@ -9,6 +9,7 @@
         dragging: isDraggingThis,
       }"
       :style="{ paddingLeft: (6 + level * 14 * indentScale) + 'px' }"
+      :title="node.customization?.comment || undefined"
       @mousedown="(e) => onMouseDown(e, node)"
       @mouseenter="onNodeMouseEnter(node)"
       @mouseleave="onNodeMouseLeave(node)"
@@ -34,7 +35,15 @@
       <span v-else class="expand-spacer" />
 
       <span v-if="showIcons" class="folder-icon">
-        <img v-if="packIconUrl && !packIconFailed" :src="packIconUrl" width="16" height="16" class="pack-icon" @error="packIconFailed = true" />
+        <!-- 1. Explicit image path from .directory/desktop.ini -->
+        <img v-if="customIconUrl && !customIconFailed" :src="customIconUrl" width="16" height="16" class="pack-icon" @error="customIconFailed = true" />
+        <!-- 2. folder-color: inline SVG so currentColor picks up the tint (img cannot) -->
+        <svg v-else-if="customIconColor" :width="16" :height="16" viewBox="0 0 24 24" fill="currentColor" :style="{ color: customIconColor }">
+          <path :d="iconPath" />
+        </svg>
+        <!-- 3. Icon pack -->
+        <img v-else-if="packIconUrl && !packIconFailed" :src="packIconUrl" width="16" height="16" class="pack-icon" @error="packIconFailed = true" />
+        <!-- 4. MDI default -->
         <svg v-else :width="16" :height="16" viewBox="0 0 24 24" fill="currentColor">
           <path :d="iconPath" />
         </svg>
@@ -45,7 +54,7 @@
         class="item-name-label"
         :style="node.hidden ? { opacity: 0.5 } : {}"
         @click="onNameClick"
-      >{{ node.name }}</span>
+      >{{ displayName }}</span>
       <span
         v-else
         ref="nameEl"
@@ -84,6 +93,7 @@ import { mdiFile, mdiFolder, mdiFolderOpen, mdiHarddisk, mdiLinkVariant } from '
 import { useClickDebounce } from '~/composables/useClickDebounce.js'
 import { useTreeDrag } from '~/composables/useTreeDrag.js'
 import { useIconPack } from '~/composables/useIconPack.js'
+import { resolveCustomIcon } from '~/composables/useCustomIcon.js'
 
 const props = defineProps({
   node: { type: Object, required: true },
@@ -130,6 +140,15 @@ const packIconUrl = computed(() => {
 
 const packIconFailed = ref(false)
 watch(packIconUrl, () => { packIconFailed.value = false })
+
+// Custom icon from .directory / desktop.ini
+const customIconDescriptor = computed(() => resolveCustomIcon(props.node.customization?.icon))
+const customIconUrl = computed(() => customIconDescriptor.value?.type === 'url' ? customIconDescriptor.value.url : null)
+const customIconColor = computed(() => customIconDescriptor.value?.type === 'folder-color' ? customIconDescriptor.value.color : null)
+const customIconFailed = ref(false)
+watch(customIconDescriptor, () => { customIconFailed.value = false })
+
+const displayName = computed(() => props.node.customization?.name || props.node.name)
 
 const { handleClick, cancel: cancelPendingClick } = useClickDebounce()
 const { draggingNode, dragOverNode, wasDragging, onMouseDown, onNodeMouseEnter, onNodeMouseLeave } = useTreeDrag()

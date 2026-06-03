@@ -13,7 +13,7 @@ Items roughly ordered by priority. See `TODO.md` for the full flat list.
 
 - **Keybind customization** — full keyboard shortcut editor in preferences; keybind events bubble through the DOM and can be captured by components
 - **Command palette** — fuzzy search over commands, recently visited paths, and open tabs
-- **Custom directory icons (extended)** — read `.directory` and `desktop.ini` for per-folder icon overrides; open-variant folder icons require `generateOpenFolderIcons.ts` (needs Bun); currently falls back to closed-folder variant
+- **Custom directory icons (extended)** — custom thumbnail support; `[Files Workbench]` section in `.directory` for app-specific overrides; open-variant folder icons require `generateOpenFolderIcons.ts` (needs Bun), currently falls back to closed-folder variant
 - **Home page improvements** — recent files, pinned folders, quick-access shortcuts
 - **Archive exploration** — browse contents of `.zip`, `.tar`, `.gz`, `.7z`, `.rar` as virtual directories
 
@@ -36,6 +36,8 @@ Items roughly ordered by priority. See `TODO.md` for the full flat list.
 
 ## Recently completed
 
+- **Directory customization** — server parses `.directory` (KDE/Dolphin), `desktop.ini` (`[.ShellClassInfo]`), and detects `.DS_Store` for each directory in listings; custom name, icon, and comment returned as `customization` field; `GET`/`PUT /_api/v2/fs/customization` endpoints for reading and writing `.directory` files; `useCustomIcon.js` composable resolves Dolphin `folder-<color>` names and absolute icon paths; folder-color tints render as inline `<svg fill="currentColor">` so CSS `color` applies correctly
+- **Server-side directory sizes** — `list_dir` now accepts `includeDirSize=true`; sizes are computed concurrently (goroutines + semaphore, capped at 8) for directory items on the current page only; client-side async `dir_size` request-per-directory loop removed
 - **Icon pack plugin system** — VSCode icon theme adapter loaded from `config/plugins/`; `vscode-material-icon-theme` bundled as first plugin; icons resolved server-side and embedded in list and explorer API responses; `useIconPack.js` composable for client-side manifest access; MDI fallback on load error
 - **Breadcrumb overflow** — ResizeObserver-based detection collapses middle segments into an expandable `···` chip when the path bar overflows; always keeps the first and last two segments visible; clicking `···` shows a dropdown of hidden segments
 - **Hover preview centering fix** — image natural dimensions are captured during preload and applied as explicit `width`/`height` on the overlay so `translate(-50%, -50%)` is correct from the first frame (no position snap)

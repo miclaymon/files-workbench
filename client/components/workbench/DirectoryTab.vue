@@ -72,7 +72,7 @@ async function fetchItems(path) {
   items.value = []
   emit('stats', { count: 0, totalSize: 0 })
   try {
-    const result = await fsListDir(path, { includeMetadata: true, showHidden, excludeCategories: excl, signal: ctrl.signal })
+    const result = await fsListDir(path, { includeMetadata: true, includeDirSize: true, showHidden, excludeCategories: excl, signal: ctrl.signal })
     if (gen !== _gen) return
     items.value = result.items ?? []
     const totalSize = items.value.reduce((sum, i) => sum + (i.size ?? 0), 0)

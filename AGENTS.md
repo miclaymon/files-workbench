@@ -42,6 +42,7 @@ Workbench.vue                  Root shell: titlebar, activity bar, sidebar, tab 
 | `useTreeDrag.js` | Module-level singleton drag for tree nodes. Creates a chip-style ghost (icon + name). Valid drop targets: `type === 'directory'` nodes only; root/drive nodes and files are not valid targets. Shared refs mean all `TreeItem` instances see the same `draggingNode`/`dragOverNode`. |
 | `useDragAndDrop.js` | Native HTML5 drag for the tab bar (reordering). Separate from the file drag systems. |
 | `useIconPack.js` | Module-level singleton composable for the icon pack. Fetches `/icons/manifest` once; exposes `ensureLoaded()`, `resolveIcon(filename, isDir)`, `iconUrl(iconName)`, and `isAvailable`. All components that need pack icons call `ensureLoaded()` once at mount time. |
+| `useCustomIcon.js` | Pure helper (no reactive state). `resolveCustomIcon(iconStr)` returns `null`, `{ type: 'url', url }` (absolute path → `fs/preview`), or `{ type: 'folder-color', color }` (Dolphin `folder-<color>` names). Folder-color must render as an inline `<svg>`, not an `<img>`, so CSS `color` applies via `fill="currentColor"`. |
 
 ## Nitro server routes (dev proxy workaround)
 
@@ -67,9 +68,20 @@ All routes are prefixed with `/_api/v2/`.
 | `blacklist.go` | Path exclusion rules loaded from server-side config |
 | `plugins.go` | Plugin loader; `loadPlugins()` reads `config/plugins/*/plugin.json`; `iconTheme` struct with `resolve()`, `resolveOpen()`, `has()`, `pick()`; `activeIconTheme` global |
 | `icons.go` | `handleIconsManifest` — returns icon lookup tables; `handleIconsSvg` — serves SVG by definition name (404 returns `image/svg+xml` Content-Type to prevent ORB errors while firing `@error`) |
+| `customization.go` | `readDirCustomization(dirPath)` — reads `.directory`, `desktop.ini`, `.DS_Store` from inside a directory; `handleFsCustomizationGet` / `handleFsCustomizationPut` — read and write `.directory` files; bypasses blacklist intentionally (internal server read) |
 | `perf.go` | `handlePerf` — client performance log ingestion |
 
 ## Known gotchas
+
+### Directory size is computed server-side per page
+
+`list_dir` accepts `includeDirSize=true`. Sizes are computed **after pagination** using one goroutine per directory item on the current page (semaphore caps concurrency at 8). Scoping to the page means at most `PAGE_SIZE` (16) walks per request. The client passes `includeDirSize: true` from `DirectoryTab` and uses `item.size` directly — no separate `dir_size` requests.
+
+### Icon rendering priority (directories)
+
+Thumbnail > custom path icon > folder-color SVG > icon pack `<img>` > MDI SVG fallback.
+
+Folder-color customizations (e.g. `Icon=folder-violet` in `.directory`) **must** render as an inline `<svg fill="currentColor">` with `:style="{ color }"` — not as an `<img>` — because CSS `color` cannot tint an image element. When `customFolderColor(item)` returns a value, skip the pack icon entirely and go straight to the inline SVG.
 
 ### Icon SVG 404 must return `image/svg+xml`
 When a pack icon name has no backing SVG file, `handleIconsSvg` returns HTTP 404 but **with `Content-Type: image/svg+xml`**. This is intentional: a JSON or plain-text 404 triggers `ERR_BLOCKED_BY_ORB` in Chrome (cross-origin resource blocking for non-image MIME types on `<img>`), which prevents the `@error` handler from firing. By returning an image MIME type the browser lets the `@error` callback run and fall back to the MDI icon.

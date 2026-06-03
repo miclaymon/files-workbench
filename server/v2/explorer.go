@@ -14,17 +14,18 @@ import (
 
 // explorerItem mirrors the Python make_item_info / _entry_to_item shape.
 type explorerItem struct {
-	Name         string   `json:"name"`
-	Path         string   `json:"path"`
-	Type         string   `json:"type"`
-	Hidden       bool     `json:"hidden"`
-	Icon         *string  `json:"icon"`
-	IconOpen     *string  `json:"icon_open"`
-	URI          *string  `json:"uri"`
-	Size         *int64   `json:"size"`
-	DateCreated  *float64 `json:"date_created"`
-	DateModified *float64 `json:"date_modified"`
-	DateAccessed *float64 `json:"date_accessed"`
+	Name          string             `json:"name"`
+	Path          string             `json:"path"`
+	Type          string             `json:"type"`
+	Hidden        bool               `json:"hidden"`
+	Icon          *string            `json:"icon"`
+	IconOpen      *string            `json:"icon_open"`
+	Customization *dirCustomization  `json:"customization,omitempty"`
+	URI           *string            `json:"uri"`
+	Size          *int64             `json:"size"`
+	DateCreated   *float64           `json:"date_created"`
+	DateModified  *float64           `json:"date_modified"`
+	DateAccessed  *float64           `json:"date_accessed"`
 }
 
 func handleExplorerCategories(w http.ResponseWriter, r *http.Request) {
@@ -176,18 +177,21 @@ func explorerListDir(dirPath string, excluded []string, showHidden, includeMetad
 		if icon != "" {
 			iconPtr = &icon
 		}
+		var customization *dirCustomization
 		if isDir {
 			if open := activeIconTheme.resolveOpen(name); open != "" {
 				iconOpenPtr = &open
 			}
+			customization = readDirCustomization(entryPath)
 		}
 		item := explorerItem{
-			Name:     name,
-			Path:     entryPath,
-			Type:     itemType,
-			Hidden:   hidden,
-			Icon:     iconPtr,
-			IconOpen: iconOpenPtr,
+			Name:          name,
+			Path:          entryPath,
+			Type:          itemType,
+			Hidden:        hidden,
+			Icon:          iconPtr,
+			IconOpen:      iconOpenPtr,
+			Customization: customization,
 		}
 
 		if includeMetadata {
@@ -244,6 +248,9 @@ func makeItemInfo(path, forceType, nameOverride string) explorerItem {
 			s := info.Size()
 			item.Size = &s
 		}
+	}
+	if item.Type == "directory" {
+		item.Customization = readDirCustomization(path)
 	}
 	return item
 }

@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -73,6 +74,7 @@ func handleFsListDir(w http.ResponseWriter, r *http.Request) {
 
 	showHidden := qBool(q, "showHidden", true)
 	includeMetadata := qBool(q, "includeMetadata", true)
+	includeDirSize := qBool(q, "includeDirSize", false)
 	excludeVals, hasExclude := q["excludeCategories"]
 	excluded := parseExcludeParam(strings.Join(excludeVals, ","), hasExclude)
 	offset, _ := strconv.Atoi(q.Get("offset"))
@@ -94,6 +96,36 @@ func handleFsListDir(w http.ResponseWriter, r *http.Request) {
 		page = items[start:end]
 	} else {
 		page = items[start:]
+	}
+
+	// Compute directory sizes concurrently for the current page only.
+	// Scoping to the page means at most PAGE_SIZE walks per request.
+	if includeDirSize {
+		const maxConcurrent = 8
+		sem := make(chan struct{}, maxConcurrent)
+		var wg sync.WaitGroup
+		for _, raw := range page {
+			m := raw.(map[string]any)
+			if m["kind"] != "dir" {
+				continue
+			}
+			p := m["path"].(string)
+			wg.Add(1)
+			go func(item map[string]any, dirPath string) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				var total int64
+				filepath.Walk(dirPath, func(_ string, info os.FileInfo, err error) error {
+					if err == nil && !info.IsDir() {
+						total += info.Size()
+					}
+					return nil
+				})
+				item["size"] = total
+			}(m, p)
+		}
+		wg.Wait()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -149,20 +181,23 @@ func simpleListDir(dirPath string, excluded []string, includeMetadata, showHidde
 		if icon != "" {
 			iconField = icon
 		}
+		var customization *dirCustomization
 		if kind == "dir" {
 			if open := activeIconTheme.resolveOpen(name); open != "" {
 				iconOpenField = open
 			}
+			customization = readDirCustomization(entryPath)
 		}
 		items = append(items, map[string]any{
-			"name":      name,
-			"path":      entryPath,
-			"kind":      kind,
-			"size":      size,
-			"mtime":     mtime,
-			"hidden":    hidden,
-			"icon":      iconField,
-			"icon_open": iconOpenField,
+			"name":          name,
+			"path":          entryPath,
+			"kind":          kind,
+			"size":          size,
+			"mtime":         mtime,
+			"hidden":        hidden,
+			"icon":          iconField,
+			"icon_open":     iconOpenField,
+			"customization": customization,
 		})
 	}
 

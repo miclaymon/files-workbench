@@ -193,13 +193,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import DirectoryLayout from './DirectoryLayout.vue'
 import BreadcrumbFullPath from './BreadcrumbFullPath.vue'
 import Tooltip from './Tooltip.vue'
 import FloatingMenu from './FloatingMenu.vue'
 import { mdiFolder } from '@mdi/js'
-import { fsDirSize } from '~/lib/fs-api.js'
 import { useDebugLog } from '~/composables/useDebugLog.js'
 
 const { log } = useDebugLog()
@@ -272,23 +271,6 @@ const SORT_FIELDS = [
   { key: 'accessed', label: 'Date Accessed' },
 ]
 
-// ── Directory sizes (loaded async) ───────────────────────────────────────
-// undefined = loading, number = loaded bytes, null = failed
-const dirSizes = reactive({})
-let _dirSizeCtrl = null
-
-watch(() => props.items, (items) => {
-  _dirSizeCtrl?.abort()
-  const ctrl = new AbortController()
-  _dirSizeCtrl = ctrl
-  for (const item of items) {
-    if (item.kind !== 'dir') continue
-    if (dirSizes[item.path] !== undefined) continue
-    fsDirSize(item.path, ctrl.signal)
-      .then(r => { if (!ctrl.signal.aborted) dirSizes[item.path] = r.size })
-      .catch(() => { if (!ctrl.signal.aborted) dirSizes[item.path] = null })
-  }
-}, { immediate: true })
 
 const sortField = ref('name')
 const sortDir = ref('asc')
@@ -380,12 +362,7 @@ const showActiveBar = computed(() => isSortNonDefault.value || isFilterActive.va
 
 // ── Sort + Filter applied ─────────────────────────────────────────────────
 const processedItems = computed(() => {
-  // Inject async-loaded dir sizes so sort and display both benefit
-  let result = props.items.map(item =>
-    item.kind === 'dir' && dirSizes[item.path] != null
-      ? { ...item, size: dirSizes[item.path] }
-      : item
-  )
+  let result = props.items
 
   // Type filter
   if (filterTypes.value.size > 0) {

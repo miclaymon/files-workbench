@@ -72,12 +72,12 @@ export function fsDirSize(path, signal) {
   return _get(`/_api/${API_V}/fs/dir_size`, { path }, signal)
 }
 
-// opts: { includeMetadata, showHidden, excludeCategories, signal }
+// opts: { includeMetadata, includeDirSize, showHidden, excludeCategories, signal }
 const LIST_DIR_PAGE_SIZE = 16
 
 export async function fsListDir(path, opts = {}) {
-  const { includeMetadata = true, showHidden = false, excludeCategories = 'System', signal } = opts
-  const params = { path, includeMetadata, showHidden, excludeCategories, limit: LIST_DIR_PAGE_SIZE, offset: 0 }
+  const { includeMetadata = true, includeDirSize = false, showHidden = false, excludeCategories = 'System', signal } = opts
+  const params = { path, includeMetadata, includeDirSize, showHidden, excludeCategories, limit: LIST_DIR_PAGE_SIZE, offset: 0 }
 
   const first = await _get(`/_api/${API_V}/fs/list_dir`, params, signal)
   if (first.offset + first.items.length >= first.total) return first

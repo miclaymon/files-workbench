@@ -94,13 +94,17 @@
           <img v-if="dir.thumbnail && imageStates[dir.path] === 'loaded'"
                crossorigin="anonymous" :src="dir.thumbnail" :alt="dir.name"
                class="dl-img" style="opacity:1" />
+          <img v-else-if="customIconUrl(dir)" :src="customIconUrl(dir)" class="dl-pack-icon" :alt="dir.name" @error="onCustomIconError(dir.path)" />
+          <svg v-else-if="customFolderColor(dir)" class="dl-icon" viewBox="0 0 24 24" fill="currentColor" :style="{ color: customFolderColor(dir) }">
+            <path :d="iconPath(dir)" />
+          </svg>
           <img v-else-if="itemIconUrl(dir)" :src="itemIconUrl(dir)" class="dl-pack-icon" :alt="dir.name" @error="onPackIconError(dir.path)" />
           <svg v-else class="dl-icon" viewBox="0 0 24 24" fill="currentColor">
             <path :d="iconPath(dir)" />
           </svg>
         </div>
         <div class="dl-body">
-          <span class="dl-name">{{ dir.name }}</span>
+          <span class="dl-name" :title="dir.customization?.comment || undefined">{{ itemDisplayName(dir) }}</span>
           <div class="dl-meta">
             <span class="dl-size">{{ dir.size != null ? formatBytes(dir.size) : '…' }}</span>
             <span class="dl-date">{{ dir.modified ? formatDate(dir.modified) : '' }}</span>
@@ -176,7 +180,11 @@
         />
         <div v-if="item.thumbnail && (imageStates[item.path] === 'idle' || imageStates[item.path] === 'loading')" class="dl-skeleton" />
         <template v-if="!item.thumbnail || imageStates[item.path] === 'failed'">
-          <img v-if="itemIconUrl(item)" :src="itemIconUrl(item)" class="dl-pack-icon" :alt="item.name" @error="onPackIconError(item.path)" />
+          <img v-if="customIconUrl(item)" :src="customIconUrl(item)" class="dl-pack-icon" :alt="item.name" @error="onCustomIconError(item.path)" />
+          <svg v-else-if="customFolderColor(item)" class="dl-icon" viewBox="0 0 24 24" fill="currentColor" :style="{ color: customFolderColor(item) }">
+            <path :d="iconPath(item)" />
+          </svg>
+          <img v-else-if="itemIconUrl(item)" :src="itemIconUrl(item)" class="dl-pack-icon" :alt="item.name" @error="onPackIconError(item.path)" />
           <svg v-else class="dl-icon" viewBox="0 0 24 24" fill="currentColor">
             <path :d="iconPath(item)" />
           </svg>
@@ -193,8 +201,9 @@
         <span
           v-if="renamingPath !== item.path"
           class="dl-name"
+          :title="item.customization?.comment || undefined"
           @click="onNameClick($event, item)"
-        >{{ item.name }}</span>
+        >{{ itemDisplayName(item) }}</span>
         <span
           v-else
           :ref="(el) => { if (el) nameEls[item.path] = el }"
@@ -221,7 +230,7 @@
 
       <!-- Gallery-grid name overlay (shown on hover) -->
       <div class="dl-overlay">
-        <span class="dl-overlay-name">{{ item.name }}</span>
+        <span class="dl-overlay-name">{{ itemDisplayName(item) }}</span>
       </div>
 
       <!-- Hover preview: fixed-position, grows from thumbnail center -->
@@ -280,6 +289,7 @@ import { useClickDebounce } from '~/composables/useClickDebounce.js'
 import { useHoverPreview } from '~/composables/useHoverPreview.js'
 import { useDrag } from '~/composables/useDrag.js'
 import { useIconPack } from '~/composables/useIconPack.js'
+import { resolveCustomIcon } from '~/composables/useCustomIcon.js'
 import { fsListDir } from '~/lib/fs-api.js'
 import { MEDIA_BASE } from '~/lib/api-config.js'
 
@@ -731,6 +741,28 @@ function itemIconUrl(item) {
   if (!iconPackAvailable.value) return null
   const name = resolveIcon(item.name, item.kind === 'dir')
   return name ? iconUrl(name) : null
+}
+
+// Custom icon from .directory / desktop.ini
+const _customIconErrors = ref(new Set())
+function onCustomIconError(path) {
+  _customIconErrors.value = new Set(_customIconErrors.value).add(path)
+}
+function _customDescriptor(item) {
+  return item.kind === 'dir' ? resolveCustomIcon(item.customization?.icon) : null
+}
+function customIconUrl(item) {
+  if (_customIconErrors.value.has(item.path)) return null
+  const d = _customDescriptor(item)
+  return d?.type === 'url' ? d.url : null
+}
+function customFolderColor(item) {
+  if (_customIconErrors.value.has(item.path)) return null
+  const d = _customDescriptor(item)
+  return d?.type === 'folder-color' ? d.color : null
+}
+function itemDisplayName(item) {
+  return item.customization?.name || item.name
 }
 
 function formatBytes(bytes) {
