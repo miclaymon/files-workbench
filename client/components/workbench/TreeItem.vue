@@ -34,7 +34,8 @@
       <span v-else class="expand-spacer" />
 
       <span v-if="showIcons" class="folder-icon">
-        <svg :width="16" :height="16" viewBox="0 0 24 24" fill="currentColor">
+        <img v-if="packIconUrl && !packIconFailed" :src="packIconUrl" width="16" height="16" class="pack-icon" @error="packIconFailed = true" />
+        <svg v-else :width="16" :height="16" viewBox="0 0 24 24" fill="currentColor">
           <path :d="iconPath" />
         </svg>
       </span>
@@ -82,6 +83,7 @@ import { computed, ref, nextTick } from 'vue'
 import { mdiFile, mdiFolder, mdiFolderOpen, mdiHarddisk, mdiLinkVariant } from '@mdi/js'
 import { useClickDebounce } from '~/composables/useClickDebounce.js'
 import { useTreeDrag } from '~/composables/useTreeDrag.js'
+import { useIconPack } from '~/composables/useIconPack.js'
 
 const props = defineProps({
   node: { type: Object, required: true },
@@ -116,6 +118,18 @@ const iconPath = computed(() => {
     default: return mdiFile
   }
 })
+
+const { ensureLoaded: ensureIconPack, iconUrl, isAvailable: iconPackAvailable } = useIconPack()
+ensureIconPack()
+
+const packIconUrl = computed(() => {
+  if (!iconPackAvailable.value) return null
+  const name = isExpanded.value ? (props.node.icon_open ?? props.node.icon) : props.node.icon
+  return name ? iconUrl(name) : null
+})
+
+const packIconFailed = ref(false)
+watch(packIconUrl, () => { packIconFailed.value = false })
 
 const { handleClick, cancel: cancelPendingClick } = useClickDebounce()
 const { draggingNode, dragOverNode, wasDragging, onMouseDown, onNodeMouseEnter, onNodeMouseLeave } = useTreeDrag()
@@ -254,6 +268,7 @@ span[contenteditable]:focus-within {
 .expand-spacer { width: 12px; flex-shrink: 0; }
 
 .folder-icon { display: inline-flex; align-items: center; color: #9e9e9e; flex-shrink: 0; }
+.pack-icon { display: block; object-fit: contain; }
 
 .tree-children { list-style: none; margin: 0; padding: 0; }
 </style>

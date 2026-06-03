@@ -33,6 +33,8 @@ func main() {
 		log.Printf("warn: could not load blacklist: %v", err)
 	}
 
+	loadPlugins()
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8001"
@@ -96,6 +98,10 @@ func registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+apiPrefix+"/preferences/schema", handlePreferencesSchema)
 	mux.HandleFunc("GET "+apiPrefix+"/preferences", handlePreferencesGet)
 	mux.HandleFunc("PUT "+apiPrefix+"/preferences", handlePreferencesPut)
+
+	// Icon packs (plugin-provided)
+	mux.HandleFunc("GET "+apiPrefix+"/icons/manifest", handleIconsManifest)
+	mux.HandleFunc("GET "+apiPrefix+"/icons/svg", handleIconsSvg)
 
 	// Perf
 	mux.HandleFunc("POST "+apiPrefix+"/perf", handlePerf)

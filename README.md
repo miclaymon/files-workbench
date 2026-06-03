@@ -4,12 +4,14 @@ A desktop file manager built with Electron + Nuxt 3 (Vue 3) on the front end and
 
 ## Features
 
-- Multi-tab directory browsing with navigation history and breadcrumbs
+- Multi-tab directory browsing with navigation history and breadcrumbs (overflow-collapsing with expandable `···` chip)
 - Multiple directory view layouts: grid (XS through XXL), list, details, gallery grid, gallery mosaic, and feed
 - Client-side sort (name, size, type, date modified/created/accessed) and filter (by file type, size, date) with a contextual active-state bar showing removable chips
 - Explorer sidebar tree with expandable folders, indent guides, and drag-and-drop
 - File preview panel: images, video (Video.js), audio (Wavesurfer.js + embedded album art), code/text (Monaco Editor), HTML (rendered iframe + source toggle)
+- Hover preview overlay: hovering a grid item shows a floating media preview centered on the thumbnail
 - Media thumbnails: images resized server-side; video frame extraction and audio artwork via ffmpeg; disk-based thumbnail cache
+- Icon pack plugin system: VSCode icon theme adapter with `vscode-material-icon-theme` support; icons resolved server-side and shown in directory views and the explorer tree
 - Inline file renaming in tree and directory views
 - Custom drag-and-drop with ghost element and 200 ms activation delay
 - Context menus, clipboard (cut/copy/paste), multi-select with Shift and Ctrl/Cmd
@@ -79,7 +81,7 @@ files-workbench2/
 │   ├── preferences/          App preferences JSON + schema
 │   ├── keybindings/          Keyboard shortcut definitions
 │   ├── themes/               Theme color definitions
-│   └── plugins/              Third-party plugin directory (empty)
+│   └── plugins/              Third-party plugins (e.g. material-icon-theme)
 ├── docs/                     Project documentation
 ├── server/v2/                Go HTTP backend (active)
 │   └── *.go                  Route handlers, media processing, thumbnail cache

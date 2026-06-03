@@ -28,14 +28,15 @@
 - [ ] Keybinds to toggle side bars and panel; keybind customization; kyebind custom events hooks (events are dispatched and bubble up through DOM like normal events but can be hook into or captured on the way up by some components)
 - [ ] Improvements to Home page
   - [ ] Working storage space indicators
-- [ ] Intergration with `vscode-material-icon-theme` (https://github.com/material-extensions/vscode-material-icon-theme/releases) to automatically apply custom folder icons based on the same rules and icons from that extension
+- [x] Intergration with `vscode-material-icon-theme` (https://github.com/material-extensions/vscode-material-icon-theme/releases) to automatically apply custom folder icons based on the same rules and icons from that extension
 - [ ] Service worker to help with handling networking
   - [ ] Service worker has a WebSocket connection to the server for more realtime data transfer (listing directories, fetching metadata, sending commands to perform file operations, etc.)
 - [ ] Improvements to themes (adjustments to dark and black themes)
 - [ ] Directory Tab address bar history and autocomplete
 - [ ] Command pallete: search, recents, actions, queries
 - [ ] Aggressive pre-fetching feature: hovering over an item will prefetch the preview API endpoint to warm it up and potentially get the server to cache to repsonse
-- [ ] Breadcrumbs: if longer than render area, show ellipses ('...') instead of middle items and the ellipses expand to just show a stacked list of the hidden items
+- [x] Breadcrumbs: if longer than about 80% of the container (we could use container queries?) for the path, show ellipses ('...') instead of some of the middle items (always show the first 2 breadcrumb items and the last 2 breadcrumb items, any in between those can be condensed to the overlow breadcrumb denoted with ellipses). Clicking on the overflow breadcrumb will is somehwat similar to how the carets between them trigger a dropdown, but the dropdown will represent the nested directories. Each option in the dropdown for the overflow breadcrumb will have the following indent icon to denote that it's a sub-item, and clicking the options does that same thing as it would do for the other breadcrumbs and navigate to that path.
+  - If the breadcrumbs are still too longs after these changes then it can overflow-x within the box, but hopefully the overflow breadcrumb will make that unlikely (unless the folder names are very very long)
 - [ ] Pinned items in directories
 - [ ] Storage side menu option
 
@@ -53,5 +54,5 @@
 - [ ] Launch Electron app with `--read-only` flag which disables renaming, deleting, moving, creating (pasting) files. The user can only view and copy files.
 
 - [ ] MCP
-- [] System file open handler
+- [ ] System file open handler
 - [ ] Disk operations: format and create partitions, mount drives (`gparted`)

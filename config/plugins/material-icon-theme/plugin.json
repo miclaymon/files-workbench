@@ -1,0 +1,8 @@
+{
+  "id": "material-icon-theme",
+  "name": "Material Icon Theme",
+  "type": "icon-pack",
+  "adapter": "vscode-icon-theme",
+  "source": "vscode-material-icon-theme",
+  "theme": ""
+}

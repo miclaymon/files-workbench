@@ -133,7 +133,7 @@
                 @contextmenu="showItemContextMenu"
                 @rename="handleRename"
                 @stats="dirStats = $event"
-                @update:layout="prefs.explorer.layout = $event"
+                @update:layout="handleLayoutChange"
               />
               <PreferencesActivity
                 v-else-if="activeTab?.kind === 'preferences'"
@@ -148,7 +148,18 @@
 
           <!-- Bottom panel resize handle + panel -->
           <div class="resize-handle resize-handle--row" @mousedown="onResizeBottompane" />
-          <div class="bottompane" :style="{ height: bottompaneHeight + 'px' }"></div>
+          <div class="bottompane" :style="{ height: bottompaneHeight + 'px' }">
+            <Panel :activities="bottomPanelActivities" v-model="bottomPanel">
+              <template #debug-actions>
+                <button class="bp-action-btn" @click="debugLog.clear()" title="Clear">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                </button>
+              </template>
+              <template #debug>
+                <DebugPanel />
+              </template>
+            </Panel>
+          </div>
 
         </div>
 
@@ -211,10 +222,11 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { mdiHarddisk, mdiSegment, mdiMagnify, mdiFolder, mdiMessage, mdiCog, mdiClose, mdiEye, mdiInformation } from '@mdi/js'
+import { mdiHarddisk, mdiSegment, mdiMagnify, mdiFolder, mdiMessage, mdiCog, mdiClose, mdiEye, mdiInformation, mdiBug } from '@mdi/js'
 import { useDragAndDrop } from '~/composables/useDragAndDrop.js'
 import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
 import { usePreferences } from '~/composables/usePreferences.js'
+import { useDebugLog } from '~/composables/useDebugLog.js'
 import { fsStat, fsOpenWithSystem, fsCreateDir } from '~/lib/fs-api.js'
 
 function uuid() { return uuidv4() }
@@ -261,6 +273,14 @@ const {
   explorerContext, updateExplorerContext,
   getInitialTabs, getInitialActiveTabId, saveTabs,
 } = useWorkspaces()
+
+// Debug log
+const debugLog = useDebugLog()
+const { log } = debugLog
+
+// Bottom panel
+const bottomPanel = ref('debug')
+const bottomPanelActivities = [{ id: 'debug', icon: mdiBug, label: 'Debug' }]
 
 // Icon registry for well-known right-panel activities
 const PANEL_ACTIVITY_REGISTRY = {
@@ -312,6 +332,11 @@ function startResize(event, sizeRef, { axis = 'x', sign = 1, min = 60 } = {}) {
 const onResizeSidebar   = (e) => startResize(e, sidebarWidth,    { axis: 'x', sign:  1, min: 150 })
 const onResizeRightpane = (e) => startResize(e, rightpaneWidth,  { axis: 'x', sign: -1, min: 200 })
 const onResizeBottompane = (e) => startResize(e, bottompaneHeight, { axis: 'y', sign: -1, min:  60 })
+
+function handleLayoutChange(layout) {
+  prefs.explorer.layout = layout
+  log('layout', 'Layout changed', layout)
+}
 
 function toggleActivity(name) {
   if (activeActivity.value === name && sidebarVisible.value) {
@@ -531,6 +556,7 @@ async function openPeekTabForDir(path) {
 }
 
 function handleTabClick(tab) {
+  log('tab', 'Tab activated', tab.title)
   nextTick(() => {
     activeTabId.value = tab.id
     if (tab.kind === 'dir' && tab.mode === 'peek') tab.mode = 'pinned'
@@ -566,6 +592,7 @@ async function handleRename({ path, newName }) {
 async function handleExplorerSelect(payload) {
   const path = typeof payload === 'string' ? payload : payload?.path
   if (!path) return
+  log('select', 'Explorer selected', path.split(/[/\\]/).filter(Boolean).pop() ?? path)
   selectedPath.value = path
   const kind = payload?.kind
   if (kind === 'directory' || kind === 'dir' || kind === 'drive' || kind === 'root') {
@@ -579,6 +606,9 @@ async function handleExplorerSelect(payload) {
 }
 
 async function handleSelectFromDirectory(payload) {
+  if (payload && Array.isArray(payload.selectedItems)) {
+    log('select', `${payload.selectedItems.length} item(s) selected`, payload.selectedItems.length === 1 ? payload.selectedItems[0]?.name : `${payload.selectedItems.length} items`)
+  }
   if (payload?.mode === 'open' && payload?.item?.kind === 'file') {
     try {
       await fsOpenWithSystem(payload.item.path)
@@ -615,6 +645,7 @@ async function handleDoubleClick(payload) {
 function navigateInCurrentTab(path) {
   const active = activeTab.value
   if (!active || active.kind !== 'dir') return
+  log('nav', 'Navigate', path)
   active.path = path
   active.title = path.split(/[/\\]/).filter(Boolean).pop() || path
   selectedPath.value = path
@@ -638,8 +669,14 @@ async function handleOpenFromTab(item) {
 }
 
 // Clipboard
-function copyToClipboard(items) { clipboard.value = { mode: 'Copy', count: items.length, items: [...items] } }
-function cutToClipboard(items) { clipboard.value = { mode: 'Cut', count: items.length, items: [...items] } }
+function copyToClipboard(items) {
+  clipboard.value = { mode: 'Copy', count: items.length, items: [...items] }
+  log('clipboard', 'Copy', `${items.length} item(s)`)
+}
+function cutToClipboard(items) {
+  clipboard.value = { mode: 'Cut', count: items.length, items: [...items] }
+  log('clipboard', 'Cut', `${items.length} item(s)`)
+}
 
 // Context menus
 function hideContextMenu() { contextMenu.value.visible = false }
@@ -796,6 +833,20 @@ function showItemContextMenu({ event, item }) {
   border-top: 1px solid var(--border);
   overflow: hidden;
 }
+.bp-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.55;
+}
+.bp-action-btn:hover { opacity: 1; background: rgba(255,255,255,0.08); }
 
 /* Resize handles */
 .resize-handle { flex-shrink: 0; background: transparent; transition: background 0.15s; z-index: 10; --resize-handle-size: 2px; }

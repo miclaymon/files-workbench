@@ -94,6 +94,7 @@
           <img v-if="dir.thumbnail && imageStates[dir.path] === 'loaded'"
                crossorigin="anonymous" :src="dir.thumbnail" :alt="dir.name"
                class="dl-img" style="opacity:1" />
+          <img v-else-if="itemIconUrl(dir)" :src="itemIconUrl(dir)" class="dl-pack-icon" :alt="dir.name" @error="onPackIconError(dir.path)" />
           <svg v-else class="dl-icon" viewBox="0 0 24 24" fill="currentColor">
             <path :d="iconPath(dir)" />
           </svg>
@@ -174,14 +175,12 @@
           @error="onImgError(item)"
         />
         <div v-if="item.thumbnail && (imageStates[item.path] === 'idle' || imageStates[item.path] === 'loading')" class="dl-skeleton" />
-        <svg
-          v-if="!item.thumbnail || imageStates[item.path] === 'failed'"
-          class="dl-icon"
-          viewBox="0 0 24 24"
-          fill="currentColor"
-        >
-          <path :d="iconPath(item)" />
-        </svg>
+        <template v-if="!item.thumbnail || imageStates[item.path] === 'failed'">
+          <img v-if="itemIconUrl(item)" :src="itemIconUrl(item)" class="dl-pack-icon" :alt="item.name" @error="onPackIconError(item.path)" />
+          <svg v-else class="dl-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path :d="iconPath(item)" />
+          </svg>
+        </template>
         <!-- Video badge -->
         <svg v-if="isVideoItem(item) && item.thumbnail && imageStates[item.path] === 'loaded'"
              class="dl-video-badge" viewBox="0 0 24 24" fill="currentColor">
@@ -230,7 +229,11 @@
         <div
           v-if="hpItem?.path === item.path && hpRect && hpMediaReady"
           class="dl-hp-overlay"
-          :style="{ left: (hpRect.left + hpRect.width / 2) + 'px', top: (hpRect.top + hpRect.height / 2) + 'px' }"
+          :style="{
+            left: (hpRect.left + hpRect.width / 2) + 'px',
+            top: (hpRect.top + hpRect.height / 2) + 'px',
+            ...(hpMediaSize ? { width: hpMediaSize.w + 'px', height: hpMediaSize.h + 'px' } : {})
+          }"
         >
           <video v-if="isVideoItem(item)" :src="hpSrc(item)" autoplay loop muted playsinline class="dl-hp-media" />
           <img v-else :src="hpSrc(item)" class="dl-hp-media" draggable="false" />
@@ -276,6 +279,7 @@ import { mdiChevronDown, mdiChevronRight, mdiFile, mdiFolder, mdiLinkVariant, md
 import { useClickDebounce } from '~/composables/useClickDebounce.js'
 import { useHoverPreview } from '~/composables/useHoverPreview.js'
 import { useDrag } from '~/composables/useDrag.js'
+import { useIconPack } from '~/composables/useIconPack.js'
 import { fsListDir } from '~/lib/fs-api.js'
 import { MEDIA_BASE } from '~/lib/api-config.js'
 
@@ -335,29 +339,39 @@ function isVideoItem(item) { return VIDEO_EXTS.has(item.name?.split('.').pop()?.
 
 const { activeItem: hpItem, triggerRect: hpRect, startHover, endHover, cancelPending } = useHoverPreview()
 
-// True once the preloaded media has loaded into the browser, so the overlay
-// only appears when the img element already has its natural dimensions — preventing
-// the snap caused by translate(-50%,-50%) being 0 on a 0×0 element.
 const hpMediaReady = ref(false)
+// Explicit pixel size computed during preload so translate(-50%,-50%) is correct
+// from the very first frame — no layout pass needed on the freshly-inserted element.
+const hpMediaSize = ref(null) // { w, h } in px, or null (video / unknown)
 
 function preloadMedia(item) {
   hpMediaReady.value = false
+  hpMediaSize.value = null
   const url = `${MEDIA_BASE}/preview?path=${encodeURIComponent(item.path)}`
   if (isVideoItem(item)) {
     fetch(url, { method: 'GET', headers: { Range: 'bytes=0-65535' } }).catch(() => {})
-    hpMediaReady.value = true  // can't await video dimensions; show immediately
+    hpMediaReady.value = true
   } else {
     const img = new Image()
-    img.onload = () => { hpMediaReady.value = true }
-    img.onerror = () => { hpMediaReady.value = true }  // still show on error
+    const applySize = () => {
+      if (img.naturalWidth && img.naturalHeight) {
+        const maxW = Math.min(600, window.innerWidth * 0.88)
+        const maxH = Math.min(500, window.innerHeight * 0.85)
+        const scale = Math.min(1, maxW / img.naturalWidth, maxH / img.naturalHeight)
+        hpMediaSize.value = { w: Math.round(img.naturalWidth * scale), h: Math.round(img.naturalHeight * scale) }
+      }
+    }
+    img.onload = () => { applySize(); hpMediaReady.value = true }
+    img.onerror = () => { hpMediaReady.value = true }
     img.src = url
-    if (img.complete && img.naturalWidth) hpMediaReady.value = true  // already cached
+    if (img.complete && img.naturalWidth) { applySize(); hpMediaReady.value = true }
   }
 }
 
 function hpStart(item, itemEl) {
   if (!props.hoverPreviewEnabled || !item.thumbnail) return
   hpMediaReady.value = false
+  hpMediaSize.value = null
   const thumbEl = itemEl.querySelector('.dl-thumb') ?? itemEl
   const preloadMs = Math.min(500, Math.round(props.hoverPreviewDelayMs / 2))
   startHover(item, thumbEl, props.hoverPreviewDelayMs, preloadMs, preloadMedia)
@@ -696,12 +710,27 @@ function onSelectAll(e) {
 const isSelected = (item) => props.selectedItems.some(s => s.path === item.path)
 const isFocused  = (item) => props.focusedItem?.path === item.path
 
+const { ensureLoaded: ensureIconPack, resolveIcon, iconUrl, isAvailable: iconPackAvailable } = useIconPack()
+ensureIconPack()
+const _packIconErrors = ref(new Set())
+function onPackIconError(path) {
+  _packIconErrors.value = new Set(_packIconErrors.value).add(path)
+}
+
 function iconPath(item) {
   switch (item.kind) {
     case 'dir':      return mdiFolder
     case 'shortcut': return mdiLinkVariant
     default:         return mdiFile
   }
+}
+
+function itemIconUrl(item) {
+  if (_packIconErrors.value.has(item.path)) return null
+  if (item.icon) return iconUrl(item.icon)
+  if (!iconPackAvailable.value) return null
+  const name = resolveIcon(item.name, item.kind === 'dir')
+  return name ? iconUrl(name) : null
 }
 
 function formatBytes(bytes) {
@@ -1189,6 +1218,7 @@ function onKeyDown(event) {
   border-radius: 2px;
   overflow: hidden;
   background: var(--surface-alt);
+  background: transparent;
   flex-shrink: 0;
 }
 .dl-img {
@@ -1201,6 +1231,7 @@ function onKeyDown(event) {
   -webkit-user-drag: none;
 }
 .dl-icon { color: #9e9e9e; width: 48px; height: 48px; }
+.dl-pack-icon { width: 48px; height: 48px; object-fit: contain; }
 .dl-video-badge {
   position: absolute;
   width: auto;
@@ -1280,6 +1311,7 @@ span[contenteditable]:focus-within {
 .dl[data-layout="list"] .dl-thumb { width: 18px; height: 18px; background: transparent; }
 .dl[data-layout="list"] .dl-img { object-fit: contain; }
 .dl[data-layout="list"] .dl-icon { width: 16px; height: 16px; }
+.dl[data-layout="list"] .dl-pack-icon { width: 16px; height: 16px; }
 .dl[data-layout="list"] .dl-skeleton { display: none; }
 .dl[data-layout="list"] .dl-body { display: flex; align-items: center; flex: 1; margin-top: 0; }
 .dl[data-layout="list"] .dl-name {
@@ -1309,6 +1341,7 @@ span[contenteditable]:focus-within {
 .dl[data-layout="details"] .dl-thumb { width: 18px; height: 18px; background: transparent; }
 .dl[data-layout="details"] .dl-img { object-fit: contain; }
 .dl[data-layout="details"] .dl-icon { width: 16px; height: 16px; }
+.dl[data-layout="details"] .dl-pack-icon { width: 16px; height: 16px; }
 .dl[data-layout="details"] .dl-skeleton { display: none; }
 .dl[data-layout="details"] .dl-body { display: flex; align-items: center; flex: 1; margin-top: 0; min-width: 0; }
 .dl[data-layout="details"] .dl-name {
@@ -1333,10 +1366,31 @@ span[contenteditable]:focus-within {
 
 .dl[data-layout="gallery-grid"] .dl-check { top: 6px; left: 6px; }
 /* Thumb and image fill the square item absolutely */
-.dl[data-layout="gallery-grid"] .dl-thumb { position: absolute; inset: 0; height: 100%; width: 100%; border-radius: 0; background: var(--surface-alt); display: flex; align-items: center; justify-content: center; }
-.dl[data-layout="gallery-grid"] .dl-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.dl[data-layout="gallery-grid"] .dl-body { display: none; }
-.dl[data-layout="gallery-grid"] .dl-overlay { display: none; }
+.dl[data-layout="gallery-grid"] .dl-thumb {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  border-radius: 0;
+  background: var(--surface-alt);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dl[data-layout="gallery-grid"] .dl-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.dl[data-layout="gallery-grid"] .dl-body {
+  display: none;
+}
+.dl[data-layout="gallery-grid"] .dl-overlay {
+  display: none;
+}
 
 /* ── Gallery-mosaic ───────────────────────────────────────────────────── */
 
@@ -1358,6 +1412,7 @@ span[contenteditable]:focus-within {
   width: 100%;
   min-height: 80px;
   background: var(--surface-alt);
+  background: transparent;
   flex-shrink: 0;
 }
 .dl[data-layout="gallery-mosaic"] .dl-img {
@@ -1366,6 +1421,7 @@ span[contenteditable]:focus-within {
   object-fit: initial;
 }
 .dl[data-layout="gallery-mosaic"] .dl-icon { width: 32px; height: 32px; margin: 20px auto; }
+.dl[data-layout="gallery-mosaic"] .dl-pack-icon { width: 32px; height: 32px; margin: 20px auto; }
 .dl[data-layout="gallery-mosaic"] .dl-skeleton { display: none; }
 
 .dl[data-layout="gallery-mosaic"] .dl-body { padding: 3px 6px 5px; margin-top: 0; }
@@ -1397,6 +1453,7 @@ span[contenteditable]:focus-within {
   height: 0;
   padding-bottom: 56.25%;
   background: var(--surface-alt);
+  background: transparent;
   overflow: hidden;
   flex-shrink: 0;
   border-radius: 0;
@@ -1404,6 +1461,7 @@ span[contenteditable]:focus-within {
 .dl[data-layout="feed"] .dl-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .dl[data-layout="feed"] .dl-skeleton { position: absolute; inset: 0; }
 .dl[data-layout="feed"] .dl-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 40px; height: 40px; }
+.dl[data-layout="feed"] .dl-pack-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 40px; height: 40px; }
 
 .dl[data-layout="feed"] .dl-body { padding: 8px 10px 10px; margin-top: 0; }
 .dl[data-layout="feed"] .dl-name {
@@ -1524,12 +1582,14 @@ span[contenteditable]:focus-within {
   width: var(--nested-thumb, 30px);
   height: var(--nested-thumb, 30px);
   background: var(--surface-alt);
+  background: transparent;
   flex-shrink: 0;
   border-radius: 3px;
   margin-right: 6px;
 }
 .dl[data-layout="nested"] .dl-img { object-fit: cover; border-radius: 3px; }
 .dl[data-layout="nested"] .dl-icon { width: 20px; height: 20px; }
+.dl[data-layout="nested"] .dl-pack-icon { width: 20px; height: 20px; }
 .dl[data-layout="nested"] .dl-skeleton { display: block; border-radius: 3px; }
 .dl[data-layout="nested"] .dl-body { display: flex; align-items: center; flex: 1; margin-top: 0; min-width: 0; }
 .dl[data-layout="nested"] .dl-name {

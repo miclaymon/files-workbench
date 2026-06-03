@@ -144,13 +144,25 @@ func simpleListDir(dirPath string, excluded []string, includeMetadata, showHidde
 			}
 		}
 
+		icon := activeIconTheme.resolve(name, kind == "dir")
+		var iconField, iconOpenField any
+		if icon != "" {
+			iconField = icon
+		}
+		if kind == "dir" {
+			if open := activeIconTheme.resolveOpen(name); open != "" {
+				iconOpenField = open
+			}
+		}
 		items = append(items, map[string]any{
-			"name":   name,
-			"path":   entryPath,
-			"kind":   kind,
-			"size":   size,
-			"mtime":  mtime,
-			"hidden": hidden,
+			"name":      name,
+			"path":      entryPath,
+			"kind":      kind,
+			"size":      size,
+			"mtime":     mtime,
+			"hidden":    hidden,
+			"icon":      iconField,
+			"icon_open": iconOpenField,
 		})
 	}
 

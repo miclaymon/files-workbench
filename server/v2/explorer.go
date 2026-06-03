@@ -19,6 +19,7 @@ type explorerItem struct {
 	Type         string   `json:"type"`
 	Hidden       bool     `json:"hidden"`
 	Icon         *string  `json:"icon"`
+	IconOpen     *string  `json:"icon_open"`
 	URI          *string  `json:"uri"`
 	Size         *int64   `json:"size"`
 	DateCreated  *float64 `json:"date_created"`
@@ -169,11 +170,24 @@ func explorerListDir(dirPath string, excluded []string, showHidden, includeMetad
 			continue
 		}
 
+		isDir := itemType == "directory"
+		icon := activeIconTheme.resolve(name, isDir)
+		var iconPtr, iconOpenPtr *string
+		if icon != "" {
+			iconPtr = &icon
+		}
+		if isDir {
+			if open := activeIconTheme.resolveOpen(name); open != "" {
+				iconOpenPtr = &open
+			}
+		}
 		item := explorerItem{
-			Name:   name,
-			Path:   entryPath,
-			Type:   itemType,
-			Hidden: hidden,
+			Name:     name,
+			Path:     entryPath,
+			Type:     itemType,
+			Hidden:   hidden,
+			Icon:     iconPtr,
+			IconOpen: iconOpenPtr,
 		}
 
 		if includeMetadata {

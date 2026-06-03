@@ -13,20 +13,74 @@
     />
 
     <div class="breadcrumb-overlay" :class="{ hidden: isInputFocused }">
-      <div class="breadcrumb-container">
-        <template v-for="(segment, index) in allSegments" :key="index">
+      <div ref="containerRef" class="breadcrumb-container">
+
+        <!-- Collapsed mode: first 2 + ··· + last 2 -->
+        <template v-if="showCollapsed">
           <div class="breadcrumb-item">
-            <div class="breadcrumb-chip" :class="{ 'root-chip': index === 0 }" @click.stop="navigateToSegment(index)">
-              <span class="chip-text">{{ segment }}</span>
+            <div class="breadcrumb-chip root-chip" @click.stop="navigateToSegment(0)">
+              <span class="chip-text">{{ allSegments[0] }}</span>
             </div>
-            <div v-if="index < allSegments.length - 1" class="breadcrumb-chevron" @click.stop="showChevronDropdown('segment', index, $event)">
+            <div class="breadcrumb-chevron" @click.stop="showChevronDropdown('segment', 0, $event)">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
               </svg>
             </div>
           </div>
+          <div class="breadcrumb-item">
+            <div class="breadcrumb-chip" @click.stop="navigateToSegment(1)">
+              <span class="chip-text">{{ allSegments[1] }}</span>
+            </div>
+            <div class="breadcrumb-chevron" @click.stop="showChevronDropdown('segment', 1, $event)">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+              </svg>
+            </div>
+          </div>
+          <div class="breadcrumb-item">
+            <div class="breadcrumb-overflow-chip" title="Show hidden segments" @click.stop="showOverflowDropdown($event)">
+              <span>···</span>
+            </div>
+            <div class="breadcrumb-chevron" @click.stop="showChevronDropdown('segment', collapsedEndStartIndex - 1, $event)">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+              </svg>
+            </div>
+          </div>
+          <div class="breadcrumb-item">
+            <div class="breadcrumb-chip" @click.stop="navigateToSegment(collapsedEndStartIndex)">
+              <span class="chip-text">{{ allSegments[collapsedEndStartIndex] }}</span>
+            </div>
+            <div class="breadcrumb-chevron" @click.stop="showChevronDropdown('segment', collapsedEndStartIndex, $event)">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+              </svg>
+            </div>
+          </div>
+          <div class="breadcrumb-item">
+            <div class="breadcrumb-chip" @click.stop="navigateToSegment(collapsedEndStartIndex + 1)">
+              <span class="chip-text">{{ allSegments[collapsedEndStartIndex + 1] }}</span>
+            </div>
+          </div>
         </template>
 
+        <!-- Full mode (default) -->
+        <template v-else>
+          <template v-for="(segment, index) in allSegments" :key="index">
+            <div class="breadcrumb-item">
+              <div class="breadcrumb-chip" :class="{ 'root-chip': index === 0 }" @click.stop="navigateToSegment(index)">
+                <span class="chip-text">{{ segment }}</span>
+              </div>
+              <div v-if="index < allSegments.length - 1" class="breadcrumb-chevron" @click.stop="showChevronDropdown('segment', index, $event)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+                </svg>
+              </div>
+            </div>
+          </template>
+        </template>
+
+        <!-- Final chevron (always shown) -->
         <div class="breadcrumb-item">
           <div class="breadcrumb-chevron final-chevron" title="Show subdirectories" @click.stop="showChevronDropdown('current', -1, $event)">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
@@ -34,6 +88,7 @@
             </svg>
           </div>
         </div>
+
       </div>
     </div>
 
@@ -51,8 +106,8 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick } from 'vue'
-import { mdiFolder } from '@mdi/js'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { mdiFolder, mdiSubdirectoryArrowRight } from '@mdi/js'
 import FloatingMenu from './FloatingMenu.vue'
 import { fsListDir } from '~/lib/fs-api.js'
 
@@ -66,10 +121,16 @@ const emit = defineEmits(['navigate'])
 const isInputFocused = ref(false)
 const fullPathValue = ref(props.path)
 const fullPathInput = ref(null)
+const containerRef = ref(null)
 
 const activeDropdown = ref(null)
 const dropdownPosition = ref({ x: 0, y: 0 })
 const dropdownItems = ref([])
+
+// Overflow collapse state
+const COLLAPSE_EACH_END = 2
+const isCollapsed = ref(false)
+let _cachedFullWidth = null
 
 const pathInfo = computed(() => {
   if (!props.path || props.path === '/') return { root: '/', rootType: 'linux', segments: [] }
@@ -95,6 +156,16 @@ const pathInfo = computed(() => {
 const pathSegments = computed(() => pathInfo.value.segments)
 
 const allSegments = computed(() => [pathInfo.value.root, ...pathInfo.value.segments])
+
+const hiddenSegments = computed(() => {
+  const n = allSegments.value.length
+  if (n <= COLLAPSE_EACH_END * 2) return []
+  return allSegments.value.slice(COLLAPSE_EACH_END, n - COLLAPSE_EACH_END)
+})
+
+const showCollapsed = computed(() => isCollapsed.value && hiddenSegments.value.length > 0)
+
+const collapsedEndStartIndex = computed(() => allSegments.value.length - COLLAPSE_EACH_END)
 
 function navigateTo(path) {
   if (props.changeTabPath) props.changeTabPath(path)
@@ -122,7 +193,7 @@ function buildPath(segments) {
 }
 
 function handleContainerClick(event) {
-  const isClickable = event.target.closest('.breadcrumb-chip, .breadcrumb-chevron')
+  const isClickable = event.target.closest('.breadcrumb-chip, .breadcrumb-chevron, .breadcrumb-overflow-chip')
   if (!isClickable && !isInputFocused.value) fullPathInput.value?.focus()
 }
 
@@ -163,11 +234,51 @@ async function showChevronDropdown(type, index, event) {
   activeDropdown.value = `${type}-${index}`
 }
 
+function showOverflowDropdown(event) {
+  const rect = event.currentTarget.getBoundingClientRect()
+  dropdownPosition.value = { x: rect.left, y: rect.bottom + 4 }
+  dropdownItems.value = hiddenSegments.value.map((seg, i) => ({
+    key: `overflow-${i}`,
+    label: seg,
+    icon: mdiSubdirectoryArrowRight,
+    action: () => navigateToSegment(COLLAPSE_EACH_END + i)
+  }))
+  activeDropdown.value = 'overflow'
+}
+
 function hideDropdown() { activeDropdown.value = null; dropdownItems.value = [] }
+
+// Overflow collapse detection
+function measure() {
+  const el = containerRef.value
+  if (!el) return
+  if (!isCollapsed.value) {
+    if (el.scrollWidth > el.clientWidth) {
+      _cachedFullWidth = el.scrollWidth
+      isCollapsed.value = true
+    }
+  } else if (_cachedFullWidth) {
+    if (el.clientWidth >= _cachedFullWidth) {
+      isCollapsed.value = false
+      _cachedFullWidth = null
+    }
+  }
+}
+
+let _ro = null
+onMounted(() => {
+  _ro = new ResizeObserver(measure)
+  if (containerRef.value) _ro.observe(containerRef.value)
+  nextTick(measure)
+})
+onUnmounted(() => { _ro?.disconnect() })
 
 watch(() => props.path, (newPath) => {
   if (!isInputFocused.value) fullPathValue.value = newPath
   hideDropdown()
+  isCollapsed.value = false
+  _cachedFullWidth = null
+  nextTick(measure)
 })
 </script>
 
@@ -209,7 +320,7 @@ watch(() => props.path, (newPath) => {
 
 .breadcrumb-container {
   display: flex; align-items: center; gap: 0;
-  width: 100%; overflow-x: auto; white-space: nowrap;
+  width: 100%; overflow: hidden; white-space: nowrap;
   pointer-events: auto;
 }
 
@@ -237,7 +348,21 @@ watch(() => props.path, (newPath) => {
 .breadcrumb-chevron:hover { background: var(--hover-background); color: var(--text); }
 .final-chevron:hover { background: var(--accent-transparent) !important; }
 
-.breadcrumb-container::-webkit-scrollbar { height: 3px; }
-.breadcrumb-container::-webkit-scrollbar-track { background: transparent; }
-.breadcrumb-container::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
+.breadcrumb-overflow-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 1px 6px; margin: 0 2px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer; flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 14px; letter-spacing: 0.05em;
+  line-height: 1; transition: all 0.15s ease;
+  user-select: none;
+}
+.breadcrumb-overflow-chip:hover {
+  background: var(--hover-background);
+  border-color: var(--accent);
+  color: var(--text);
+}
 </style>

@@ -109,13 +109,24 @@ Functional areas:
 - **fs** — file system CRUD: list directory, stat, rename, create file/dir, write file, open with system app
 - **explorer** — directory tree listing: root nodes, home directory, drives, lazy-expandable subtree, exclusion categories
 - **media** — thumbnails (image resize via `golang.org/x/image`; video frame and audio artwork extraction via ffmpeg), file metadata, raw file serving
+- **icons** — serve icon pack manifest (`/icons/manifest`) and individual SVG icons by definition name (`/icons/svg?name=…`)
 - **preferences** — read and write user preferences JSON, serve the preferences JSON Schema
 - **perf** — client-side performance log ingestion
 
 Thumbnail generation is handled by `thumbnail.go` and results are stored in a disk-based cache keyed by file path, size, and type. `blacklist.go` loads path exclusion rules from a server-side config file rather than URL parameters.
+
+### Icon pack plugin system
+
+`plugins.go` loads third-party icon packs from `config/plugins/` at startup. Each plugin directory contains a `plugin.json` manifest. The only supported adapter is `vscode-icon-theme`, which reads a VSCode extension icon theme JSON file and builds lookup tables for file extensions, file names, and folder names.
+
+At startup, the first successfully-loaded plugin becomes `activeIconTheme`. Icon names are resolved server-side and embedded in every list and explorer API response as `icon` and `icon_open` string fields. `resolve()` and `resolveOpen()` only return icon names whose SVG files exist on disk, cascading through fallbacks gracefully (named-open → default-open → named-closed → default-closed).
+
+The client composable `useIconPack.js` is a module-level singleton that fetches the manifest once and provides `resolveIcon()`, `iconUrl()`, and `isAvailable` to all components. `<img>` elements that load pack icons fall back to MDI icons via `@error` handlers if the SVG request fails.
 
 A legacy FastAPI/Python server lives in `server/v1/` and is no longer actively used.
 
 ## Configuration system
 
 User configuration is read from `config/` at startup. The app merges `user-*.json` over `default-*.json` using a shallow merge. JSON Schema files (`*.schema.json`) validate the merged result. Unknown keys in user files are ignored rather than causing errors, to support forward-compatibility when the schema evolves.
+
+Plugins are loaded from `config/plugins/`. Each subdirectory is a plugin; the server reads `plugin.json` and initializes any supported plugins at startup. Plugin directories are not gitignored — they are part of the repo and can contain bundled or cloned third-party assets.

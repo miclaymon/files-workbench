@@ -200,6 +200,9 @@ import Tooltip from './Tooltip.vue'
 import FloatingMenu from './FloatingMenu.vue'
 import { mdiFolder } from '@mdi/js'
 import { fsDirSize } from '~/lib/fs-api.js'
+import { useDebugLog } from '~/composables/useDebugLog.js'
+
+const { log } = useDebugLog()
 
 const props = defineProps({
   items: { type: Array, required: true },
@@ -293,11 +296,13 @@ const sortDir = ref('asc')
 function handleSortChange({ field, dir }) {
   sortField.value = field
   sortDir.value = dir
+  log('sort', `Sort: ${field} ${dir}`)
 }
 
 function clearSort() {
   sortField.value = 'name'
   sortDir.value = 'asc'
+  log('sort', 'Sort reset')
 }
 
 const filterText = ref('')
@@ -357,12 +362,14 @@ function toggleFilterType(type) {
   if (s.has(type)) s.delete(type)
   else s.add(type)
   filterTypes.value = s
+  log('filter', `Type filter: ${type} ${s.has(type) ? 'on' : 'off'}`)
 }
 
 function clearFilter() {
   filterTypes.value = new Set()
   filterSizePreset.value = ''
   filterDatePreset.value = ''
+  log('filter', 'Filters cleared')
 }
 
 const isFilterActive = computed(() =>
@@ -454,8 +461,13 @@ const processedItems = computed(() => {
   return result
 })
 
+watch(filterText, (v) => { if (v) log('filter', 'Text filter', v) })
+watch(filterSizePreset, (v) => { if (v) log('filter', 'Size filter', v) })
+watch(filterDatePreset, (v) => { if (v) log('filter', 'Date filter', v) })
+
 // ── Zoom ──────────────────────────────────────────────────────────────────
 const zoomLevel = ref(50)
+watch(zoomLevel, (v) => log('zoom', `Zoom ${v}%`))
 
 // ── Close menus on outside click ──────────────────────────────────────────
 function onDocClick(e) {

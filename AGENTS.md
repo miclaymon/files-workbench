@@ -41,6 +41,7 @@ Workbench.vue                  Root shell: titlebar, activity bar, sidebar, tab 
 | `useDrag.js` | Custom ghost-clone drag for directory items. 200 ms activation delay. `onActivate` callback receives the mousedown item and returns the full array of items being dragged (auto-selects unselected items). |
 | `useTreeDrag.js` | Module-level singleton drag for tree nodes. Creates a chip-style ghost (icon + name). Valid drop targets: `type === 'directory'` nodes only; root/drive nodes and files are not valid targets. Shared refs mean all `TreeItem` instances see the same `draggingNode`/`dragOverNode`. |
 | `useDragAndDrop.js` | Native HTML5 drag for the tab bar (reordering). Separate from the file drag systems. |
+| `useIconPack.js` | Module-level singleton composable for the icon pack. Fetches `/icons/manifest` once; exposes `ensureLoaded()`, `resolveIcon(filename, isDir)`, `iconUrl(iconName)`, and `isAvailable`. All components that need pack icons call `ensureLoaded()` once at mount time. |
 
 ## Nitro server routes (dev proxy workaround)
 
@@ -64,9 +65,14 @@ All routes are prefixed with `/_api/v2/`.
 | `thumbnail.go` | `resizeImage`, `videoThumbnail` (ffmpeg), `audioThumbnail` (ffmpeg), disk-based thumbnail cache |
 | `preferences.go` | `handlePreferencesGet`, `handlePreferencesPut`, `handlePreferencesSchema` |
 | `blacklist.go` | Path exclusion rules loaded from server-side config |
+| `plugins.go` | Plugin loader; `loadPlugins()` reads `config/plugins/*/plugin.json`; `iconTheme` struct with `resolve()`, `resolveOpen()`, `has()`, `pick()`; `activeIconTheme` global |
+| `icons.go` | `handleIconsManifest` — returns icon lookup tables; `handleIconsSvg` — serves SVG by definition name (404 returns `image/svg+xml` Content-Type to prevent ORB errors while firing `@error`) |
 | `perf.go` | `handlePerf` — client performance log ingestion |
 
 ## Known gotchas
+
+### Icon SVG 404 must return `image/svg+xml`
+When a pack icon name has no backing SVG file, `handleIconsSvg` returns HTTP 404 but **with `Content-Type: image/svg+xml`**. This is intentional: a JSON or plain-text 404 triggers `ERR_BLOCKED_BY_ORB` in Chrome (cross-origin resource blocking for non-image MIME types on `<img>`), which prevents the `@error` handler from firing. By returning an image MIME type the browser lets the `@error` callback run and fall back to the MDI icon.
 
 ### `.ts` files detected as video
 Some MIME detection logic returns `video/mp2t` for `.ts` files (MPEG-2 transport stream). Always check extension against known text/code extension sets **before** checking MIME type in preview logic.
@@ -118,7 +124,24 @@ config/
 │   ├── dark.json                  Default dark theme
 │   ├── light.json                 Light theme
 │   └── black.json                 True-black / OLED theme
-└── plugins/                       Third-party plugins (empty)
+└── plugins/
+    └── material-icon-theme/
+        ├── plugin.json            Plugin manifest (id, type, adapter, source, theme)
+        └── vscode-material-icon-theme/   Cloned repo; dist/material-icons.json is the theme file
 ```
 
 `user-preferences.json` and `user-keybindings.json` are gitignored. The app merges user values over defaults at startup.
+
+### Icon pack plugins
+
+Each subdirectory under `config/plugins/` is a plugin. The server reads `plugin.json` at startup. Supported fields:
+
+| Field | Description |
+|---|---|
+| `id` | Unique plugin identifier |
+| `type` | Must be `"icon-pack"` |
+| `adapter` | Must be `"vscode-icon-theme"` |
+| `source` | Path to the cloned extension repo, relative to the plugin directory |
+| `theme` | Path to the theme JSON inside `source` (auto-detected from `package.json` if empty) |
+
+The server resolves icon names and embeds them as `icon` and `icon_open` string fields in all `list_dir` and explorer API responses. Missing SVGs fall back gracefully — the client falls back to MDI icons via `@error` on `<img>` elements.
