@@ -22,6 +22,7 @@
 import { computed, ref, watch } from 'vue'
 import TreeList from './TreeList.vue'
 import { explorerList } from '~/lib/explorer-api.js'
+import { useTreeDrag } from '~/composables/useTreeDrag.js'
 
 // Falls back to legacy localStorage key when no explorerState prop is supplied
 const LEGACY_KEY = 'workbench-explorer-tree'
@@ -45,7 +46,10 @@ const props = defineProps({
   explorerState: { type: Object, default: null },
 })
 
-const emit = defineEmits(['select', 'open', 'selectAll', 'paste', 'rename', 'state-change'])
+const emit = defineEmits(['select', 'open', 'selectAll', 'paste', 'rename', 'move', 'state-change'])
+
+// Register the tree-drag drop callback so moves bubble up to Workbench.
+useTreeDrag({ onDrop: ({ dragged, target }) => emit('move', { items: [dragged], destPath: target.path }) })
 
 // Prefer workspace-provided state; fall back to legacy key
 const _initial = props.explorerState ?? loadLegacyState()

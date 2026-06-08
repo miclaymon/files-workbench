@@ -66,7 +66,13 @@ function createGhost(node) {
   return el
 }
 
-export function useTreeDrag({ delay = 200 } = {}) {
+// Module-level drop callback so all TreeItem instances can share it.
+// Registered once by ExplorerTree; fires when a drag is released over a valid target.
+let _onDropCallback = null
+
+export function useTreeDrag({ delay = 200, onDrop } = {}) {
+  if (onDrop) _onDropCallback = onDrop
+
   function isValidDropTarget(node) {
     return node.type === 'directory'
   }
@@ -108,6 +114,8 @@ export function useTreeDrag({ delay = 200 } = {}) {
       if (rafId) cancelAnimationFrame(rafId)
       if (ghost) { ghost.remove(); ghost = null }
       const hadDrag = isDragging.value
+      const dropTarget = dragOverNode.value
+      const dragSource = draggingNode.value
       draggingNode.value = null
       dragOverNode.value = null
       isDragging.value = false
@@ -116,6 +124,10 @@ export function useTreeDrag({ delay = 200 } = {}) {
       if (hadDrag) {
         wasDragging.value = true
         setTimeout(() => { wasDragging.value = false }, 0)
+        // Fire the drop callback if released over a valid target
+        if (dropTarget && dragSource && dropTarget.path !== dragSource.path && _onDropCallback) {
+          _onDropCallback({ dragged: dragSource, target: dropTarget })
+        }
       }
     }
 

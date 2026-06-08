@@ -33,10 +33,15 @@ Workbench.vue                  Root shell: titlebar, activity bar, sidebar, tab 
 
 | File | Purpose |
 |---|---|
-| `lib/api-config.js` | `API_BASE`, `API_V`, `MEDIA_BASE` constants derived from env vars. |
-| `lib/fs-api.js` | FS API calls: `fsStat`, `fsListDir`, `fsRename`, etc. |
+| `lib/api-config.js` | `API_BASE`, `CONTROL_BASE`, `API_V`, `MEDIA_BASE` constants derived from env vars. |
+| `lib/fs-api.js` | FS API calls: `fsStat`, `fsListDir`, `fsArchiveList`, `fsExeInfo`, read-only ops. Write ops are now routed through `useFileOpsQueue` / `sw-queue`. |
+| `lib/sw-queue.js` | Client bridge to the service worker. `swQueue.enqueue(kind, params)` adds an op; `swQueue.execute(opIds)` drains the SW queue and returns an array of Promises. Falls back to direct fetch when SW is unavailable. |
 | `lib/explorer-api.js` | Explorer tree API calls. |
 | `lib/perf-log.js` | Client-side performance timing helpers. |
+| `public/sw.js` | Service worker. Maintains a per-client op queue (keyed by `event.source.id`). Handles `INIT`, `ENQUEUE`, `EXECUTE`, `CLEAR` messages. `EXECUTE` fires all queued ops concurrently via fetch and replies `OP_COMPLETE`/`OP_ERROR` per op. |
+| `plugins/sw.client.js` | Registers the service worker on app startup (fire-and-forget; fallback handles early ops). |
+| `useFileOpsQueue.js` | Module-level queue shared across the app. `enqueue({ label, kind, params })` routes through `swQueue`; in deferred mode ops accumulate until `flush()`. Replaces old `{ execute: fn }` closure pattern. |
+| `useActionHistory.js` | Global undo/redo stack. `push({ label, undo, redo })` adds a reversible action. `undo()` / `redo()` execute and shift between stacks. |
 | `useClickDebounce.js` | Single vs double-click disambiguation. Modifier keys (Ctrl/Shift/Meta) fire immediately. Exposes `cancel()` to flush pending timers (used when rename mode activates). |
 | `useDrag.js` | Custom ghost-clone drag for directory items. 200 ms activation delay. `onActivate` callback receives the mousedown item and returns the full array of items being dragged (auto-selects unselected items). |
 | `useTreeDrag.js` | Module-level singleton drag for tree nodes. Creates a chip-style ghost (icon + name). Valid drop targets: `type === 'directory'` nodes only; root/drive nodes and files are not valid targets. Shared refs mean all `TreeItem` instances see the same `draggingNode`/`dragOverNode`. |
@@ -55,12 +60,15 @@ In production these routes are unused; the client calls `/_api/v2/` directly.
 
 ## Go server handlers (`server/v2/`)
 
-All routes are prefixed with `/_api/v2/`.
+The Go process starts **two independent servers**: a read-only data server (port 8001, `PORT` env) and a mutating control server (port 8002, `CONTROL_PORT` env). All routes are prefixed with `/_api/v2/`.
 
 | File | Key handlers |
 |---|---|
-| `main.go` | Route registration, CORS middleware, server startup |
-| `fs.go` | `handleFsStat`, `handleFsListDir`, `handleFsPreview`, `handleFsCreateFile`, `handleFsCreateDir`, `handleFsWriteFile`, `handleFsOpenWithSystem` |
+| `main.go` | `registerDataRoutes` / `registerControlRoutes`, CORS middleware, dual-server startup with `sync.WaitGroup` |
+| `fs.go` | `handleFsStat`, `handleFsListDir`, `handleFsPreview`, `handleFsCreateFile`, `handleFsCreateDir`, `handleFsWriteFile`, `handleFsOpenWithSystem`, `handleFsRename`, `handleFsMove`, `handleFsCopy`, `handleFsDelete`, `handleFsDeleteElevated`, `handleFsTrash`, `handleFsTrashElevated`, `handleFsCompress`, `handleFsDecompress`. Files with archive extensions get `kind: "archive"` in listing responses. |
+| `archive.go` | `handleFsArchiveLs` — lists archive contents as virtual directory entries. `handleArchiveCapabilities` — reports which tools (7z, unrar) are available. Supports ZIP, TAR/TAR.GZ/TAR.BZ2/TAR.XZ, 7Z (via `7z l -slt`), RAR (via `unrar lt`). `filterArchiveEntries` synthesizes implied directory nodes for archives that omit them. |
+| `exe.go` | `handleMediaExeIcon` — extracts the best-resolution icon from a Windows PE `.rsrc` section (PNG direct or DIB wrapped in a minimal ICO). `handleMediaExeInfo` — parses `VS_VERSIONINFO` to return `{ name, publisher, version, description }`. |
+| `permissions.go` | `isProtectedPath` — blocks operations on critical OS paths (root, /etc, /sys, etc.). `requiresElevation` — detects whether a path needs sudo/admin and returns the elevation method (`sudo_password` on Linux/macOS, `uac` on Windows). |
 | `explorer.go` | `handleExplorer`, `handleExplorerRoot`, `handleExplorerHome`, `handleExplorerDrives`, `handleExplorerCategories` |
 | `media.go` | `handleMediaImage`, `handleMediaThumbnail`, `handleMediaPreview`, `handleMediaPreviewText`, `handleMediaMetadata`, `handleMediaArtwork`, `handleMediaCapabilities` |
 | `thumbnail.go` | `resizeImage`, `videoThumbnail` (ffmpeg), `audioThumbnail` (ffmpeg), disk-based thumbnail cache |
@@ -94,6 +102,24 @@ Binary responses and large text routed through `/_api/v2/` are silently truncate
 
 ### DirectoryLayout view modes
 `DirectoryLayout.vue` is a single unified component that handles all view layouts (grid, list, details, gallery-grid, gallery-mosaic, feed, and all grid size variants). The active layout is controlled by the `layout` prop applied as a `data-layout` attribute on the root element; all layout-specific styling is CSS-driven. Old per-layout components (`DirectoryGridLayout.vue`, `DirectoryListLayout.vue`, `DirectoryTableLayout.vue`, `DirectoryFeedLayout.vue`, `DirectoryGalleryLayout.vue`, `DirectoryMosaicLayout.vue`) remain in the repo but are no longer wired into the active rendering path.
+
+### `kind: "archive"` — archives behave like navigable directories
+
+Files with archive extensions (`.zip`, `.tar`, `.7z`, `.rar`, `.tar.gz`, etc.) get `kind: "archive"` from the server instead of `kind: "file"`. On the client this means:
+- Double-click navigates into the archive as a virtual directory (`path + '::'`)
+- They sort before regular files (alongside `kind: "dir"` / `kind: "app"`)
+- The Nested layout shows an expand toggle for them
+- `DirectoryPanel` filter/sort treat them like directories (always shown, sorted first)
+
+The `::` separator in a tab path signals archive mode throughout the client. `DirectoryTab.fetchItems` checks for `::` and calls `fsArchiveList` instead of `fsListDir`.
+
+### Data server vs control server
+
+File-read requests (`/_api/v2/fs/list_dir`, media, etc.) go to port 8001 (proxied in dev via Nuxt). File-write requests (`rename`, `move`, `delete`, etc.) go directly to port 8002 (`CONTROL_BASE`). The service worker also targets `CONTROL_BASE` for all queued operations. Do not register write routes on the data mux or vice versa.
+
+### Service worker operations queue
+
+All mutating file ops are enqueued via `useFileOpsQueue.enqueue({ label, kind, params })` — **not** via direct `fs-api.js` calls. The op is serialised and sent to the SW as `{ kind, params }`; the SW maps kind → endpoint using `ENDPOINTS` in `sw.js`. If the SW is unavailable, `sw-queue.js` falls back to a direct fetch with the same ENDPOINTS map. Adding a new write endpoint requires updating `ENDPOINTS` in **both** `client/public/sw.js` and `client/lib/sw-queue.js`.
 
 ### Sort and filter live in DirectoryPanel
 `DirectoryPanel.vue` owns all sort/filter state and applies it client-side via a `processedItems` computed property (filter then sort, directories always first). `DirectoryLayout` receives the already-processed item list — it does not sort or filter itself.

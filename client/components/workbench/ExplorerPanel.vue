@@ -32,6 +32,7 @@
         @selectAll="$emit('selectAll', $event)"
         @paste="$emit('paste', $event)"
         @rename="$emit('rename', $event)"
+        @move="$emit('move', $event)"
         @state-change="$emit('state-change', $event)"
       />
       <div v-else class="state-message">Flat list view not yet implemented.</div>
@@ -62,7 +63,7 @@ const props = defineProps({
   explorerState: { type: Object, default: null },
 })
 
-const emit = defineEmits(['select', 'dblclick', 'contextmenu', 'toggleSelect', 'selectAll', 'paste', 'rename', 'state-change'])
+const emit = defineEmits(['select', 'dblclick', 'contextmenu', 'toggleSelect', 'selectAll', 'paste', 'rename', 'move', 'state-change'])
 
 const loading = ref(false)
 const error = ref('')

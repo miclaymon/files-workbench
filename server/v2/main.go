@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 )
 
 const version = "v2"
@@ -35,16 +36,35 @@ func main() {
 
 	loadPlugins()
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8001"
+	dataPort := os.Getenv("PORT")
+	if dataPort == "" {
+		dataPort = "8001"
+	}
+	controlPort := os.Getenv("CONTROL_PORT")
+	if controlPort == "" {
+		controlPort = "8002"
 	}
 
-	mux := http.NewServeMux()
-	registerRoutes(mux)
+	dataMux := http.NewServeMux()
+	controlMux := http.NewServeMux()
+	registerDataRoutes(dataMux)
+	registerControlRoutes(controlMux)
 
-	log.Printf("Files Workbench API %s listening on :%s", version, port)
-	log.Fatal(http.ListenAndServe(":"+port, cors(mux)))
+	var wg sync.WaitGroup
+	serve := func(label, port string, h http.Handler) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			log.Printf("Files Workbench %s server (%s) listening on :%s", version, label, port)
+			if err := http.ListenAndServe(":"+port, cors(h)); err != nil {
+				log.Fatalf("%s server: %v", label, err)
+			}
+		}()
+	}
+
+	serve("data", dataPort, dataMux)
+	serve("control", controlPort, controlMux)
+	wg.Wait()
 }
 
 // cors adds permissive CORS headers to every response.
@@ -61,24 +81,19 @@ func cors(next http.Handler) http.Handler {
 	})
 }
 
-func registerRoutes(mux *http.ServeMux) {
-	// Health
+// registerDataRoutes registers all read-only GET endpoints on the data server.
+func registerDataRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", handleHealth)
-
-	// App
 	mux.HandleFunc("GET "+apiPrefix+"/app/init", handleAppInit)
 
-	// Filesystem
+	// Filesystem — reads
 	mux.HandleFunc("GET "+apiPrefix+"/fs/stat", handleFsStat)
 	mux.HandleFunc("GET "+apiPrefix+"/fs/list_dir", handleFsListDir)
 	mux.HandleFunc("GET "+apiPrefix+"/fs/dir_size", handleFsDirSize)
 	mux.HandleFunc("GET "+apiPrefix+"/fs/preview", handleFsPreview)
-	mux.HandleFunc("POST "+apiPrefix+"/fs/open_with_system", handleFsOpenWithSystem)
-	mux.HandleFunc("POST "+apiPrefix+"/fs/create_file", handleFsCreateFile)
-	mux.HandleFunc("POST "+apiPrefix+"/fs/create_dir", handleFsCreateDir)
-	mux.HandleFunc("POST "+apiPrefix+"/fs/write_file", handleFsWriteFile)
+	mux.HandleFunc("GET "+apiPrefix+"/fs/archive/capabilities", handleArchiveCapabilities)
+	mux.HandleFunc("GET "+apiPrefix+"/fs/archive/ls", handleFsArchiveLs)
 	mux.HandleFunc("GET "+apiPrefix+"/fs/customization", handleFsCustomizationGet)
-	mux.HandleFunc("PUT "+apiPrefix+"/fs/customization", handleFsCustomizationPut)
 
 	// Media
 	mux.HandleFunc("GET "+apiPrefix+"/media/capabilities", handleMediaCapabilities)
@@ -88,6 +103,8 @@ func registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+apiPrefix+"/media/preview/text", handleMediaPreviewText)
 	mux.HandleFunc("GET "+apiPrefix+"/media/metadata", handleMediaMetadata)
 	mux.HandleFunc("GET "+apiPrefix+"/media/artwork", handleMediaArtwork)
+	mux.HandleFunc("GET "+apiPrefix+"/media/exe_icon", handleMediaExeIcon)
+	mux.HandleFunc("GET "+apiPrefix+"/media/exe_info", handleMediaExeInfo)
 
 	// Explorer
 	mux.HandleFunc("GET "+apiPrefix+"/Explorer/categories", handleExplorerCategories)
@@ -96,16 +113,39 @@ func registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+apiPrefix+"/Explorer/drives", handleExplorerDrives)
 	mux.HandleFunc("GET "+apiPrefix+"/Explorer", handleExplorer)
 
-	// Preferences
+	// Preferences — reads
 	mux.HandleFunc("GET "+apiPrefix+"/preferences/schema", handlePreferencesSchema)
 	mux.HandleFunc("GET "+apiPrefix+"/preferences", handlePreferencesGet)
-	mux.HandleFunc("PUT "+apiPrefix+"/preferences", handlePreferencesPut)
 
-	// Icon packs (plugin-provided)
+	// Icon packs
 	mux.HandleFunc("GET "+apiPrefix+"/icons/manifest", handleIconsManifest)
 	mux.HandleFunc("GET "+apiPrefix+"/icons/svg", handleIconsSvg)
+}
 
-	// Perf
+// registerControlRoutes registers all mutating POST/PUT endpoints on the control server.
+func registerControlRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /health", handleHealth)
+
+	// Filesystem — writes
+	mux.HandleFunc("POST "+apiPrefix+"/fs/open_with_system", handleFsOpenWithSystem)
+	mux.HandleFunc("POST "+apiPrefix+"/fs/create_file", handleFsCreateFile)
+	mux.HandleFunc("POST "+apiPrefix+"/fs/create_dir", handleFsCreateDir)
+	mux.HandleFunc("POST "+apiPrefix+"/fs/write_file", handleFsWriteFile)
+	mux.HandleFunc("POST "+apiPrefix+"/fs/rename", handleFsRename)
+	mux.HandleFunc("POST "+apiPrefix+"/fs/move", handleFsMove)
+	mux.HandleFunc("POST "+apiPrefix+"/fs/copy", handleFsCopy)
+	mux.HandleFunc("POST "+apiPrefix+"/fs/delete", handleFsDelete)
+	mux.HandleFunc("POST "+apiPrefix+"/fs/delete/elevated", handleFsDeleteElevated)
+	mux.HandleFunc("POST "+apiPrefix+"/fs/trash", handleFsTrash)
+	mux.HandleFunc("POST "+apiPrefix+"/fs/trash/elevated", handleFsTrashElevated)
+	mux.HandleFunc("POST "+apiPrefix+"/fs/compress", handleFsCompress)
+	mux.HandleFunc("POST "+apiPrefix+"/fs/decompress", handleFsDecompress)
+	mux.HandleFunc("PUT "+apiPrefix+"/fs/customization", handleFsCustomizationPut)
+
+	// Preferences — writes
+	mux.HandleFunc("PUT "+apiPrefix+"/preferences", handlePreferencesPut)
+
+	// Perf logging
 	mux.HandleFunc("POST "+apiPrefix+"/perf", handlePerf)
 }
 
@@ -115,7 +155,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func handleAppInit(w http.ResponseWriter, r *http.Request) {
 	home, _ := os.UserHomeDir()
-	jsonOK(w, map[string]string{"homePath": home})
+	jsonOK(w, map[string]string{"homePath": home, "platform": runtime.GOOS})
 }
 
 // jsonOK writes a JSON 200 response.

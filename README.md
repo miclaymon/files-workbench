@@ -12,6 +12,13 @@ A desktop file manager built with Electron + Nuxt 3 (Vue 3) on the front end and
 - Hover preview overlay: hovering a grid item shows a floating media preview centered on the thumbnail
 - Media thumbnails: images resized server-side; video frame extraction and audio artwork via ffmpeg; disk-based thumbnail cache
 - Icon pack plugin system: VSCode icon theme adapter with `vscode-material-icon-theme` support; icons resolved server-side and shown in directory views and the explorer tree
+- File operations: rename (F2, optimistic), move (drag-and-drop, cut/paste), copy/cut/paste, trash (Del), permanent delete (Shift+Del), create folder — with undo/redo
+- System path protection: critical paths (root, /etc, /sys, …) are blocked; operations on protected paths trigger a sudo/admin elevation prompt
+- Compression and extraction: compress to ZIP/TAR/TAR.GZ/7Z; extract with missing-tool detection and per-platform install instructions
+- Archive browsing: ZIP, TAR, 7Z, and RAR archives open as virtual directories in-place; archives expand in Nested layout like directories
+- Windows .exe metadata: icon and version info (name, publisher) extracted from PE resources and shown in directory views
+- macOS .app bundles: open with OS on double-click; "Browse Contents" option available in context menu
+- Service worker operations queue: file-write ops are enqueued as serializable descriptors, executed concurrently by a service worker, and resolved back to the UI as Promises
 - Inline file renaming in tree and directory views
 - Custom drag-and-drop with ghost element and 200 ms activation delay
 - Context menus, clipboard (cut/copy/paste), multi-select with Shift and Ctrl/Cmd
@@ -72,10 +79,12 @@ files-workbench2/
 ├── client/                   Nuxt 3 SPA + Electron shell
 │   ├── assets/css/           Global CSS variables and base styles
 │   ├── components/workbench/ All UI components
-│   ├── composables/          Shared Vue composables
+│   ├── composables/          Shared Vue composables (useFileOpsQueue, useActionHistory, …)
 │   ├── electron/             Electron main process
-│   ├── lib/                  API client helpers and utilities
+│   ├── lib/                  API client helpers (fs-api.js, sw-queue.js, …)
 │   ├── pages/                Nuxt pages (single page: index)
+│   ├── plugins/              Nuxt plugins (sw.client.js — service worker registration)
+│   ├── public/               Static assets served as-is (sw.js — service worker)
 │   └── server/routes/        Nitro server routes (dev proxy workaround for large/binary responses)
 ├── config/                   User configuration and defaults
 │   ├── preferences/          App preferences JSON + schema
@@ -90,9 +99,16 @@ files-workbench2/
 └── start-dev.sh              Start all dev servers together
 ```
 
-## API base URL
+## API servers
 
-The Go server listens on `http://localhost:8000`. All routes are prefixed with `/_api/v2/`. In development, the Nuxt dev server proxies `/_api/v2/*` to port 8000. In production the client calls the server directly.
+The Go process starts two independent HTTP servers:
+
+| Server | Default port | Purpose |
+|---|---|---|
+| Data | 8001 (`PORT` env) | Read-only GETs — directory listing, stat, media, icons, preferences |
+| Control | 8002 (`CONTROL_PORT` env) | Mutating POSTs/PUTs — rename, move, copy, delete, trash, compress, … |
+
+All routes are prefixed with `/_api/v2/`. In development, Nuxt proxies `/_api/v2/*` to port 8001 (data). The control server is contacted directly at `http://localhost:8002` (CORS is permissive on the Go side).
 
 > **Dev proxy size limit**: Vite's dev proxy silently drops large binary responses. File content for previews (images, video, audio, text) is served through Nitro server routes at `/media-preview` and `/text-preview`, which run in Node.js and bypass the proxy entirely. Thumbnails and JSON API responses are small enough to pass through the proxy fine.
 

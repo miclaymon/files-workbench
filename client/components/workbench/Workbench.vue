@@ -69,6 +69,7 @@
             @dblclick="handleDoubleClick"
             @contextmenu="showItemContextMenu"
             @rename="handleRename"
+            @move="({ items, destPath }) => doMove(items, destPath)"
             @state-change="updateExplorerContext"
           />
           <div v-else-if="activeActivity === 'search'" class="sidebar-placeholder">
@@ -217,6 +218,64 @@
       @close="hideContextMenu"
     />
 
+    <!-- Elevation dialog -->
+    <div v-if="elevationPrompt" class="modal-overlay" @click.self="cancelElevation">
+      <div class="modal-dialog">
+        <div class="modal-title">Administrator permission required</div>
+        <div class="modal-body">
+          <p>{{ elevationPrompt.message }}</p>
+          <p class="modal-paths">{{ elevationPrompt.paths.join('\n') }}</p>
+          <template v-if="elevationPrompt.method === 'sudo_password'">
+            <label class="modal-label">sudo password</label>
+            <input
+              ref="elevationPasswordRef"
+              v-model="elevationPassword"
+              type="password"
+              class="modal-input"
+              placeholder="Enter your password…"
+              autocomplete="current-password"
+              @keydown.enter="confirmElevation"
+              @keydown.esc="cancelElevation"
+            />
+            <div v-if="elevationError" class="modal-error">{{ elevationError }}</div>
+          </template>
+          <template v-else-if="elevationPrompt.method === 'osascript'">
+            <p class="modal-hint">macOS will display a system authentication dialog.</p>
+          </template>
+          <template v-else>
+            <p class="modal-hint">Restart Files Workbench as Administrator and try again.</p>
+          </template>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn" @click="cancelElevation">Cancel</button>
+          <button
+            v-if="elevationPrompt.method !== 'windows_uac'"
+            class="modal-btn modal-btn--primary"
+            @click="confirmElevation"
+          >{{ elevationPrompt.method === 'osascript' ? 'Authenticate…' : 'Confirm' }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Missing tool / install prompt -->
+    <div v-if="installPrompt" class="modal-overlay" @click.self="installPrompt = null">
+      <div class="modal-dialog">
+        <div class="modal-title">Missing tool: {{ installPrompt.tool }}</div>
+        <div class="modal-body">
+          <p>{{ installPrompt.message }}</p>
+          <div class="install-cmds">
+            <div v-if="installPrompt.installApt"  class="install-cmd"><span class="install-cmd-label">apt</span><code>{{ installPrompt.installApt }}</code></div>
+            <div v-if="installPrompt.installDnf"  class="install-cmd"><span class="install-cmd-label">dnf</span><code>{{ installPrompt.installDnf }}</code></div>
+            <div v-if="installPrompt.installPac"  class="install-cmd"><span class="install-cmd-label">pacman</span><code>{{ installPrompt.installPac }}</code></div>
+            <div v-if="installPrompt.installBrew" class="install-cmd"><span class="install-cmd-label">brew</span><code>{{ installPrompt.installBrew }}</code></div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn modal-btn--primary" @click="installPrompt = null">OK</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -227,7 +286,9 @@ import { useDragAndDrop } from '~/composables/useDragAndDrop.js'
 import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
 import { usePreferences } from '~/composables/usePreferences.js'
 import { useDebugLog } from '~/composables/useDebugLog.js'
-import { fsStat, fsOpenWithSystem, fsCreateDir } from '~/lib/fs-api.js'
+import { useFileOpsQueue } from '~/composables/useFileOpsQueue.js'
+import { useActionHistory } from '~/composables/useActionHistory.js'
+import { fsStat, fsOpenWithSystem, fsArchiveCapabilities } from '~/lib/fs-api.js'
 
 function uuid() { return uuidv4() }
 
@@ -277,6 +338,37 @@ const {
 // Debug log
 const debugLog = useDebugLog()
 const { log } = debugLog
+
+// File operations queue + undo/redo
+const { enqueue } = useFileOpsQueue()
+const history = useActionHistory()
+
+// Elevation dialog state
+const elevationPasswordRef = ref(null)
+const elevationPrompt = ref(null)  // { op, paths, password-based method, message, onConfirm }
+const elevationPassword = ref('')
+const elevationError = ref('')
+
+// Install-tool prompt state
+const installPrompt = ref(null)  // { tool, message, installApt, ... }
+
+// Archive capabilities (loaded once at startup)
+const archiveCaps = ref(null)
+const platform = ref('linux')
+
+// Archive-file extensions for context menu detection
+const ARCHIVE_EXTS = new Set(['.zip', '.tar', '.gz', '.bz2', '.xz', '.7z', '.rar', '.tgz', '.tbz2', '.txz'])
+function getArchiveExt(name) {
+  const lower = name.toLowerCase()
+  for (const ext of ['.tar.gz', '.tar.bz2', '.tar.xz']) {
+    if (lower.endsWith(ext)) return ext
+  }
+  for (const ext of ARCHIVE_EXTS) {
+    if (lower.endsWith(ext)) return ext
+  }
+  return null
+}
+function isArchiveItem(item) { return !!getArchiveExt(item.name) }
 
 // Bottom panel
 const bottomPanel = ref('debug')
@@ -430,6 +522,13 @@ const fileMenuItems = computed(() => [
 ])
 
 const editMenuItems = computed(() => [
+  { key: 'undo', label: `Undo${history.undoLabel.value ? ` "${history.undoLabel.value}"` : ''}`, action: doUndo, disabled: !history.canUndo.value },
+  { key: 'redo', label: `Redo${history.redoLabel.value ? ` "${history.redoLabel.value}"` : ''}`, action: doRedo, disabled: !history.canRedo.value },
+  { separator: true },
+  { key: 'copy',  label: 'Copy',  action: () => copyToClipboard(selectedItems.value) },
+  { key: 'cut',   label: 'Cut',   action: () => cutToClipboard(selectedItems.value)  },
+  { key: 'paste', label: 'Paste', action: doPaste, disabled: clipboard.value.count === 0 },
+  { separator: true },
   { key: 'preferences', label: 'Preferences', action: openPreferencesTab }
 ])
 
@@ -513,6 +612,13 @@ async function savePreferences(newPrefs) {
 onMounted(async () => {
   pingServer()
   _pingInterval = setInterval(pingServer, 10000)
+  window.addEventListener('keydown', onKeyDown)
+  // Load platform + archive capabilities in the background
+  try {
+    const init = await fetch('/_api/v2/app/init').then(r => r.json())
+    platform.value = init.platform ?? 'linux'
+  } catch { /* non-fatal */ }
+  try { archiveCaps.value = await fsArchiveCapabilities() } catch { /* non-fatal */ }
 
   // Restore selection state from the active tab on startup
   const tab = activeTab.value
@@ -528,6 +634,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearInterval(_pingInterval)
+  window.removeEventListener('keydown', onKeyDown)
 })
 
 async function createNewFolder() {
@@ -536,7 +643,7 @@ async function createNewFolder() {
   const dir = activeTab.value?.kind === 'dir' ? activeTab.value.path : '/'
   const sep = dir.includes('\\') ? '\\' : '/'
   try {
-    await fsCreateDir(dir + sep + name)
+    await enqueue({ label: `Create folder "${name}"`, kind: 'create_dir', params: { path: dir + sep + name } })
     directoryTabRef.value?.refresh()
   } catch (e) {
     status.value.left = `Error: ${e?.message ?? e}`
@@ -582,10 +689,300 @@ function flashTab(tabId) {
   setTimeout(() => el.classList.remove('flash'), 600)
 }
 
-// Rename — receives { path: string, newName: string } from tree or directory view
+// ── file operations ───────────────────────────────────────────────────────────
+
+// Rename — receives { path: string, newName: string } from tree or directory view.
+// { items } form (F2 on multi-select) is ignored for now — single rename only.
 async function handleRename({ path, newName }) {
-  // TODO: call fsRename(path, newName), update item name optimistically,
-  // revert on failure. Both tree and directory grid route through here.
+  if (!path || !newName) return
+  const oldName = path.split(/[/\\]/).filter(Boolean).pop()
+  if (newName === oldName) return
+  const label = `Rename "${oldName}" → "${newName}"`
+
+  // Compute expected new path for optimistic update
+  const sep = path.includes('\\') ? '\\' : '/'
+  const dir = path.slice(0, path.lastIndexOf(sep))
+  const optimisticPath = dir + sep + newName
+
+  // Apply immediately — user sees the change before the server responds
+  directoryTabRef.value?.renameItem(path, newName, optimisticPath)
+  updateSelectionAfterRename(path, newName, optimisticPath)
+
+  try {
+    const result = await enqueue({ label, kind: 'rename', params: { path, new_name: newName } })
+
+    // If the server returned a slightly different path (e.g. case normalization), reconcile
+    if (result.path !== optimisticPath) {
+      const serverName = result.path.split(/[/\\]/).pop()
+      directoryTabRef.value?.renameItem(optimisticPath, serverName, result.path)
+      updateSelectionAfterRename(optimisticPath, serverName, result.path)
+    }
+
+    history.push({
+      label,
+      undo: () => enqueue({ label: `Undo ${label}`, kind: 'rename', params: { path: result.path, new_name: oldName } }),
+      redo: () => enqueue({ label: `Redo ${label}`, kind: 'rename', params: { path, new_name: newName } }),
+    })
+    explorerPanelRef.value?.refresh()
+  } catch (e) {
+    // Roll back the optimistic update
+    directoryTabRef.value?.renameItem(optimisticPath, oldName, path)
+    updateSelectionAfterRename(optimisticPath, oldName, path)
+    status.value.left = `Rename failed: ${e?.message ?? e}`
+    setTimeout(() => { status.value.left = 'Ready' }, 2500)
+  }
+}
+
+function updateSelectionAfterRename(oldPath, newName, newPath) {
+  selectedItems.value = selectedItems.value.map(item =>
+    item.path === oldPath ? { ...item, name: newName, path: newPath } : item
+  )
+  if (focusedItem.value?.path === oldPath) {
+    focusedItem.value = { ...focusedItem.value, name: newName, path: newPath }
+  }
+}
+
+async function doTrash(items) {
+  if (!items.length) return
+  const paths = items.map(i => i.path)
+  const label = items.length === 1 ? `Trash "${items[0].name}"` : `Trash ${items.length} items`
+  try {
+    const result = await enqueue({ label, kind: 'trash', params: { paths } })
+    if (result?.requiresElevation) {
+      showElevationPrompt({
+        op: 'trash', paths: result.elevationPaths, method: result.elevationMethod,
+        message: `Moving ${result.elevationPaths.length === 1 ? `"${result.elevationPaths[0].split(/[/\\]/).pop()}"` : `${result.elevationPaths.length} items`} to trash requires administrator permission.`,
+        onConfirm: async (password) => {
+          await enqueue({ label: label + ' (elevated)', kind: 'trash_elevated', params: { paths, password } })
+          afterDelete()
+        }
+      })
+      return
+    }
+    afterDelete()
+  } catch (e) {
+    status.value.left = `Trash failed: ${e?.message ?? e}`
+    setTimeout(() => { status.value.left = 'Ready' }, 2500)
+  }
+}
+
+async function doDelete(items) {
+  if (!items.length) return
+  const names = items.length === 1 ? `"${items[0].name}"` : `${items.length} items`
+  if (!confirm(`Permanently delete ${names}? This cannot be undone.`)) return
+  const paths = items.map(i => i.path)
+  const label = `Permanently delete ${names}`
+  try {
+    const result = await enqueue({ label, kind: 'delete', params: { paths } })
+    if (result?.requiresElevation) {
+      showElevationPrompt({
+        op: 'delete', paths: result.elevationPaths, method: result.elevationMethod,
+        message: `Permanently deleting ${result.elevationPaths.length === 1 ? `"${result.elevationPaths[0].split(/[/\\]/).pop()}"` : `${result.elevationPaths.length} items`} requires administrator permission.`,
+        onConfirm: async (password) => {
+          await enqueue({ label: label + ' (elevated)', kind: 'delete_elevated', params: { paths, password } })
+          afterDelete()
+        }
+      })
+      return
+    }
+    afterDelete()
+  } catch (e) {
+    status.value.left = `Delete failed: ${e?.message ?? e}`
+    setTimeout(() => { status.value.left = 'Ready' }, 2500)
+  }
+}
+
+function afterDelete() {
+  directoryTabRef.value?.refresh()
+  explorerPanelRef.value?.refresh()
+  selectedItems.value = []
+  focusedItem.value = null
+}
+
+// ── elevation dialog ──────────────────────────────────────────────────────────
+
+function showElevationPrompt({ op, paths, method, message, onConfirm }) {
+  elevationPassword.value = ''
+  elevationError.value = ''
+  elevationPrompt.value = { op, paths, method, message, onConfirm }
+  nextTick(() => elevationPasswordRef.value?.focus())
+}
+
+function cancelElevation() {
+  elevationPrompt.value = null
+  elevationPassword.value = ''
+  elevationError.value = ''
+}
+
+async function confirmElevation() {
+  if (!elevationPrompt.value) return
+  const { onConfirm, method } = elevationPrompt.value
+  const password = method === 'sudo_password' ? elevationPassword.value : ''
+  if (method === 'sudo_password' && !password) {
+    elevationError.value = 'Please enter your password.'
+    return
+  }
+  elevationError.value = ''
+  try {
+    await onConfirm(password)
+    cancelElevation()
+  } catch (e) {
+    const msg = e?.message ?? String(e)
+    if (msg.includes('incorrect password') || msg.includes('Incorrect password')) {
+      elevationError.value = 'Incorrect password. Try again.'
+      elevationPassword.value = ''
+      nextTick(() => elevationPasswordRef.value?.focus())
+    } else {
+      status.value.left = `Elevated operation failed: ${msg}`
+      setTimeout(() => { status.value.left = 'Ready' }, 3000)
+      cancelElevation()
+    }
+  }
+}
+
+// ── archive operations ────────────────────────────────────────────────────────
+
+async function doCompress(items, format) {
+  if (!items.length) return
+  const destDir = items[0].path.split(/[/\\]/).slice(0, -1).join('/')  || '/'
+  const extMap = { zip: '.zip', tar: '.tar', 'tar.gz': '.tar.gz', '7z': '.7z' }
+  const ext = extMap[format] ?? '.zip'
+  const baseName = items.length === 1 ? items[0].name : 'Archive'
+  const defaultName = baseName + ext
+  const name = prompt(`Archive name:`, defaultName)
+  if (!name) return
+  const dest = destDir + '/' + name
+  const paths = items.map(i => i.path)
+  const label = `Compress to ${name}`
+  try {
+    await enqueue({ label, kind: 'compress', params: { paths, format, dest } })
+    directoryTabRef.value?.refresh()
+    log('ops-queue', 'Compressed', `${paths.length} item(s) → ${name}`)
+  } catch (e) {
+    status.value.left = `Compress failed: ${e?.message ?? e}`
+    setTimeout(() => { status.value.left = 'Ready' }, 2500)
+  }
+}
+
+async function doDecompress(item, toNewFolder = false) {
+  if (!item) return
+  const srcDir = item.path.split(/[/\\]/).slice(0, -1).join('/') || '/'
+  let destDir = srcDir
+  if (toNewFolder) {
+    // Strip known archive extension(s) to make folder name
+    let folderName = item.name
+    for (const ext of ['.tar.gz', '.tar.bz2', '.tar.xz', '.tgz', '.tbz2', '.txz', '.zip', '.7z', '.rar', '.tar', '.gz']) {
+      if (folderName.toLowerCase().endsWith(ext)) { folderName = folderName.slice(0, -ext.length); break }
+    }
+    destDir = srcDir + '/' + folderName
+  }
+  const label = `Extract "${item.name}"`
+  try {
+    const result = await enqueue({ label, kind: 'decompress', params: { path: item.path, dest_dir: destDir } })
+    if (result?.missingTool) {
+      installPrompt.value = {
+        tool: result.tool,
+        message: `Extracting "${item.name}" requires ${result.tool}, which is not installed.`,
+        installApt: result.installApt,
+        installDnf: result.installDnf,
+        installPac: result.installPac,
+        installBrew: result.installBrew,
+      }
+      return
+    }
+    directoryTabRef.value?.refresh()
+    log('ops-queue', 'Extracted', `"${item.name}" → ${destDir}`)
+  } catch (e) {
+    status.value.left = `Extract failed: ${e?.message ?? e}`
+    setTimeout(() => { status.value.left = 'Ready' }, 2500)
+  }
+}
+
+async function doPaste() {
+  const cb = clipboard.value
+  if (!cb.count) return
+  const destDir = activeTab.value?.kind === 'dir' ? activeTab.value.path : null
+  if (!destDir) return
+  const paths = cb.items.map(i => i.path)
+  const label = `${cb.mode} ${cb.count} item(s) into "${destDir.split(/[/\\]/).filter(Boolean).pop()}"`
+  try {
+    let result
+    if (cb.mode === 'Cut') {
+      result = await enqueue({ label, kind: 'move', params: { paths, dest_dir: destDir } })
+      const movedPaths = result.moved.map(m => m.path)
+      const oldPaths   = result.moved.map(m => m.old_path)
+      const undoDestDir = oldPaths[0] ? oldPaths[0].split(/[/\\]/).slice(0, -1).join('/') : destDir
+      history.push({
+        label,
+        undo: () => enqueue({ label: `Undo ${label}`, kind: 'move', params: { paths: movedPaths, dest_dir: undoDestDir } }),
+        redo: () => enqueue({ label: `Redo ${label}`, kind: 'move', params: { paths: oldPaths, dest_dir: destDir } }),
+      })
+      clipboard.value = { mode: 'Copy', count: 0, items: [] }
+    } else {
+      result = await enqueue({ label, kind: 'copy', params: { paths, dest_dir: destDir } })
+      const copiedPaths = result.copied.map(c => c.path)
+      history.push({
+        label,
+        undo: () => enqueue({ label: `Undo ${label}`, kind: 'delete', params: { paths: copiedPaths } }),
+        redo: () => enqueue({ label: `Redo ${label}`, kind: 'copy', params: { paths, dest_dir: destDir } }),
+      })
+    }
+    directoryTabRef.value?.refresh()
+  } catch (e) {
+    status.value.left = `Paste failed: ${e?.message ?? e}`
+    setTimeout(() => { status.value.left = 'Ready' }, 2500)
+  }
+}
+
+async function doMove(items, destDir) {
+  if (!items.length || !destDir) return
+  const paths = items.map(i => i.path)
+  const label = `Move ${items.length === 1 ? `"${items[0].name}"` : `${items.length} items`} → "${destDir.split(/[/\\]/).filter(Boolean).pop()}"`
+  try {
+    const result = await enqueue({ label, kind: 'move', params: { paths, dest_dir: destDir } })
+    const movedPaths = result.moved.map(m => m.path)
+    const srcDir = paths[0].split(/[/\\]/).slice(0, -1).join('/')
+    history.push({
+      label,
+      undo: () => enqueue({ label: `Undo ${label}`, kind: 'move', params: { paths: movedPaths, dest_dir: srcDir } }),
+      redo: () => enqueue({ label: `Redo ${label}`, kind: 'move', params: { paths, dest_dir: destDir } }),
+    })
+    directoryTabRef.value?.refresh()
+    selectedItems.value = []
+    focusedItem.value = null
+  } catch (e) {
+    status.value.left = `Move failed: ${e?.message ?? e}`
+    setTimeout(() => { status.value.left = 'Ready' }, 2500)
+  }
+}
+
+async function doUndo() {
+  try { await history.undo(); directoryTabRef.value?.refresh() }
+  catch (e) { status.value.left = `Undo failed: ${e?.message ?? e}`; setTimeout(() => { status.value.left = 'Ready' }, 2500) }
+}
+
+async function doRedo() {
+  try { await history.redo(); directoryTabRef.value?.refresh() }
+  catch (e) { status.value.left = `Redo failed: ${e?.message ?? e}`; setTimeout(() => { status.value.left = 'Ready' }, 2500) }
+}
+
+function onKeyDown(e) {
+  // Skip when typing in an input, textarea, or contenteditable
+  const tag = e.target?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return
+
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key === 'z') { e.preventDefault(); doUndo(); return }
+    if (e.key === 'y') { e.preventDefault(); doRedo(); return }
+    if (e.key === 'c') { e.preventDefault(); copyToClipboard(selectedItems.value); return }
+    if (e.key === 'x') { e.preventDefault(); cutToClipboard(selectedItems.value); return }
+    if (e.key === 'v') { e.preventDefault(); doPaste(); return }
+  }
+  if (e.key === 'Delete') {
+    e.preventDefault()
+    if (e.shiftKey) doDelete(selectedItems.value)
+    else doTrash(selectedItems.value)
+  }
 }
 
 // Selection
@@ -632,6 +1029,25 @@ async function handleSelectFromDirectory(payload) {
 }
 
 async function handleDoubleClick(payload) {
+  // macOS .app bundles: launch with OS, don't navigate inside
+  if (payload.kind === 'app') {
+    try { await fsOpenWithSystem(payload.path) } catch (e) { status.value.left = `Error: ${e?.message ?? e}` }
+    return
+  }
+
+  // Archive files: open as virtual directory
+  if (payload.kind === 'archive' || (payload.kind === 'file' && isArchiveItem(payload))) {
+    const virtualPath = payload.path + '::'
+    const existing = tabs.value.find(t => t.path === virtualPath)
+    if (existing) { activeTabId.value = existing.id; existing.mode = 'pinned'; return }
+    const title = payload.name || payload.path.split(/[/\\]/).filter(Boolean).pop()
+    const tab = { id: uuid(), kind: 'dir', mode: 'pinned', title, path: virtualPath, selectedItems: [], focusedItem: null, selectedPath: '' }
+    tabs.value.push(tab)
+    await nextTick()
+    activeTabId.value = tab.id
+    return
+  }
+
   if (payload.kind !== 'directory' && payload.kind !== 'dir' && payload.kind !== 'drive' && payload.kind !== 'root') return
   const existing = tabs.value.find(t => t.path === payload.path)
   if (existing) { activeTabId.value = existing.id; existing.mode = 'pinned'; return }
@@ -647,7 +1063,15 @@ function navigateInCurrentTab(path) {
   if (!active || active.kind !== 'dir') return
   log('nav', 'Navigate', path)
   active.path = path
-  active.title = path.split(/[/\\]/).filter(Boolean).pop() || path
+  if (path.includes('::')) {
+    const [archivePath, innerPath] = path.split('::')
+    const innerSegs = innerPath.split('/').filter(Boolean)
+    active.title = innerSegs.length > 0
+      ? innerSegs[innerSegs.length - 1]
+      : (archivePath.split(/[/\\]/).filter(Boolean).pop() || archivePath)
+  } else {
+    active.title = path.split(/[/\\]/).filter(Boolean).pop() || path
+  }
   selectedPath.value = path
   selectedItems.value = []
   focusedItem.value = null
@@ -692,25 +1116,70 @@ function showTabContextMenu(e, tab) {
   }
 }
 
+function openArchiveInTab(item) {
+  const virtualPath = item.path + '::'
+  const existing = tabs.value.find(t => t.path === virtualPath)
+  if (existing) { activeTabId.value = existing.id; return }
+  const title = item.name || item.path.split(/[/\\]/).filter(Boolean).pop()
+  const tab = { id: uuid(), kind: 'dir', mode: 'pinned', title, path: virtualPath, selectedItems: [], focusedItem: null, selectedPath: '' }
+  tabs.value.push(tab)
+  nextTick(() => { activeTabId.value = tab.id })
+}
+
 function showItemContextMenu({ event, item }) {
+  const targets = selectedItems.value.some(s => s.path === item.path)
+    ? selectedItems.value
+    : [item]
+
+  // Detect if we're currently browsing inside an archive (read-only)
+  const inArchive = activeTab.value?.path?.includes('::')
+
+  // Build compress submenu from available capabilities
+  const compressItems = []
+  if (!inArchive) {
+    compressItems.push({ key: 'compress-zip',   label: 'Compress to ZIP',    action: () => doCompress(targets, 'zip') })
+    compressItems.push({ key: 'compress-targz', label: 'Compress to TAR.GZ', action: () => doCompress(targets, 'tar.gz') })
+    if (archiveCaps.value?.seven_zip?.available) {
+      compressItems.push({ key: 'compress-7z', label: 'Compress to 7Z', action: () => doCompress(targets, '7z') })
+    }
+  }
+
+  // Single-item checks
+  const singleItem = targets.length === 1 ? targets[0] : null
+  const isArchive = singleItem?.kind === 'archive' || (singleItem?.kind === 'file' && isArchiveItem(singleItem))
+  const isApp = singleItem?.kind === 'app'
+
   contextMenu.value = {
     visible: true, x: event.clientX, y: event.clientY,
-    quickActions: [
-      { key: 'copy', icon: '📋', label: 'Copy', action: () => copyToClipboard([item]) },
-      { key: 'cut', icon: '✂️', label: 'Cut', action: () => cutToClipboard([item]) },
-      { key: 'rename', icon: '✏️', label: 'Rename', action: () => {} },
-      { key: 'delete', icon: '🗑️', label: 'Delete', action: () => {} },
-      { key: 'info', icon: 'ℹ️', label: 'Info', action: () => {} }
+    quickActions: inArchive ? [] : [
+      { key: 'copy',   icon: '📋', label: 'Copy',   action: () => copyToClipboard(targets) },
+      { key: 'cut',    icon: '✂️', label: 'Cut',    action: () => cutToClipboard(targets)  },
+      { key: 'rename', icon: '✏️', label: 'Rename', action: () => directoryTabRef.value?.$el?.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true })) },
+      { key: 'delete', icon: '🗑️', label: 'Delete', action: () => doTrash(targets) },
+      { key: 'info',   icon: 'ℹ️', label: 'Info',   action: () => {} }
     ],
     items: [
-      { key: 'open', label: 'Open', action: () => {} },
-      { separator: true },
-      { key: 'copy', label: 'Copy', action: () => copyToClipboard([item]) },
-      { key: 'cut', label: 'Cut', action: () => cutToClipboard([item]) },
-      { key: 'paste', label: 'Paste', action: () => {}, disabled: clipboard.value.count === 0 },
-      { separator: true },
-      { key: 'rename', label: 'Rename', action: () => {} },
-      { key: 'delete', label: 'Delete', action: () => {} }
+      { key: 'open', label: isApp ? 'Open Application' : 'Open', action: () => handleOpenFromTab(item) },
+      ...(isArchive || isApp ? [
+        { separator: true },
+        { key: 'view-contents', label: 'Browse Contents', action: () => openArchiveInTab(singleItem) },
+      ] : []),
+      ...(isArchive && !inArchive ? [
+        { key: 'extract-here',   label: 'Extract Here',       action: () => doDecompress(singleItem, false) },
+        { key: 'extract-folder', label: 'Extract to Folder…', action: () => doDecompress(singleItem, true)  },
+      ] : []),
+      ...(!inArchive ? [
+        { separator: true },
+        { key: 'copy',  label: 'Copy',  action: () => copyToClipboard(targets) },
+        { key: 'cut',   label: 'Cut',   action: () => cutToClipboard(targets)  },
+        { key: 'paste', label: 'Paste', action: doPaste, disabled: clipboard.value.count === 0 },
+        { separator: true },
+        ...compressItems,
+        { separator: true },
+        { key: 'rename', label: 'Rename',             action: () => directoryTabRef.value?.$el?.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true })) },
+        { key: 'trash',  label: 'Move to Trash',      action: () => doTrash(targets) },
+        { key: 'delete', label: 'Delete Permanently', action: () => doDelete(targets) },
+      ] : []),
     ]
   }
 }
@@ -972,5 +1441,117 @@ function showItemContextMenu({ event, item }) {
   box-shadow: 0 10px 30px rgba(0,0,0,0.35);
   font-size: 12px;
   z-index: 1000;
+}
+
+/* Modal dialogs (elevation + install prompt) */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+.modal-dialog {
+  background: var(--panel-2, #252526);
+  border: 1px solid var(--border, #454545);
+  border-radius: 8px;
+  width: 420px;
+  max-width: 90vw;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal-title {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border, #454545);
+}
+.modal-body {
+  padding: 14px 16px;
+  font-size: 12px;
+  color: var(--text, #ccc);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.modal-body p { margin: 0; line-height: 1.5; }
+.modal-paths {
+  background: var(--bg, #1e1e1e);
+  border: 1px solid var(--border, #454545);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: monospace;
+  font-size: 11px;
+  white-space: pre;
+  max-height: 120px;
+  overflow-y: auto;
+  color: var(--text-muted, #888);
+}
+.modal-label { font-size: 11px; color: var(--text-muted, #888); margin-bottom: -4px; }
+.modal-input {
+  background: var(--bg, #1e1e1e);
+  border: 1px solid var(--border, #454545);
+  border-radius: 4px;
+  padding: 7px 10px;
+  color: var(--text, #ccc);
+  font-size: 13px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+.modal-input:focus { border-color: var(--accent, #0078d4); }
+.modal-hint { color: var(--text-muted, #888); font-size: 12px; }
+.modal-error { color: #f48771; font-size: 12px; }
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--border, #454545);
+}
+.modal-btn {
+  background: var(--surface, #3c3c3c);
+  border: 1px solid var(--border, #454545);
+  color: var(--text, #ccc);
+  border-radius: 4px;
+  padding: 5px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.modal-btn:hover { background: var(--surface-hover, #4c4c4c); }
+.modal-btn--primary {
+  background: var(--accent, #0078d4);
+  border-color: var(--accent, #0078d4);
+  color: #fff;
+}
+.modal-btn--primary:hover { background: var(--accent-hover, #1c8be4); border-color: var(--accent-hover, #1c8be4); }
+
+/* Install prompt */
+.install-cmds { display: flex; flex-direction: column; gap: 6px; }
+.install-cmd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg, #1e1e1e);
+  border: 1px solid var(--border, #454545);
+  border-radius: 4px;
+  padding: 5px 8px;
+}
+.install-cmd-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted, #888);
+  min-width: 44px;
+  text-transform: uppercase;
+}
+.install-cmd code {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text, #ccc);
+  user-select: text;
 }
 </style>

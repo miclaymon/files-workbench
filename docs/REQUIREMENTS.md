@@ -13,9 +13,15 @@
 
 - Select single and multiple items (click, Shift+click, Ctrl+click, checkboxes)
 - Copy, cut, and paste files and folders
-- Rename files and folders inline (double-click on name)
-- Move items via drag-and-drop to a target folder
-- Delete items (to be implemented)
+- Rename files and folders inline (double-click on name, F2) with optimistic update and rollback
+- Move items via drag-and-drop to a target folder or cut/paste
+- Trash items (Del) and permanently delete (Shift+Del)
+- Create new folder
+- Undo / redo for rename, move, and copy operations (Ctrl+Z / Ctrl+Y)
+- Elevation prompt for operations on system-protected paths (sudo/admin password)
+- Compress selections to ZIP, TAR, TAR.GZ, or 7Z
+- Extract archives; detect and report missing system tools with install instructions
+- Browse archives as virtual directories (ZIP, TAR, 7Z, RAR) — navigate in-place with `::` path encoding
 - Context menu with common operations on items and empty space
 
 ## Preview panel

@@ -100,13 +100,48 @@ Double-clicking a filename in the tree or directory view opens an inline `conten
 
 All colors are CSS custom properties defined in `client/assets/css/workbench.css`. The theme JSON files in `config/themes/` are the source of truth for each built-in theme; at startup the app applies them by setting CSS variables on `:root`. The user's accent color overrides `--accent` independently of the theme.
 
+## File operations
+
+`Workbench.vue` handles all mutating file operations (rename, move, copy, trash, delete, compress, decompress, create folder). Every op is enqueued as a serialisable descriptor via `useFileOpsQueue.enqueue({ label, kind, params })` — there are no inline fetch calls for writes. The queue resolves to a Promise that `Workbench` awaits to handle success, errors, and special responses:
+
+- **`requiresElevation`** (403): the server detected a path that needs sudo/admin. The UI shows a password dialog; the caller re-enqueues with the `*_elevated` kind.
+- **`missingTool`** (422, decompress only): a required external tool (`7z`, `unrar`) is not installed. The UI shows per-platform install instructions.
+
+Rename uses an optimistic update: `DirectoryTab.renameItem` patches the item in-place immediately; the network op runs in the background; on failure the patch is rolled back.
+
+Reversible operations (rename, move, copy) push an entry to `useActionHistory` so Ctrl+Z / Ctrl+Y work across the session.
+
+## Service worker operations queue
+
+`public/sw.js` is a service worker that maintains a per-client operation queue keyed by `event.source.id`. The lifecycle:
+
+1. App startup calls `swQueue.init()` (plugin `sw.client.js`), which registers the SW and sends `INIT` with `controlBase` and `apiV`.
+2. Each `useFileOpsQueue.enqueue()` call sends `ENQUEUE { id, kind, params }` to the SW and stores the op locally as a fallback buffer.
+3. When the caller is ready to execute, `swQueue.execute(opIds)` creates one Promise per op in a `_pending` map, then sends `EXECUTE` to the SW.
+4. The SW drains its queue and fires all ops **concurrently** via `fetch`. Each op sends `OP_COMPLETE` or `OP_ERROR` back to the client independently.
+5. The client's `_onMessage` handler resolves or rejects the corresponding Promise.
+
+If the SW is unavailable (first load, no HTTPS, unsupported browser), `sw-queue.js` falls back to direct `fetch` from the main thread using the same `ENDPOINTS` map.
+
 ## Server architecture
 
 The active backend is a Go HTTP server (`server/v2/`) using the stdlib `net/http` package. There is no framework — routes are registered on a `http.ServeMux`. All routes are prefixed with `/_api/v2/`.
 
+The process starts **two independent `http.Server` goroutines** on separate ports:
+
+| Server | Port | Content |
+|---|---|---|
+| Data | 8001 (`PORT` env) | All read-only GETs — listing, stat, preview, media, icons, preferences |
+| Control | 8002 (`CONTROL_PORT` env) | All mutating POSTs/PUTs — rename, move, copy, delete, trash, compress, decompress |
+
+This separation ensures slow thumbnail or listing requests on the data server never delay file-operation responses on the control server — the two goroutines share no locks in the hot path.
+
 Functional areas:
 
-- **fs** — file system CRUD: list directory, stat, rename, create file/dir, write file, open with system app
+- **fs** — file system CRUD: list directory, stat, rename, move, copy, create file/dir, write file, delete, trash, open with system app; archive files get `kind: "archive"` in listing responses
+- **archive** — list archive contents (ZIP, TAR, 7Z, RAR) as virtual directory entries; capabilities endpoint reports available tools
+- **permissions** — blocks critical OS paths; detects when elevation is required and returns structured 403 responses
+- **exe** (Windows) — extract icon and version metadata from PE resource sections
 - **explorer** — directory tree listing: root nodes, home directory, drives, lazy-expandable subtree, exclusion categories
 - **media** — thumbnails (image resize via `golang.org/x/image`; video frame and audio artwork extraction via ffmpeg), file metadata, raw file serving
 - **icons** — serve icon pack manifest (`/icons/manifest`) and individual SVG icons by definition name (`/icons/svg?name=…`)
