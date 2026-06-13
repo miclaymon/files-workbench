@@ -1,5 +1,5 @@
 import { reactive, ref } from 'vue'
-import { API_BASE, API_V } from '~/lib/api-config.js'
+import { API_BASE, CONTROL_BASE, API_V } from '~/lib/api-config.js'
 
 const DEFAULTS = {
   developerMode: false,
@@ -75,7 +75,7 @@ async function _load() {
 }
 
 async function save(newPrefs) {
-  await $fetch(`${API_BASE}/_api/${API_V}/preferences`, { method: 'PUT', body: newPrefs })
+  await $fetch(`${CONTROL_BASE}/_api/${API_V}/preferences`, { method: 'PUT', body: newPrefs })
   deepMerge(prefs, newPrefs)
 }
 

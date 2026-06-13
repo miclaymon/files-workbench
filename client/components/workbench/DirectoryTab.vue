@@ -19,6 +19,8 @@
       @select="handleSelect"
       @focus="handleFocus"
       @contextmenu="showContextMenu"
+      @background-contextmenu="$emit('background-contextmenu', $event)"
+      @right-drag-drop="$emit('right-drag-drop', $event)"
       @navigate="handleNavigate"
       @navigate-up="handleNavigateUp"
       @navigate-previous="handleNavigatePrevious"
@@ -50,7 +52,7 @@ const props = defineProps({
   focusedItem: { type: Object, default: null },
 })
 
-const emit = defineEmits(['select', 'open', 'navigate', 'contextmenu', 'update:layout', 'rename', 'stats'])
+const emit = defineEmits(['select', 'open', 'navigate', 'contextmenu', 'background-contextmenu', 'right-drag-drop', 'update:layout', 'rename', 'stats'])
 
 const directoryPanelRef = ref(null)
 const navigationHistory = ref({ previous: [], next: [] })

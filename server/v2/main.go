@@ -128,6 +128,7 @@ func registerControlRoutes(mux *http.ServeMux) {
 
 	// Filesystem — writes
 	mux.HandleFunc("POST "+apiPrefix+"/fs/open_with_system", handleFsOpenWithSystem)
+	mux.HandleFunc("POST "+apiPrefix+"/fs/open_terminal", handleFsOpenTerminal)
 	mux.HandleFunc("POST "+apiPrefix+"/fs/create_file", handleFsCreateFile)
 	mux.HandleFunc("POST "+apiPrefix+"/fs/create_dir", handleFsCreateDir)
 	mux.HandleFunc("POST "+apiPrefix+"/fs/write_file", handleFsWriteFile)

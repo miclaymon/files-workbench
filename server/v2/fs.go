@@ -350,6 +350,83 @@ func handleFsOpenWithSystem(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]string{"path": body.Path})
 }
 
+func handleFsOpenTerminal(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Path == "" {
+		jsonErr(w, http.StatusBadRequest, "path required")
+		return
+	}
+	if isExcluded(body.Path, nil) {
+		jsonErr(w, http.StatusForbidden, "Path is blacklisted")
+		return
+	}
+	info, err := os.Stat(body.Path)
+	if err != nil {
+		jsonErr(w, http.StatusNotFound, "Not found: "+body.Path)
+		return
+	}
+	dir := body.Path
+	if !info.IsDir() {
+		dir = filepath.Dir(body.Path)
+	}
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("wt", "-d", dir)
+		if err := cmd.Start(); err != nil {
+			// Fallback to cmd.exe
+			cmd = exec.Command("cmd", "/c", "start", "cmd", "/K", "cd /d "+dir)
+			if err2 := cmd.Start(); err2 != nil {
+				jsonErr(w, http.StatusInternalServerError, err2.Error())
+				return
+			}
+		}
+		jsonOK(w, map[string]string{"dir": dir})
+		return
+	case "darwin":
+		// AppleScript to open Terminal.app at the given directory
+		script := `tell application "Terminal" to do script "cd ` + strings.ReplaceAll(dir, `"`, `\"`) + `"`
+		cmd = exec.Command("osascript", "-e", script)
+	default:
+		// Try common Linux terminal emulators in priority order
+		type termSpec struct {
+			bin  string
+			args []string
+		}
+		candidates := []termSpec{
+			{"x-terminal-emulator", []string{"--working-directory=" + dir}},
+			{"gnome-terminal", []string{"--working-directory=" + dir}},
+			{"konsole", []string{"--workdir", dir}},
+			{"xfce4-terminal", []string{"--working-directory=" + dir}},
+			{"mate-terminal", []string{"--working-directory=" + dir}},
+			{"tilix", []string{"--working-directory=" + dir}},
+			{"alacritty", []string{"--working-directory", dir}},
+			{"kitty", []string{"-d", dir}},
+			{"wezterm", []string{"start", "--cwd", dir}},
+			{"xterm", []string{"-e", "bash -c 'cd \"" + dir + "\" && exec bash'"}},
+		}
+		for _, t := range candidates {
+			if binPath, lookErr := exec.LookPath(t.bin); lookErr == nil {
+				cmd = exec.Command(binPath, t.args...)
+				break
+			}
+		}
+		if cmd == nil {
+			jsonErr(w, http.StatusNotFound, "no terminal emulator found")
+			return
+		}
+	}
+
+	if err := cmd.Start(); err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonOK(w, map[string]string{"dir": dir})
+}
+
 func handleFsCreateFile(w http.ResponseWriter, r *http.Request) {
 	var body struct{ Path string `json:"path"` }
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Path == "" {

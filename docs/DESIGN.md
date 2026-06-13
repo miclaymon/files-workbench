@@ -34,7 +34,18 @@ In development, Nuxt's Vite dev server proxies `/_api/v2/*` to port 8000. In pro
 - Tab bar with drag-to-reorder (useDragAndDrop)
 - Main content area (DirectoryTab or PreferencesActivity per tab)
 - Right panel (PreviewPanel, DetailsPanel)
-- All floating UI (context menus, floating menus, toast notifications)
+- All floating UI (context menus, right-drag drop menus)
+- Status bar: directory item count/size, selection count/size, clipboard pill (mode + count + size)
+
+### Context menu
+
+`ContextMenu.vue` renders two independent `<teleport to="body">` elements — one for the main menu panel and one for the submenu panel — so neither is clipped by ancestor `overflow: hidden` containers.
+
+Each menu item has two separate click areas: the `.cm-item-label` span (fires the action) and a `.cm-item-sub-btn` chevron button (opens the submenu). This split-button pattern means clicking the label of an item that has a submenu fires the default action immediately rather than requiring an extra click to open the sub-panel.
+
+Quick-action icon buttons at the top of the menu render MDI SVG icons when `icon` is an MDI path string (detected by `isMdiPath`: starts with `'M'`).
+
+Submenu position is computed from the chevron button's `getBoundingClientRect()` and flipped left if it would overflow the right viewport edge. Main menu position is clamped to the viewport in a `watch` that fires after `nextTick` once the menu DOM is mounted.
 
 ### Directory view
 
@@ -67,15 +78,18 @@ No Pinia or Vuex. State lives in:
 
 ## Drag and drop systems
 
-There are three independent drag systems:
+There are four independent drag systems:
 
 | System | Used by | Mechanism |
 |---|---|---|
-| `useDrag.js` | Directory grid/list/table items | Custom mousedown → ghost clone, 200 ms delay, `onActivate` callback for multi-select |
+| `useDrag.js` | Directory grid/list/table items (left-button) | Custom mousedown → ghost clone, 200 ms delay, `onActivate` callback for multi-select |
+| `useRightClickDrag.js` | Directory items (right-button) | Suppresses native `contextmenu` on mousedown; ghost clone on move; resolves to `onRightClick` or `onDrop` on mouseup |
 | `useTreeDrag.js` | Explorer tree nodes | Custom mousedown → chip ghost, module-level shared state, directory-only drop targets |
 | `useDragAndDrop.js` | Tab bar | Native HTML5 drag (`draggable`, `@dragstart`/`@dragover`/`@drop`) for list reordering |
 
-The file drag systems (`useDrag`, `useTreeDrag`) do not set `dataTransfer` and therefore cannot interoperate with native drop targets. When drop functionality is added to the directory view, the composables will need a `dataTransfer` payload.
+The file drag systems (`useDrag`, `useTreeDrag`, `useRightClickDrag`) do not set `dataTransfer` and therefore cannot interoperate with native OS drop targets.
+
+Right-click drag releases show a "drop action" context menu (`showRightDragDropMenu` in `Workbench.vue`) with Move Here / Copy Here / Create Symlink Here options; if all dragged items are archives, the menu offers Extract Here instead of Compress to Archive Here.
 
 ## Click handling
 

@@ -132,6 +132,8 @@
                 @open="handleOpenFromTab"
                 @navigate="navigateInCurrentTab"
                 @contextmenu="showItemContextMenu"
+                @background-contextmenu="showBackgroundContextMenu"
+                @right-drag-drop="showRightDragDropMenu"
                 @rename="handleRename"
                 @stats="dirStats = $event"
                 @update:layout="handleLayoutChange"
@@ -193,6 +195,7 @@
         <template v-if="activeTab?.kind === 'dir'">
           <div class="status-bar-item">Directory: {{ formatCount(dirStats.count) }} item{{ dirStats.count === 1 ? '' : 's' }} | {{ formatBytes(dirStats.totalSize) }}</div>
           <div v-if="selectedItems.length > 0" class="status-bar-item">Selected: {{ formatCount(selectedItems.length) }} item{{ selectedItems.length === 1 ? '' : 's' }} | {{ formatBytes(selectedItems.reduce((s, i) => s + (i.size ?? 0), 0)) }}</div>
+          <div v-if="clipboard.count > 0" class="status-bar-item status-bar-item--clipboard">{{ clipboard.mode }}: {{ formatCount(clipboard.count) }} item{{ clipboard.count === 1 ? '' : 's' }} | {{ formatBytes(clipboard.items.reduce((s, i) => s + (i.size ?? 0), 0)) }}</div>
         </template>
         <div v-else-if="status.left" class="status-bar-item">{{ status.left }}</div>
       </div>
@@ -200,12 +203,6 @@
       <span class="status-connection" :class="{ disconnected: !serverConnected }">
         <span class="connection-dot" />{{ statusRight }}
       </span>
-    </div>
-
-    <!-- Clipboard toast -->
-    <div v-if="clipboard.count > 0" class="toast">
-      <div style="font-weight: 600; margin-bottom: 4px;">Clipboard</div>
-      <div style="color: var(--text-muted);">{{ clipboard.mode }}: {{ clipboard.count }} item(s)</div>
     </div>
 
     <!-- Context menu -->
@@ -281,14 +278,15 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { mdiHarddisk, mdiSegment, mdiMagnify, mdiFolder, mdiMessage, mdiCog, mdiClose, mdiEye, mdiInformation, mdiBug } from '@mdi/js'
+import { mdiHarddisk, mdiSegment, mdiMagnify, mdiFolder, mdiMessage, mdiCog, mdiClose, mdiEye, mdiInformation, mdiBug,
+         mdiContentCopy, mdiContentCut, mdiPencilOutline, mdiTrashCanOutline, mdiInformationOutline } from '@mdi/js'
 import { useDragAndDrop } from '~/composables/useDragAndDrop.js'
 import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
 import { usePreferences } from '~/composables/usePreferences.js'
 import { useDebugLog } from '~/composables/useDebugLog.js'
 import { useFileOpsQueue } from '~/composables/useFileOpsQueue.js'
 import { useActionHistory } from '~/composables/useActionHistory.js'
-import { fsStat, fsOpenWithSystem, fsArchiveCapabilities } from '~/lib/fs-api.js'
+import { fsStat, fsOpenWithSystem, fsOpenTerminal, fsArchiveCapabilities } from '~/lib/fs-api.js'
 
 function uuid() { return uuidv4() }
 
@@ -518,7 +516,8 @@ const {
 
 // Menu items
 const fileMenuItems = computed(() => [
-  { key: 'newfolder', label: 'New Folder', action: createNewFolder }
+  { key: 'newfolder', label: 'New Folder', action: createNewFolder },
+  { key: 'newfile',   label: 'New File',   action: createNewFile   }
 ])
 
 const editMenuItems = computed(() => [
@@ -651,6 +650,20 @@ async function createNewFolder() {
   }
 }
 
+async function createNewFile() {
+  const name = prompt('Enter file name:')
+  if (!name) return
+  const dir = activeTab.value?.kind === 'dir' ? activeTab.value.path : '/'
+  const sep = dir.includes('\\') ? '\\' : '/'
+  try {
+    await enqueue({ label: `Create file "${name}"`, kind: 'create_file', params: { path: dir + sep + name } })
+    directoryTabRef.value?.refresh()
+  } catch (e) {
+    status.value.left = `Error: ${e?.message ?? e}`
+    setTimeout(() => { status.value.left = 'Ready' }, 2000)
+  }
+}
+
 // Tab management
 async function openPeekTabForDir(path) {
   const title = path.split(/[/\\]/).filter(Boolean).pop() || path
@@ -663,7 +676,7 @@ async function openPeekTabForDir(path) {
 }
 
 function handleTabClick(tab) {
-  log('tab', 'Tab activated', tab.title)
+  log('tab', 'Tab activated', { title: tab.title, path: tab.path ?? null, kind: tab.kind })
   nextTick(() => {
     activeTabId.value = tab.id
     if (tab.kind === 'dir' && tab.mode === 'peek') tab.mode = 'pinned'
@@ -857,7 +870,7 @@ async function doCompress(items, format) {
   try {
     await enqueue({ label, kind: 'compress', params: { paths, format, dest } })
     directoryTabRef.value?.refresh()
-    log('ops-queue', 'Compressed', `${paths.length} item(s) → ${name}`)
+    log('ops-queue', 'Compressed', { dest, format, count: paths.length, sources: paths })
   } catch (e) {
     status.value.left = `Compress failed: ${e?.message ?? e}`
     setTimeout(() => { status.value.left = 'Ready' }, 2500)
@@ -891,7 +904,7 @@ async function doDecompress(item, toNewFolder = false) {
       return
     }
     directoryTabRef.value?.refresh()
-    log('ops-queue', 'Extracted', `"${item.name}" → ${destDir}`)
+    log('ops-queue', 'Extracted', { source: item.path, dest: destDir, toNewFolder })
   } catch (e) {
     status.value.left = `Extract failed: ${e?.message ?? e}`
     setTimeout(() => { status.value.left = 'Ready' }, 2500)
@@ -927,6 +940,11 @@ async function doPaste() {
         redo: () => enqueue({ label: `Redo ${label}`, kind: 'copy', params: { paths, dest_dir: destDir } }),
       })
     }
+    const destName = destDir.split(/[/\\]/).filter(Boolean).pop() || destDir
+    log('clipboard', `Paste (${cb.mode}) → ${destName}`, {
+      _type: 'item-table',
+      items: cb.items.map(i => ({ name: i.name, kind: i.kind, size: i.size, path: i.path, thumbnail: i.thumbnail ?? null })),
+    })
     directoryTabRef.value?.refresh()
   } catch (e) {
     status.value.left = `Paste failed: ${e?.message ?? e}`
@@ -989,7 +1007,7 @@ function onKeyDown(e) {
 async function handleExplorerSelect(payload) {
   const path = typeof payload === 'string' ? payload : payload?.path
   if (!path) return
-  log('select', 'Explorer selected', path.split(/[/\\]/).filter(Boolean).pop() ?? path)
+  log('select', 'Explorer selected', { path, name: path.split(/[/\\]/).filter(Boolean).pop() ?? path })
   selectedPath.value = path
   const kind = payload?.kind
   if (kind === 'directory' || kind === 'dir' || kind === 'drive' || kind === 'root') {
@@ -1003,8 +1021,15 @@ async function handleExplorerSelect(payload) {
 }
 
 async function handleSelectFromDirectory(payload) {
-  if (payload && Array.isArray(payload.selectedItems)) {
-    log('select', `${payload.selectedItems.length} item(s) selected`, payload.selectedItems.length === 1 ? payload.selectedItems[0]?.name : `${payload.selectedItems.length} items`)
+  if (payload?.selectedItems?.length > 0) {
+    const count     = payload.selectedItems.length
+    const totalSize = payload.selectedItems.reduce((s, i) => s + (i.size ?? 0), 0)
+    log('select', `${count} item${count === 1 ? '' : 's'} | ${formatBytes(totalSize)}`, {
+      _type: 'item-table',
+      items: payload.selectedItems.map(i => ({
+        name: i.name, kind: i.kind, size: i.size, path: i.path, thumbnail: i.thumbnail ?? null,
+      })),
+    })
   }
   if (payload?.mode === 'open' && payload?.item?.kind === 'file') {
     try {
@@ -1061,7 +1086,7 @@ async function handleDoubleClick(payload) {
 function navigateInCurrentTab(path) {
   const active = activeTab.value
   if (!active || active.kind !== 'dir') return
-  log('nav', 'Navigate', path)
+  log('nav', 'Navigate', { from: active.path, to: path })
   active.path = path
   if (path.includes('::')) {
     const [archivePath, innerPath] = path.split('::')
@@ -1095,11 +1120,17 @@ async function handleOpenFromTab(item) {
 // Clipboard
 function copyToClipboard(items) {
   clipboard.value = { mode: 'Copy', count: items.length, items: [...items] }
-  log('clipboard', 'Copy', `${items.length} item(s)`)
+  log('clipboard', `Copy  ${items.length} item${items.length === 1 ? '' : 's'}`, {
+    _type: 'item-table',
+    items: items.map(i => ({ name: i.name, kind: i.kind, size: i.size, path: i.path, thumbnail: i.thumbnail ?? null })),
+  })
 }
 function cutToClipboard(items) {
   clipboard.value = { mode: 'Cut', count: items.length, items: [...items] }
-  log('clipboard', 'Cut', `${items.length} item(s)`)
+  log('clipboard', `Cut  ${items.length} item${items.length === 1 ? '' : 's'}`, {
+    _type: 'item-table',
+    items: items.map(i => ({ name: i.name, kind: i.kind, size: i.size, path: i.path, thumbnail: i.thumbnail ?? null })),
+  })
 }
 
 // Context menus
@@ -1126,62 +1157,136 @@ function openArchiveInTab(item) {
   nextTick(() => { activeTabId.value = tab.id })
 }
 
+function showBackgroundContextMenu(event) {
+  const inArchive = activeTab.value?.path?.includes('::')
+  const curDir = activeTab.value?.kind === 'dir' ? activeTab.value.path : null
+
+  contextMenu.value = {
+    visible: true, x: event.clientX, y: event.clientY, quickActions: [],
+    items: inArchive ? [] : [
+      { key: 'newfolder', label: 'New Folder', action: createNewFolder },
+      { key: 'newfile',   label: 'New File',   action: createNewFile   },
+      ...(curDir ? [{ key: 'terminal', label: 'Open in Terminal', action: () => fsOpenTerminal(curDir) }] : []),
+      { separator: true },
+      { key: 'paste', label: 'Paste', action: doPaste, disabled: clipboard.value.count === 0 },
+    ],
+  }
+}
+
+function showRightDragDropMenu({ items, dropPath, x, y }) {
+  if (!items?.length) return
+
+  // Determine effective destination: dropped dir item or current tab dir
+  const destDir = (() => {
+    if (dropPath) {
+      const hit = items.find(i => i.path === dropPath)
+      if (!hit || hit.kind === 'dir') return dropPath
+    }
+    return activeTab.value?.kind === 'dir' ? activeTab.value.path : null
+  })()
+
+  if (!destDir) return
+
+  const label = destDir.split(/[/\\]/).filter(Boolean).pop() || destDir
+  const allArchives = items.every(i => i.kind === 'archive' || isArchiveItem(i))
+
+  contextMenu.value = {
+    visible: true, x, y, quickActions: [],
+    items: [
+      { key: 'move-here', label: `Move Here "${label}"`, action: () => doMove(items, destDir) },
+      { key: 'copy-here', label: `Copy Here "${label}"`, action: () => {
+        const paths = items.map(i => i.path)
+        enqueue({ label: `Copy ${items.length} item(s) to "${label}"`, kind: 'copy', params: { paths, dest_dir: destDir } })
+          .then(() => directoryTabRef.value?.refresh())
+          .catch(e => { status.value.left = `Error: ${e?.message ?? e}`; setTimeout(() => { status.value.left = 'Ready' }, 2000) })
+      }},
+      { key: 'link-here', label: 'Create Symlink Here', disabled: true },
+      { separator: true },
+      ...(allArchives
+        ? [{ key: 'extract-here', label: 'Extract Here', action: () => { for (const arch of items) doDecompress(arch, false) } }]
+        : [{ key: 'compress-here', label: 'Compress to Archive Here', action: () => doCompress(items, 'zip') }]
+      ),
+      { separator: true },
+      { key: 'cancel', label: 'Cancel', action: () => {} },
+    ],
+  }
+}
+
 function showItemContextMenu({ event, item }) {
   const targets = selectedItems.value.some(s => s.path === item.path)
     ? selectedItems.value
     : [item]
 
-  // Detect if we're currently browsing inside an archive (read-only)
   const inArchive = activeTab.value?.path?.includes('::')
+  const isShift   = event.shiftKey
 
-  // Build compress submenu from available capabilities
-  const compressItems = []
-  if (!inArchive) {
-    compressItems.push({ key: 'compress-zip',   label: 'Compress to ZIP',    action: () => doCompress(targets, 'zip') })
-    compressItems.push({ key: 'compress-targz', label: 'Compress to TAR.GZ', action: () => doCompress(targets, 'tar.gz') })
-    if (archiveCaps.value?.seven_zip?.available) {
-      compressItems.push({ key: 'compress-7z', label: 'Compress to 7Z', action: () => doCompress(targets, '7z') })
-    }
-  }
-
-  // Single-item checks
   const singleItem = targets.length === 1 ? targets[0] : null
-  const isArchive = singleItem?.kind === 'archive' || (singleItem?.kind === 'file' && isArchiveItem(singleItem))
-  const isApp = singleItem?.kind === 'app'
+  const isArchive  = singleItem?.kind === 'archive' || (singleItem?.kind === 'file' && isArchiveItem(singleItem))
+  const isApp      = singleItem?.kind === 'app'
+  const isDir      = singleItem?.kind === 'dir'
+  const multi      = targets.length > 1
 
-  contextMenu.value = {
-    visible: true, x: event.clientX, y: event.clientY,
-    quickActions: inArchive ? [] : [
-      { key: 'copy',   icon: '📋', label: 'Copy',   action: () => copyToClipboard(targets) },
-      { key: 'cut',    icon: '✂️', label: 'Cut',    action: () => cutToClipboard(targets)  },
-      { key: 'rename', icon: '✏️', label: 'Rename', action: () => directoryTabRef.value?.$el?.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true })) },
-      { key: 'delete', icon: '🗑️', label: 'Delete', action: () => doTrash(targets) },
-      { key: 'info',   icon: 'ℹ️', label: 'Info',   action: () => {} }
-    ],
-    items: [
-      { key: 'open', label: isApp ? 'Open Application' : 'Open', action: () => handleOpenFromTab(item) },
-      ...(isArchive || isApp ? [
-        { separator: true },
-        { key: 'view-contents', label: 'Browse Contents', action: () => openArchiveInTab(singleItem) },
-      ] : []),
-      ...(isArchive && !inArchive ? [
-        { key: 'extract-here',   label: 'Extract Here',       action: () => doDecompress(singleItem, false) },
-        { key: 'extract-folder', label: 'Extract to Folder…', action: () => doDecompress(singleItem, true)  },
-      ] : []),
-      ...(!inArchive ? [
-        { separator: true },
-        { key: 'copy',  label: 'Copy',  action: () => copyToClipboard(targets) },
-        { key: 'cut',   label: 'Cut',   action: () => cutToClipboard(targets)  },
-        { key: 'paste', label: 'Paste', action: doPaste, disabled: clipboard.value.count === 0 },
-        { separator: true },
-        ...compressItems,
-        { separator: true },
-        { key: 'rename', label: 'Rename',             action: () => directoryTabRef.value?.$el?.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true })) },
-        { key: 'trash',  label: 'Move to Trash',      action: () => doTrash(targets) },
-        { key: 'delete', label: 'Delete Permanently', action: () => doDelete(targets) },
-      ] : []),
-    ]
-  }
+  // ── Quick action buttons (SVG icons) ──────────────────────────────────────
+  const quickActions = inArchive ? [] : [
+    { key: 'copy',   icon: mdiContentCopy,    label: 'Copy',   action: () => copyToClipboard(targets) },
+    { key: 'cut',    icon: mdiContentCut,     label: 'Cut',    action: () => cutToClipboard(targets)  },
+    { key: 'rename', icon: mdiPencilOutline,   label: 'Rename', action: () => directoryTabRef.value?.$el?.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true })) },
+    { key: 'trash',  icon: mdiTrashCanOutline, label: isShift ? 'Delete Permanently' : 'Move to Trash', action: () => isShift ? doDelete(targets) : doTrash(targets) },
+    ...(!multi ? [{ key: 'info', icon: mdiInformationOutline, label: 'Info', action: () => {} }] : []),
+  ]
+
+  // ── Compress submenu ──────────────────────────────────────────────────────
+  const compressSubmenu = inArchive ? [] : [
+    { key: 'c-zip',   label: 'ZIP',    action: () => doCompress(targets, 'zip') },
+    { key: 'c-targz', label: 'TAR.GZ', action: () => doCompress(targets, 'tar.gz') },
+    ...(archiveCaps.value?.seven_zip?.available ? [{ key: 'c-7z', label: '7-Zip', action: () => doCompress(targets, '7z') }] : []),
+  ]
+
+  // ── "Copy path" submenu ───────────────────────────────────────────────────
+  const copyPathAction = () => navigator.clipboard.writeText(item.path)
+
+  // ── Open With submenu ─────────────────────────────────────────────────────
+  const openWithSubmenu = [
+    { key: 'open-default', label: 'Default Application', action: () => fsOpenWithSystem(item.path) },
+  ]
+
+  // ── Extract submenu (archives only) ──────────────────────────────────────
+  const extractSubmenu = isArchive && !inArchive ? [
+    { key: 'extract-here',   label: 'Extract Here',         action: () => doDecompress(singleItem, false) },
+    { key: 'extract-folder', label: 'Extract to Folder…',   action: () => doDecompress(singleItem, true)  },
+  ] : []
+
+  // ── Build item list ───────────────────────────────────────────────────────
+  const items = [
+    // Open section
+    { key: 'open', label: isApp ? 'Open Application' : 'Open', action: () => handleOpenFromTab(item) },
+    ...(!multi ? [{ key: 'open-with', label: 'Open With…', submenu: openWithSubmenu }] : []),
+    ...((!multi && (isDir || isApp)) ? [{ key: 'terminal', label: 'Open in Terminal', action: () => fsOpenTerminal(singleItem.path) }] : []),
+    ...((!multi && (isArchive || isApp)) ? [{ key: 'browse', label: 'Browse Contents', action: () => openArchiveInTab(singleItem) }] : []),
+    ...(extractSubmenu.length ? [{ key: 'extract', label: 'Extract', submenu: extractSubmenu }] : []),
+
+    // Edit section
+    { separator: true },
+    { key: 'duplicate', label: 'Duplicate', action: () => {
+      const ops = targets.map(t => {
+        const sep = t.path.includes('\\') ? '\\' : '/'
+        const dir = t.path.split(sep).slice(0, -1).join(sep)
+        return enqueue({ label: `Duplicate "${t.name}"`, kind: 'copy', params: { paths: [t.path], dest_dir: dir } })
+      })
+      Promise.all(ops)
+        .then(() => directoryTabRef.value?.refresh())
+        .catch(e => { status.value.left = `Error: ${e?.message ?? e}`; setTimeout(() => { status.value.left = 'Ready' }, 2000) })
+    }},
+    ...(!inArchive && !multi ? [{ key: 'copypath', label: 'Copy Path', action: copyPathAction }] : []),
+
+    // Actions section
+    { separator: true },
+    ...(!inArchive && compressSubmenu.length ? [{ key: 'compress', label: 'Compress', submenu: compressSubmenu }] : []),
+    ...(!inArchive ? [{ key: 'rename', label: 'Rename', action: () => directoryTabRef.value?.$el?.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true })) }] : []),
+    ...(!inArchive ? [{ key: 'delete', label: isShift ? 'Delete Permanently' : 'Delete', action: () => isShift ? doDelete(targets) : doTrash(targets) }] : []),
+  ]
+
+  contextMenu.value = { visible: true, x: event.clientX, y: event.clientY, quickActions, items }
 }
 </script>
 
@@ -1417,6 +1522,7 @@ function showItemContextMenu({ event, item }) {
 .status-left { display: flex; align-items: center; gap: 2px; min-width: 0; overflow: hidden; }
 .status-bar-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 6px; border-radius: 3px; }
 .status-bar-item:hover { background: rgba(255,255,255,0.12); }
+.status-bar-item--clipboard { color: color-mix(in srgb, var(--accent, #007acc) 90%, var(--text)); }
 .status-connection { display: flex; align-items: center; gap: 5px; white-space: nowrap; flex-shrink: 0; opacity: 0.85; }
 .status-connection.disconnected { opacity: 1; color: #ffcdd2; }
 .connection-dot {

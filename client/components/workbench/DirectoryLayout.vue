@@ -29,7 +29,7 @@
       </button>
     </div>
 
-    <div class="dl" :data-layout="layout" @scroll.passive="onNestedScroll" ref="dlRef">
+    <div class="dl" :data-layout="layout" @scroll.passive="onNestedScroll" @contextmenu.self.prevent="emit('background-contextmenu', $event)" ref="dlRef">
 
     <!-- Column header — visible in details/list/nested layouts via CSS -->
     <div class="dl-header">
@@ -80,7 +80,7 @@
       <div v-for="dir in stickyDirs" :key="dir.path"
            class="dl-item dl-item--ctx"
            @click="(e) => onItemClick(e, dir)"
-           @contextmenu.prevent="$emit('contextmenu', { event: $event, item: dir })">
+           @contextmenu.prevent.stop="$emit('contextmenu', { event: $event, item: dir })">
         <label class="dl-check" style="visibility:hidden" @click.stop @mousedown.stop>
           <input type="checkbox" disabled />
         </label>
@@ -124,9 +124,9 @@
         'dl-item--dragging': draggingPath === item.path,
         'dl-item--hidden':   item.hidden,
       }"
-      @mousedown="(e) => { cancelPending(); onMouseDown(e, item) }"
+      @mousedown="(e) => { cancelPending(); onMouseDown(e, item); onRightMouseDown(e, item) }"
       @click="(e) => onItemClick(e, item)"
-      @contextmenu.prevent="$emit('contextmenu', { event: $event, item })"
+      @contextmenu.prevent.stop="$emit('contextmenu', { event: $event, item })"
       @mouseenter="hoverItem = item; hpStart(item, $event.currentTarget)"
       @mouseleave="hoverItem = null; endHover()"
     >
@@ -288,6 +288,7 @@ import { mdiChevronDown, mdiChevronRight, mdiFile, mdiFolder, mdiLinkVariant, md
 import { useClickDebounce } from '~/composables/useClickDebounce.js'
 import { useHoverPreview } from '~/composables/useHoverPreview.js'
 import { useDrag } from '~/composables/useDrag.js'
+import { useRightClickDrag } from '~/composables/useRightClickDrag.js'
 import { useIconPack } from '~/composables/useIconPack.js'
 import { resolveCustomIcon } from '~/composables/useCustomIcon.js'
 import { fsListDir, fsArchiveList } from '~/lib/fs-api.js'
@@ -341,7 +342,7 @@ const props = defineProps({
   filterActive: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['select', 'focus', 'contextmenu', 'navigate', 'rename', 'zoom-change', 'sort-change', 'filter-change', 'filter-click', 'copy', 'cut', 'paste'])
+const emit = defineEmits(['select', 'focus', 'contextmenu', 'background-contextmenu', 'right-drag-drop', 'navigate', 'rename', 'zoom-change', 'sort-change', 'filter-change', 'filter-click', 'copy', 'cut', 'paste'])
 
 // ── Hover preview ─────────────────────────────────────────────────────────────
 const VIDEO_EXTS = new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts'])
@@ -811,6 +812,12 @@ const { draggingPath, wasDragging, onMouseDown } = useDrag({
     }
     return [...props.selectedItems]
   }
+})
+
+const { onRightMouseDown } = useRightClickDrag({
+  onActivate:    (item) => isSelected(item) ? [...props.selectedItems] : [item],
+  onDrop:        (payload) => emit('right-drag-drop', payload),
+  onRightClick:  ({ item, event }) => emit('contextmenu', { event, item }),
 })
 
 function onItemClick(e, item) {

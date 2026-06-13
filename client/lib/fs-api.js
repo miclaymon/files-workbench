@@ -130,6 +130,10 @@ export function fsOpenWithSystem(path, opts = {}) {
   return _post(`/_api/${API_V}/fs/open_with_system`, { path }, opts.signal)
 }
 
+export function fsOpenTerminal(path, opts = {}) {
+  return _post(`/_api/${API_V}/fs/open_terminal`, { path }, opts.signal)
+}
+
 export function fsCreateFile(path, opts = {}) {
   return _post(`/_api/${API_V}/fs/create_file`, { path }, opts.signal)
 }

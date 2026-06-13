@@ -44,6 +44,7 @@ Workbench.vue                  Root shell: titlebar, activity bar, sidebar, tab 
 | `useActionHistory.js` | Global undo/redo stack. `push({ label, undo, redo })` adds a reversible action. `undo()` / `redo()` execute and shift between stacks. |
 | `useClickDebounce.js` | Single vs double-click disambiguation. Modifier keys (Ctrl/Shift/Meta) fire immediately. Exposes `cancel()` to flush pending timers (used when rename mode activates). |
 | `useDrag.js` | Custom ghost-clone drag for directory items. 200 ms activation delay. `onActivate` callback receives the mousedown item and returns the full array of items being dragged (auto-selects unselected items). |
+| `useRightClickDrag.js` | Right-click drag for directory items. Suppresses the native `contextmenu` event immediately on `mousedown` (Linux/X11 fires it on `mousedown`, not `mouseup`). On `mouseup`: no movement → calls `onRightClick({ item, event })`; movement beyond 6 px threshold → creates ghost clone and calls `onDrop({ items, dropPath, x, y })` where `dropPath` is from `[data-path]` under the cursor. |
 | `useTreeDrag.js` | Module-level singleton drag for tree nodes. Creates a chip-style ghost (icon + name). Valid drop targets: `type === 'directory'` nodes only; root/drive nodes and files are not valid targets. Shared refs mean all `TreeItem` instances see the same `draggingNode`/`dragOverNode`. |
 | `useDragAndDrop.js` | Native HTML5 drag for the tab bar (reordering). Separate from the file drag systems. |
 | `useIconPack.js` | Module-level singleton composable for the icon pack. Fetches `/icons/manifest` once; exposes `ensureLoaded()`, `resolveIcon(filename, isDir)`, `iconUrl(iconName)`, and `isAvailable`. All components that need pack icons call `ensureLoaded()` once at mount time. |
@@ -65,7 +66,7 @@ The Go process starts **two independent servers**: a read-only data server (port
 | File | Key handlers |
 |---|---|
 | `main.go` | `registerDataRoutes` / `registerControlRoutes`, CORS middleware, dual-server startup with `sync.WaitGroup` |
-| `fs.go` | `handleFsStat`, `handleFsListDir`, `handleFsPreview`, `handleFsCreateFile`, `handleFsCreateDir`, `handleFsWriteFile`, `handleFsOpenWithSystem`, `handleFsRename`, `handleFsMove`, `handleFsCopy`, `handleFsDelete`, `handleFsDeleteElevated`, `handleFsTrash`, `handleFsTrashElevated`, `handleFsCompress`, `handleFsDecompress`. Files with archive extensions get `kind: "archive"` in listing responses. |
+| `fs.go` | `handleFsStat`, `handleFsListDir`, `handleFsPreview`, `handleFsCreateFile`, `handleFsCreateDir`, `handleFsWriteFile`, `handleFsOpenWithSystem`, `handleFsOpenTerminal`, `handleFsRename`, `handleFsMove`, `handleFsCopy`, `handleFsDelete`, `handleFsDeleteElevated`, `handleFsTrash`, `handleFsTrashElevated`, `handleFsCompress`, `handleFsDecompress`. Files with archive extensions get `kind: "archive"` in listing responses. `handleFsOpenTerminal` walks a list of known terminal emulators (`x-terminal-emulator`, `gnome-terminal`, `konsole`, `kitty`, `alacritty`, etc.) and launches the first one found; uses macOS `osascript` / Windows Terminal fallback on other platforms. |
 | `archive.go` | `handleFsArchiveLs` — lists archive contents as virtual directory entries. `handleArchiveCapabilities` — reports which tools (7z, unrar) are available. Supports ZIP, TAR/TAR.GZ/TAR.BZ2/TAR.XZ, 7Z (via `7z l -slt`), RAR (via `unrar lt`). `filterArchiveEntries` synthesizes implied directory nodes for archives that omit them. |
 | `exe.go` | `handleMediaExeIcon` — extracts the best-resolution icon from a Windows PE `.rsrc` section (PNG direct or DIB wrapped in a minimal ICO). `handleMediaExeInfo` — parses `VS_VERSIONINFO` to return `{ name, publisher, version, description }`. |
 | `permissions.go` | `isProtectedPath` — blocks operations on critical OS paths (root, /etc, /sys, etc.). `requiresElevation` — detects whether a path needs sudo/admin and returns the elevation method (`sudo_password` on Linux/macOS, `uac` on Windows). |
@@ -126,6 +127,14 @@ All mutating file ops are enqueued via `useFileOpsQueue.enqueue({ label, kind, p
 
 ### Monaco worker setup
 Must configure `window.MonacoEnvironment.getWorker()` before importing Monaco. Use `new URL('monaco-editor/esm/vs/...', import.meta.url)` — Vite bundles these as separate worker chunks automatically. Dynamic `import('monaco-editor')` in `onMounted` to defer loading.
+
+### Right-click context menu timing on Linux/X11
+
+On Linux with X11, the native `contextmenu` event fires on `mousedown` rather than `mouseup` (unlike Windows and macOS). This means a naive `@contextmenu` listener would open the context menu before the user has a chance to start right-click dragging.
+
+`useRightClickDrag` addresses this by attaching a capture-phase `contextmenu` listener on every right `mousedown` that calls `preventDefault()` and `stopPropagation()`. It then fires `onRightClick` on `mouseup` (no drag) or `onDrop` on `mouseup` (drag). The suppression listener is always registered — even when no drag occurs — so the behaviour is uniform across all platforms.
+
+Direct `@contextmenu.prevent` event listeners on individual items are kept as no-op safety nets but are never the primary trigger.
 
 ### Ghost drag and trailing click
 When a custom drag ends, a `click` event fires after `mouseup`. `wasDragging` in `useDrag` / `useTreeDrag` is briefly `true` after drag ends (reset via `setTimeout(..., 0)`) so item click handlers can skip that trailing event.
