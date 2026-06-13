@@ -252,7 +252,7 @@ function onCheckboxChange(event) {
     box-shadow: 0 0 0 2px var(--accent);
     box-shadow: 0 0 3px 1px color-mix(in srgb, var(--accent) 75%, transparent)
   }
-  &.hidden { opacity: 0.45; }
+  &.hidden { opacity: 0.55; }
 }
 
 .item-checkbox { position: absolute; top: 4px; left: 4px; z-index: 10; }

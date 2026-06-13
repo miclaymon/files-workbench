@@ -1,4 +1,4 @@
-import { API_BASE, API_TIMEOUT_MS, API_V } from './api-config.js'
+import { API_BASE, CONTROL_BASE, API_TIMEOUT_MS, API_V } from './api-config.js'
 
 async function _get(path, params = {}, signal = null) {
   const base = API_BASE
@@ -32,7 +32,7 @@ async function _get(path, params = {}, signal = null) {
 }
 
 async function _post(path, body = {}, signal = null) {
-  const url = `${API_BASE}${path}`
+  const url = `${CONTROL_BASE}${path}`
   const timeoutController = new AbortController()
   const timer = setTimeout(() => timeoutController.abort(), API_TIMEOUT_MS)
   const fetchSignal = signal
@@ -42,6 +42,37 @@ async function _post(path, body = {}, signal = null) {
   try {
     const res = await fetch(url, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: fetchSignal,
+    })
+    clearTimeout(timer)
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      throw new Error(err.detail ?? `HTTP ${res.status}`)
+    }
+    return res.json()
+  } catch (err) {
+    clearTimeout(timer)
+    if (err.name === 'AbortError') {
+      if (signal?.aborted) throw new Error('Request cancelled')
+      throw new Error(`Request timed out: ${path}`)
+    }
+    throw err
+  }
+}
+
+async function _put(path, body = {}, signal = null) {
+  const url = `${CONTROL_BASE}${path}`
+  const timeoutController = new AbortController()
+  const timer = setTimeout(() => timeoutController.abort(), API_TIMEOUT_MS)
+  const fetchSignal = signal
+    ? AbortSignal.any([timeoutController.signal, signal])
+    : timeoutController.signal
+
+  try {
+    const res = await fetch(url, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: fetchSignal,
@@ -99,6 +130,10 @@ export function fsOpenWithSystem(path, opts = {}) {
   return _post(`/_api/${API_V}/fs/open_with_system`, { path }, opts.signal)
 }
 
+export function fsOpenTerminal(path, opts = {}) {
+  return _post(`/_api/${API_V}/fs/open_terminal`, { path }, opts.signal)
+}
+
 export function fsCreateFile(path, opts = {}) {
   return _post(`/_api/${API_V}/fs/create_file`, { path }, opts.signal)
 }
@@ -109,4 +144,125 @@ export function fsCreateDir(path, opts = {}) {
 
 export function fsWriteFile(path, content, opts = {}) {
   return _post(`/_api/${API_V}/fs/write_file`, { path, content }, opts.signal)
+}
+
+export function fsRename(path, newName, opts = {}) {
+  return _post(`/_api/${API_V}/fs/rename`, { path, new_name: newName }, opts.signal)
+}
+
+// paths: string[] — move all to destDir
+export function fsMove(paths, destDir, opts = {}) {
+  return _post(`/_api/${API_V}/fs/move`, { paths, dest_dir: destDir }, opts.signal)
+}
+
+// paths: string[] — copy all to destDir
+export function fsCopy(paths, destDir, opts = {}) {
+  return _post(`/_api/${API_V}/fs/copy`, { paths, dest_dir: destDir }, opts.signal)
+}
+
+// paths: string[] — permanently delete.
+// Returns { deleted } on success.
+// Returns { requiresElevation, elevationMethod, elevationPaths } when the server
+// responds 403 requires_elevation — caller must handle and call fsDeleteElevated.
+// Throws on protected-path 403 or other errors.
+export async function fsDelete(paths, opts = {}) {
+  const url = `${CONTROL_BASE}/_api/${API_V}/fs/delete`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paths }),
+    signal: opts.signal,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (res.status === 403 && data.error === 'requires_elevation') {
+    return { requiresElevation: true, elevationMethod: data.elevation_method, elevationPaths: data.paths }
+  }
+  if (!res.ok) throw new Error(data.detail ?? `HTTP ${res.status}`)
+  return data
+}
+
+export function fsDeleteElevated(paths, password, opts = {}) {
+  return _post(`/_api/${API_V}/fs/delete/elevated`, { paths, password }, opts.signal)
+}
+
+// paths: string[] — move to OS trash / recycle bin.
+// Same elevation-detection semantics as fsDelete.
+export async function fsTrash(paths, opts = {}) {
+  const url = `${CONTROL_BASE}/_api/${API_V}/fs/trash`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paths }),
+    signal: opts.signal,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (res.status === 403 && data.error === 'requires_elevation') {
+    return { requiresElevation: true, elevationMethod: data.elevation_method, elevationPaths: data.paths }
+  }
+  if (!res.ok) throw new Error(data.detail ?? `HTTP ${res.status}`)
+  return data
+}
+
+export function fsTrashElevated(paths, password, opts = {}) {
+  return _post(`/_api/${API_V}/fs/trash/elevated`, { paths, password }, opts.signal)
+}
+
+// ── exe metadata (Windows PE) ─────────────────────────────────────────────────
+
+// Returns { name, publisher, version, description } for a Windows .exe file.
+export function fsExeInfo(path, opts = {}) {
+  return _get(`/_api/${API_V}/media/exe_info`, { path }, opts.signal)
+}
+
+// ── archive ───────────────────────────────────────────────────────────────────
+
+export function fsArchiveCapabilities() {
+  return _get(`/_api/${API_V}/fs/archive/capabilities`)
+}
+
+// inner: "" = archive root, "docs/" = inside docs folder
+export function fsArchiveList(path, inner = '', opts = {}) {
+  return _get(`/_api/${API_V}/fs/archive/ls`, { path, inner }, opts.signal)
+}
+
+// format: "zip" | "tar" | "tar.gz" | "7z"
+// dest: full output path including filename
+export function fsCompress(paths, format, dest, opts = {}) {
+  return _post(`/_api/${API_V}/fs/compress`, { paths, format, dest }, opts.signal)
+}
+
+// Returns { dest_dir } on success.
+// Returns { missingTool, tool, installApt, installDnf, installPac, installBrew }
+// when the server responds 422 missing_tool — caller shows install prompt.
+export async function fsDecompress(path, destDir, opts = {}) {
+  const url = `${CONTROL_BASE}/_api/${API_V}/fs/decompress`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, dest_dir: destDir }),
+    signal: opts.signal,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (res.status === 422 && data.error === 'missing_tool') {
+    return {
+      missingTool: true,
+      tool: data.tool,
+      installApt: data.install_apt,
+      installDnf: data.install_dnf,
+      installPac: data.install_pac,
+      installBrew: data.install_brew,
+    }
+  }
+  if (!res.ok) throw new Error(data.detail ?? `HTTP ${res.status}`)
+  return data
+}
+
+// ── preferences / customization writes ───────────────────────────────────────
+
+export function fsCustomizationPut(path, customization, opts = {}) {
+  return _put(`/_api/${API_V}/fs/customization`, { path, ...customization }, opts.signal)
+}
+
+export function fsPreferencesPut(prefs, opts = {}) {
+  return _put(`/_api/${API_V}/preferences`, prefs, opts.signal)
 }

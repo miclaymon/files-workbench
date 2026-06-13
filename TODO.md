@@ -7,7 +7,7 @@
 - [x] Remember last folder tree state and restore
   - TODO: later, remember tabs and sidebar and panel states - but important consideration since we may want to make it so that we can easily save/load the app state, not just one component
 - [x] Fix/update preview endpoint so that it actually works
-- [] Fix: add debounce for single-click, double-click handling (applies the explorer tree view nodes, directory view items, etc.)
+- [x] Fix: add debounce for single-click, double-click handling (applies the explorer tree view nodes, directory view items, etc.)
 - [x] Fix: make images in file items `user-select: none` but allow the file item to be custom draggable and handled by other drop areas depending on the allow contexts (well add the drop-targets and behavior later)
   - When dragging the item it should not change the flow of surrounding items: instead when dragging an item, a new floating copy of the dragging item is created that can move with the mouse and be dropped on a target. the original item simply reduces its opacity. There should be maybe a 200ms delay before a drag is actually trigger to avoid accidental activation on clicks and that timing can be adjusted in the user preferences.
   - [ ] How do Electron apps like Notion and VS Code handle dragging tabs? You can drag to reorder tabs in a tablist or you can drag the tab our and it spawns a new Electron window with that tab in it. Is it just checking if the drag target is still within the drag list or using an IntersectionObserver?
@@ -20,7 +20,7 @@
 - [x] Make more usable generic panel that has a small header with a panel title heading on the left and some action buttons on the right.
 - [x] Adjust layout structure so that preview panel is not inside of workspace-body, but is instead a sibling of the other sidebar  editor-area inline
 - [x] Footer status bar should show "Directory: #,### items | ## GB" and (if num selected items > 0) "Selected:" ## items selected | ## GB" on the left side (where "Ready" is now). We can still show Connected in the bottom right, but it should indicate that acutal connection status to the server.
-- [ ] Explorer panel: new root nodes: Favorites, Recently accessed, Network (SMB, FTP, SFTP), Cloud (to be implemented later: Google Drive, OneDrive, Proton Drive)
+- [ ] Explorer panel: new root nodes: Favorites, Recently accessed, Network (SMB, FTP, SFTP), Cloud (to be implemented later: Google Drive, OneDrive, Proton Drive), Libraries
 - [x] Directory View: other layouts: `grid-xs`, `grid-sm`, `grid-md` (current), `grid-lg`, `grid-xl`, `grid-xxl`, `details`, `list`, `gallery-grid`, `gallery-mosaic`, `feed`, `content`
 - [x] Grid item hover to show a hovering preview of media
 - [ ] Support for directory customizations and custom thumbnails (.directory and desktop.ini files, with custom extension to .directory under `[Files Workbench]`)
@@ -29,7 +29,7 @@
 - [ ] Improvements to Home page
   - [ ] Working storage space indicators
 - [x] Intergration with `vscode-material-icon-theme` (https://github.com/material-extensions/vscode-material-icon-theme/releases) to automatically apply custom folder icons based on the same rules and icons from that extension
-- [ ] Service worker to help with handling networking
+- [x] Service worker to help with handling networking, queueing operations
   - [ ] Service worker has a WebSocket connection to the server for more realtime data transfer (listing directories, fetching metadata, sending commands to perform file operations, etc.)
 - [ ] Improvements to themes (adjustments to dark and black themes)
 - [ ] Directory Tab address bar history and autocomplete
@@ -40,10 +40,10 @@
 - [ ] Pinned items in directories
 - [ ] Storage side menu option
 
-- [ ] File operations functionality: rename, delete, move, copy/cut/paste
+- [x] File operations functionality: rename (optimistic), delete, trash, move (drag+drop, cut/paste), copy/cut/paste, create folder, compress, extract, undo/redo, elevation prompt
 
-- [ ] MacOS: .app archive -> .plist (metadata)
-- [ ] Archive exploration (.zip, .rar, .tar, .gz, .7z)
+- [x] MacOS: .app bundles — kind: "app", launch with OS, "Browse Contents" in context menu
+- [x] Archive exploration (.zip, .rar, .tar, .gz, .7z) — virtual directory browsing with :: path encoding, nested layout expand
 - [ ] 
 - [ ] .git plugin/features
 - [ ] Background file indexing and search optimization

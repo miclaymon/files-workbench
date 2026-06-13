@@ -29,7 +29,7 @@
       </button>
     </div>
 
-    <div class="dl" :data-layout="layout" @scroll.passive="onNestedScroll" ref="dlRef">
+    <div class="dl" :data-layout="layout" @scroll.passive="onNestedScroll" @contextmenu.self.prevent="emit('background-contextmenu', $event)" ref="dlRef">
 
     <!-- Column header — visible in details/list/nested layouts via CSS -->
     <div class="dl-header">
@@ -80,7 +80,7 @@
       <div v-for="dir in stickyDirs" :key="dir.path"
            class="dl-item dl-item--ctx"
            @click="(e) => onItemClick(e, dir)"
-           @contextmenu.prevent="$emit('contextmenu', { event: $event, item: dir })">
+           @contextmenu.prevent.stop="$emit('contextmenu', { event: $event, item: dir })">
         <label class="dl-check" style="visibility:hidden" @click.stop @mousedown.stop>
           <input type="checkbox" disabled />
         </label>
@@ -124,9 +124,9 @@
         'dl-item--dragging': draggingPath === item.path,
         'dl-item--hidden':   item.hidden,
       }"
-      @mousedown="(e) => { cancelPending(); onMouseDown(e, item) }"
+      @mousedown="(e) => { cancelPending(); onMouseDown(e, item); onRightMouseDown(e, item) }"
       @click="(e) => onItemClick(e, item)"
-      @contextmenu.prevent="$emit('contextmenu', { event: $event, item })"
+      @contextmenu.prevent.stop="$emit('contextmenu', { event: $event, item })"
       @mouseenter="hoverItem = item; hpStart(item, $event.currentTarget)"
       @mouseleave="hoverItem = null; endHover()"
     >
@@ -153,7 +153,7 @@
                 'dl-nest-guide--corner': i === (item._depth ?? 0) - 1 && item._lastChild,
               }" />
         <button
-          v-if="item.kind === 'dir'"
+          v-if="item.kind === 'dir' || item.kind === 'archive'"
           class="dl-nest-toggle"
           @click.stop="toggleNested(item)"
           :disabled="nestedLoadingPaths.has(item.path)"
@@ -288,9 +288,10 @@ import { mdiChevronDown, mdiChevronRight, mdiFile, mdiFolder, mdiLinkVariant, md
 import { useClickDebounce } from '~/composables/useClickDebounce.js'
 import { useHoverPreview } from '~/composables/useHoverPreview.js'
 import { useDrag } from '~/composables/useDrag.js'
+import { useRightClickDrag } from '~/composables/useRightClickDrag.js'
 import { useIconPack } from '~/composables/useIconPack.js'
 import { resolveCustomIcon } from '~/composables/useCustomIcon.js'
-import { fsListDir } from '~/lib/fs-api.js'
+import { fsListDir, fsArchiveList } from '~/lib/fs-api.js'
 import { MEDIA_BASE } from '~/lib/api-config.js'
 
 const MEDIA_EXTS = new Set([
@@ -341,7 +342,7 @@ const props = defineProps({
   filterActive: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['select', 'focus', 'contextmenu', 'navigate', 'rename', 'zoom-change', 'sort-change', 'filter-change', 'filter-click', 'copy', 'cut', 'paste'])
+const emit = defineEmits(['select', 'focus', 'contextmenu', 'background-contextmenu', 'right-drag-drop', 'navigate', 'rename', 'zoom-change', 'sort-change', 'filter-change', 'filter-click', 'copy', 'cut', 'paste'])
 
 // ── Hover preview ─────────────────────────────────────────────────────────────
 const VIDEO_EXTS = new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts'])
@@ -563,7 +564,7 @@ const stickyDirs = computed(() => {
     if (itemTop > st) break  // item is still at or below the viewport top — done
 
     const item = items[i]
-    if (item.kind !== 'dir' || !expandedPaths.value.has(item.path)) continue
+    if ((item.kind !== 'dir' && item.kind !== 'archive') || !expandedPaths.value.has(item.path)) continue
 
     // Find index of the last descendant of this dir
     const depth = item._depth ?? 0
@@ -584,7 +585,7 @@ const nestedDisplayItems = computed(() => {
     const result = []
     for (const item of items) {
       result.push({ ...item, _depth: depth })
-      if (item.kind === 'dir' && expandedPaths.value.has(item.path)) {
+      if ((item.kind === 'dir' || item.kind === 'archive') && expandedPaths.value.has(item.path)) {
         const children = nestedChildren.value.get(item.path) ?? []
         result.push(...buildList(children, depth + 1))
       }
@@ -606,7 +607,7 @@ const nestedDisplayItems = computed(() => {
 })
 
 async function toggleNested(item) {
-  if (item.kind !== 'dir') return
+  if (item.kind !== 'dir' && item.kind !== 'archive') return
   const paths = new Set(expandedPaths.value)
   if (paths.has(item.path)) {
     paths.delete(item.path)
@@ -618,8 +619,29 @@ async function toggleNested(item) {
   if (!nestedChildren.value.has(item.path)) {
     nestedLoadingPaths.value = new Set(nestedLoadingPaths.value).add(item.path)
     try {
-      const result = await fsListDir(item.path, { includeMetadata: true })
-      const children = _withThumbnails(result.items ?? [])
+      let rawItems
+      const sepIdx = item.path.indexOf('::')
+      if (item.kind === 'archive') {
+        // Top-level archive: list root of archive
+        const result = await fsArchiveList(item.path, '')
+        rawItems = (result.items ?? []).map(child => ({
+          ...child,
+          path: item.path + '::' + child.name + (child.kind === 'dir' ? '/' : ''),
+        }))
+      } else if (sepIdx !== -1) {
+        // Virtual archive subdirectory: list inner path
+        const archiveFile = item.path.slice(0, sepIdx)
+        const innerPath = item.path.slice(sepIdx + 2)
+        const result = await fsArchiveList(archiveFile, innerPath)
+        rawItems = (result.items ?? []).map(child => ({
+          ...child,
+          path: archiveFile + '::' + innerPath + child.name + (child.kind === 'dir' ? '/' : ''),
+        }))
+      } else {
+        const result = await fsListDir(item.path, { includeMetadata: true })
+        rawItems = result.items ?? []
+      }
+      const children = _withThumbnails(rawItems)
       children.forEach(child => { if (child.thumbnail && !imageStates[child.path]) imageStates[child.path] = 'idle' })
       const map = new Map(nestedChildren.value)
       map.set(item.path, children)
@@ -792,6 +814,12 @@ const { draggingPath, wasDragging, onMouseDown } = useDrag({
   }
 })
 
+const { onRightMouseDown } = useRightClickDrag({
+  onActivate:    (item) => isSelected(item) ? [...props.selectedItems] : [item],
+  onDrop:        (payload) => emit('right-drag-drop', payload),
+  onRightClick:  ({ item, event }) => emit('contextmenu', { event, item }),
+})
+
 function onItemClick(e, item) {
   if (wasDragging.value) return
   handleClick(
@@ -813,6 +841,8 @@ function onItemClick(e, item) {
       emit('focus', item)
       if (item.kind === 'dir') {
         emit('navigate', item.path)
+      } else if (item.kind === 'archive') {
+        emit('navigate', item.path + '::')
       } else if (item.kind === 'shortcut') {
         if (item.brokenLink) alert(`Broken link: ${item.target || 'Unknown'}`)
         else if (item.target) emit('navigate', item.target)
@@ -943,6 +973,7 @@ function onKeyDown(event) {
   if (event.key === 'Enter' && props.focusedItem) {
     event.preventDefault()
     if (props.focusedItem.kind === 'dir') emit('navigate', props.focusedItem.path)
+    else if (props.focusedItem.kind === 'archive') emit('navigate', props.focusedItem.path + '::')
     else emit('select', { item: props.focusedItem, mode: 'open' })
   }
 }

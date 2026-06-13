@@ -4,8 +4,6 @@ Items roughly ordered by priority. See `TODO.md` for the full flat list.
 
 ## Near-term
 
-- **File/folder delete** — move to trash or permanent delete with confirmation
-- **Drop behavior** — complete the drag-and-drop move/copy implementation (visual drop targets exist; server call and optimistic UI update pending)
 - **Rename via F2** — trigger inline rename from keyboard in addition to double-click
 - **Directory address bar** — history dropdown and path autocomplete in the breadcrumb bar
 
@@ -36,6 +34,15 @@ Items roughly ordered by priority. See `TODO.md` for the full flat list.
 
 ## Recently completed
 
+- **Right-click drag-and-drop** — `useRightClickDrag` composable suppresses native `contextmenu` on mousedown (fixes Linux/X11 early-fire), shows ghost clone during drag, resolves to a "drop action" menu on release: Move Here, Copy Here, Create Symlink Here; archives get Extract Here instead of Compress to Archive Here
+- **Context menu redesign** — two `<teleport to="body">` panels (main + submenu) prevent clipping; MDI SVG icons in quick-action buttons and item rows; split label/chevron item pattern so label click fires action and chevron opens submenu independently; viewport clamping and submenu left-flip on overflow; 1 px separators
+- **Empty-space context menu** — right-clicking the directory background shows New Folder, New File, Open in Terminal, and Paste
+- **Open in Terminal** — `POST /_api/v2/fs/open_terminal` tries common Linux terminal emulators in priority order; macOS uses `osascript`; Windows tries Windows Terminal then `cmd.exe`; `fsOpenTerminal()` in `fs-api.js`
+- **Clipboard status bar pill** — clipboard mode (Copy/Cut), item count, and total size shown inline in the status bar; replaced the floating clipboard toast
+- **Debug panel expandable entries** — click any log row to expand a detail view; SELECT and CLIPBOARD entries render a mini item table (icon/thumbnail, filename, type, size) using the thumbnail URL already loaded in the directory view; other entries render a key/value grid; `summaryText()` shows a preview of filenames on the collapsed row
+- **Enriched debug log calls** — NAV logs from/to paths; SELECT logs item count + total size in the message with full item objects for the table; CLIPBOARD Copy/Cut/Paste logs full item list; OPS-QUEUE logs structured source/dest/format data; TAB logs path and kind
+- **Preferences save fix** — `usePreferences.js` save() was POSTing to the data server (port 8001); fixed to use `CONTROL_BASE` (port 8002) where `handlePreferencesPut` is registered
+- **New File action** — "New File" in toolbar actions and empty-space context menu; prompts for name and creates via the ops queue
 - **Directory customization** — server parses `.directory` (KDE/Dolphin), `desktop.ini` (`[.ShellClassInfo]`), and detects `.DS_Store` for each directory in listings; custom name, icon, and comment returned as `customization` field; `GET`/`PUT /_api/v2/fs/customization` endpoints for reading and writing `.directory` files; `useCustomIcon.js` composable resolves Dolphin `folder-<color>` names and absolute icon paths; folder-color tints render as inline `<svg fill="currentColor">` so CSS `color` applies correctly
 - **Server-side directory sizes** — `list_dir` now accepts `includeDirSize=true`; sizes are computed concurrently (goroutines + semaphore, capped at 8) for directory items on the current page only; client-side async `dir_size` request-per-directory loop removed
 - **Icon pack plugin system** — VSCode icon theme adapter loaded from `config/plugins/`; `vscode-material-icon-theme` bundled as first plugin; icons resolved server-side and embedded in list and explorer API responses; `useIconPack.js` composable for client-side manifest access; MDI fallback on load error

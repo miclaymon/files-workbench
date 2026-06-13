@@ -132,30 +132,43 @@ const COLLAPSE_EACH_END = 2
 const isCollapsed = ref(false)
 let _cachedFullWidth = null
 
-const pathInfo = computed(() => {
-  if (!props.path || props.path === '/') return { root: '/', rootType: 'linux', segments: [] }
+// When path contains '::' it's a virtual archive path: /real/path.zip::inner/dir/
+const archiveSplit = computed(() => {
+  const idx = props.path.indexOf('::')
+  if (idx === -1) return null
+  return { fsPath: props.path.slice(0, idx), innerPath: props.path.slice(idx + 2) }
+})
 
-  const driveRootMatch = props.path.match(/^([A-Za-z]:)[\/\\]?$/)
+const pathInfo = computed(() => {
+  const base = archiveSplit.value ? archiveSplit.value.fsPath : props.path
+  if (!base || base === '/') return { root: '/', rootType: 'linux', segments: [] }
+
+  const driveRootMatch = base.match(/^([A-Za-z]:)[\/\\]?$/)
   if (driveRootMatch) return { root: driveRootMatch[1], rootType: 'windows', segments: [] }
 
-  const windowsMatch = props.path.match(/^([A-Za-z]:)[\/\\]/)
+  const windowsMatch = base.match(/^([A-Za-z]:)[\/\\]/)
   if (windowsMatch) {
     const drive = windowsMatch[1]
-    const rest = props.path.substring(windowsMatch[0].length)
+    const rest = base.substring(windowsMatch[0].length)
     return { root: drive, rootType: 'windows', segments: rest.split(/[\/\\]/).filter(Boolean) }
   }
 
-  if (props.path.startsWith('/')) {
-    const segments = props.path.substring(1).split('/').filter(Boolean)
+  if (base.startsWith('/')) {
+    const segments = base.substring(1).split('/').filter(Boolean)
     return { root: '/', rootType: 'linux', segments }
   }
 
-  return { root: '.', rootType: 'relative', segments: props.path.split(/[\/\\]/).filter(Boolean) }
+  return { root: '.', rootType: 'relative', segments: base.split(/[\/\\]/).filter(Boolean) }
 })
 
 const pathSegments = computed(() => pathInfo.value.segments)
 
-const allSegments = computed(() => [pathInfo.value.root, ...pathInfo.value.segments])
+const allSegments = computed(() => {
+  const fsSegs = [pathInfo.value.root, ...pathInfo.value.segments]
+  if (!archiveSplit.value) return fsSegs
+  const innerSegs = archiveSplit.value.innerPath.split('/').filter(Boolean)
+  return [...fsSegs, ...innerSegs]
+})
 
 const hiddenSegments = computed(() => {
   const n = allSegments.value.length
@@ -173,13 +186,26 @@ function navigateTo(path) {
 }
 
 function navigateToSegment(index) {
+  const fsSegCount = 1 + pathInfo.value.segments.length // root + fs segments
   let targetPath
-  if (index === 0) {
-    targetPath = pathInfo.value.rootType === 'windows' ? pathInfo.value.root + '\\' : '/'
+
+  if (!archiveSplit.value || index < fsSegCount - 1) {
+    // Normal filesystem navigation (before the archive file)
+    if (index === 0) {
+      targetPath = pathInfo.value.rootType === 'windows' ? pathInfo.value.root + '\\' : '/'
+    } else {
+      targetPath = buildPath(pathSegments.value.slice(0, index))
+    }
+  } else if (index === fsSegCount - 1) {
+    // Clicking the archive file itself → root of archive
+    targetPath = archiveSplit.value.fsPath + '::'
   } else {
-    const segments = pathSegments.value.slice(0, index)
-    targetPath = buildPath(segments)
+    // Clicking an inner archive path segment
+    const innerIdx = index - fsSegCount
+    const innerSegs = archiveSplit.value.innerPath.split('/').filter(Boolean)
+    targetPath = archiveSplit.value.fsPath + '::' + innerSegs.slice(0, innerIdx + 1).join('/') + '/'
   }
+
   navigateTo(targetPath)
 }
 
@@ -213,6 +239,12 @@ function handleInputEnter() { fullPathInput.value?.blur() }
 function handleInputEscape() { fullPathValue.value = props.path; fullPathInput.value?.blur() }
 
 async function showChevronDropdown(type, index, event) {
+  // Don't show directory dropdowns for archive inner segments (they have no real filesystem path)
+  if (archiveSplit.value) {
+    const fsSegCount = 1 + pathInfo.value.segments.length
+    if (type === 'current' || (type === 'segment' && index >= fsSegCount - 1)) return
+  }
+
   let targetPath = type === 'current' ? props.path : (index === 0 ? pathInfo.value.root : buildPath(pathSegments.value.slice(0, index)))
 
   const rect = event.target.getBoundingClientRect()

@@ -100,6 +100,8 @@
       @select="handleSelect"
       @focus="handleFocus"
       @contextmenu="handleContextMenu"
+      @background-contextmenu="$emit('background-contextmenu', $event)"
+      @right-drag-drop="$emit('right-drag-drop', $event)"
       @navigate="handleNavigate"
       @rename="$emit('rename', $event)"
       @zoom-change="zoomLevel = $event"
@@ -217,7 +219,7 @@ const props = defineProps({
   changeTabPath: { type: Function, default: null },
 })
 
-const emit = defineEmits(['select', 'focus', 'contextmenu', 'navigate', 'navigate-up', 'navigate-previous', 'navigate-next', 'update:layout', 'rename', 'copy', 'cut', 'paste'])
+const emit = defineEmits(['select', 'focus', 'contextmenu', 'background-contextmenu', 'right-drag-drop', 'navigate', 'navigate-up', 'navigate-previous', 'navigate-next', 'update:layout', 'rename', 'copy', 'cut', 'paste'])
 
 const currentLayout = DirectoryLayout
 
@@ -368,8 +370,8 @@ const processedItems = computed(() => {
   if (filterTypes.value.size > 0) {
     result = result.filter(item => {
       return [...filterTypes.value].some(g => {
-        if (g === 'directories') return item.kind === 'dir'
-        if (item.kind === 'dir') return true // dirs always shown alongside file-type filters
+        if (g === 'directories') return item.kind === 'dir' || item.kind === 'archive'
+        if (item.kind === 'dir' || item.kind === 'archive') return true // dirs/archives always shown alongside file-type filters
         const ext = item.name.split('.').pop()?.toLowerCase() ?? ''
         return TYPE_GROUPS[g]?.has(ext)
       })
@@ -380,7 +382,7 @@ const processedItems = computed(() => {
   if (filterSizePreset.value && SIZE_PRESETS[filterSizePreset.value]) {
     const { min, max } = SIZE_PRESETS[filterSizePreset.value]
     result = result.filter(item => {
-      if (item.kind === 'dir') return true
+      if (item.kind === 'dir' || item.kind === 'archive') return true
       const s = item.size ?? 0
       return s >= min && s <= max
     })
@@ -390,7 +392,7 @@ const processedItems = computed(() => {
   if (filterDatePreset.value && DATE_PRESETS[filterDatePreset.value]) {
     const { min, max } = DATE_PRESETS[filterDatePreset.value]
     result = result.filter(item => {
-      if (item.kind === 'dir') return true
+      if (item.kind === 'dir' || item.kind === 'archive') return true
       const ts = (item.modified ?? 0) * 1000
       return ts >= min && ts <= max
     })
@@ -405,8 +407,10 @@ const processedItems = computed(() => {
   // Sort — dirs always first unless sorting by size (then sort everything together)
   result.sort((a, b) => {
     if (sortField.value !== 'size') {
-      if (a.kind === 'dir' && b.kind !== 'dir') return -1
-      if (a.kind !== 'dir' && b.kind === 'dir') return 1
+      const aIsDir = a.kind === 'dir' || a.kind === 'archive'
+      const bIsDir = b.kind === 'dir' || b.kind === 'archive'
+      if (aIsDir && !bIsDir) return -1
+      if (!aIsDir && bIsDir) return 1
     }
 
     const dir = sortDir.value === 'asc' ? 1 : -1
