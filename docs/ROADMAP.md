@@ -34,6 +34,8 @@ Items roughly ordered by priority. See `TODO.md` for the full flat list.
 
 ## Recently completed
 
+- **Settings and keyboard shortcuts modals** — `SettingsModal.vue` replaces the old preferences editor tab: VS Code–style layout with search, left sidebar section nav, auto-save on change (300 ms debounce), blue modified-dot indicator, and `Ctrl+,` shortcut (fires even from inputs); `KeyboardShortcutsModal.vue` is a read-only grouped table of all shortcuts with `<kbd>` key chips and search filtering; both open from Settings menu; `PreferencesActivity.vue` (editor-tab approach) retired
+
 - **Command palette** — `CommandPalette.vue` floating modal with fuzzy search over all menu commands; opens via `Ctrl+Shift+P` or omnibar click; commands flattened from all four menus with category breadcrumbs; toggle items show current checkmark state; arrow-key navigation; basic implementation, more features planned
 
 - **ViewContainer panel system** — unified `ViewContainer.vue` replaces the old `Panel` component for secondary sidebar and bottom panel; two modes: tabs (one activity visible at a time) and accordion sections (primary sidebar Open Editors + Places); tab drag-to-reorder within a container and cross-container drag between secondary sidebar and bottom panel; drag-to-merge drops a tab onto a panel's content area to stack it as a collapsible sub-section inside the target slot (`mergedSlots`); sub-sections resize with sash handles (top/bottom for secondary sidebar, left/right for bottom panel); section headers drag back to the tab bar to extract; `ViewSection.vue`, `ViewDropOverlay.vue`, and `OpenEditorsView.vue` added as new components

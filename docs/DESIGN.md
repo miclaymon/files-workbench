@@ -32,9 +32,9 @@ In development, Nuxt's Vite dev server proxies `/_api/v2/*` to the data server o
 - Global app state: tabs, selected/focused items, clipboard, context menu
 - Activity bar (explorer, search, settings icons)
 - Primary sidebar — a `ViewContainer` in sections/accordion mode hosting Open Editors and Places sub-views
-- Editor area: a recursive split grid of editor groups, each a tab strip + the active tab's content (Home / DirectoryTab / PreferencesActivity)
+- Editor area: a recursive split grid of editor groups, each a tab strip + the active tab's content (Home / DirectoryTab)
 - Secondary sidebar and bottom panel — each a `ViewContainer` in tabs mode (see ViewContainer panel system)
-- All floating UI (context menus, right-drag drop menus, View menu)
+- All floating UI (context menus, right-drag drop menus, View menu, command palette, settings modal, keyboard shortcuts modal)
 - Status bar: directory item count/size, selection count/size, clipboard pill (mode + count + size)
 
 The View menu exposes two submenus: **Appearance** (toggle sidebar/panel/status bar visibility, zen mode, centered layout) and **Views** (toggle individual activities such as Preview, Details, Chat, and Debug on or off). Toggling an activity off marks it as intentionally hidden in the workspace; startup recovery (`recoverMissingActivities`) skips hidden activities so they stay off across reloads.
@@ -47,7 +47,21 @@ The editor area is a recursive split-view tree (VS Code's "grid") defined in `us
 
 Each leaf carries two per-group flags: `tabPreviews` (default `true`) — when `false`, single-click explorer navigation opens a permanent tab instead of the italic preview slot; `locked` — when `true`, the group rejects incoming tab additions and drops from other groups. `EditorGroup` shows a fixed-right actions section outside the scrollable tab strip: a lock icon (when locked, click to unlock) and a `⋯` button that opens a menu with Close All, Enable Tab Previews (toggle), Maximize/Restore Group, and Lock/Unlock Group.
 
-Tabs support preview mode (`mode: 'peek'`, italic, one reused slot per group; promoted to `'normal'` on double-click or navigation), sticky pinning (`pinned`, grouped to the front with a pin affordance), horizontal-scroll overflow with a dropdown, and region-aware drag (see Drag and drop). View ▸ Editor Layout offers split up/down/left/right and presets (Single, Two Columns, Two Rows, Three Columns, Grid 2×2). Keyboard: `Ctrl+\` split right, `Ctrl+1..9` focus group, `Ctrl+W` close tab (Electron only — browser intercepts).
+Tabs support preview mode (`mode: 'peek'`, italic, one reused slot per group; promoted to `'normal'` on double-click or navigation), sticky pinning (`pinned`, grouped to the front with a pin affordance), horizontal-scroll overflow with a dropdown, and region-aware drag (see Drag and drop). View ▸ Editor Layout offers split up/down/left/right and presets (Single, Two Columns, Two Rows, Three Columns, Grid 2×2). Keyboard: `Ctrl+\` split right, `Ctrl+1..9` focus group, `Ctrl+W` close tab (Electron only — browser intercepts), `Ctrl+,` open Settings, `Ctrl+Shift+P` open Command Palette.
+
+### Settings modal
+
+`SettingsModal.vue` is a full-screen modal overlay (teleported to `<body>`) styled after VS Code's Settings editor. Layout: a search bar spanning the top, a fixed-width left sidebar listing sections, and a scrollable main area with sticky section headings.
+
+Sections are derived at runtime from `preferences.schema.json` (imported via the `#preferences-schema` alias). Top-level scalar properties form a **General** section; top-level `type: object` properties each become their own named section (Explorer, Preview Panel, Cache, …). Properties marked `x-devOnly` are hidden unless Developer Mode is on.
+
+Every control change updates a local `localPrefs` deep copy immediately (instant UI feedback) and schedules an auto-save via a 300 ms debounce that calls `savePrefs` from `usePreferences`. There is no manual Save button. Settings that differ from their schema default show a small blue dot. A brief `✓ Saved` confirmation appears in the bottom-right corner after each successful write.
+
+`SettingsModal` opens via `Ctrl+,` (checked before the input-focus guard so it works from any context) or Settings ▸ Preferences.
+
+### Keyboard shortcuts modal
+
+`KeyboardShortcutsModal.vue` is a read-only reference modal styled after VS Code's Keyboard Shortcuts editor. It shows all current shortcuts in a grouped table with **Command / Keybinding / When / Source** columns. `<kbd>` elements render each key token with a depressed-border style. The search bar filters across command name, key text, and when-context. Opens via Settings ▸ Keyboard Shortcuts.
 
 ### Command palette
 

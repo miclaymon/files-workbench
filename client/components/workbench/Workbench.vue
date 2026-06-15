@@ -118,8 +118,6 @@
                   @rename="handleRename"
                   @stats="onGroupStats"
                   @update:layout="handleLayoutChange"
-                  @preferences-save="savePreferences"
-                  @preferences-change="onPreferencesChanged"
                   @tab-contextmenu="handleTabContextMenu"
                 />
               </template>
@@ -309,6 +307,20 @@
       @close="commandPaletteOpen = false"
     />
 
+    <!-- Settings modal -->
+    <SettingsModal
+      :visible="settingsModalOpen"
+      :prefs="prefs"
+      @close="settingsModalOpen = false"
+      @save="savePreferences"
+    />
+
+    <!-- Keyboard shortcuts modal -->
+    <KeyboardShortcutsModal
+      :visible="keyboardShortcutsModalOpen"
+      @close="keyboardShortcutsModalOpen = false"
+    />
+
   </div>
 </template>
 
@@ -322,6 +334,8 @@ import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
 import ViewContainer from './ViewContainer.vue'
 import OpenEditorsView from './OpenEditorsView.vue'
 import CommandPalette from './CommandPalette.vue'
+import SettingsModal from './SettingsModal.vue'
+import KeyboardShortcutsModal from './KeyboardShortcutsModal.vue'
 import { usePreferences } from '~/composables/usePreferences.js'
 import { useDebugLog } from '~/composables/useDebugLog.js'
 import { useFileOpsQueue } from '~/composables/useFileOpsQueue.js'
@@ -949,8 +963,6 @@ const editMenuItems = computed(() => [
   { key: 'copy',  label: 'Copy',  action: () => copyToClipboard(selectedItems.value) },
   { key: 'cut',   label: 'Cut',   action: () => cutToClipboard(selectedItems.value)  },
   { key: 'paste', label: 'Paste', action: doPaste, disabled: clipboard.value.count === 0 },
-  { separator: true },
-  { key: 'preferences', label: 'Preferences', action: openPreferencesTab }
 ])
 
 const viewMenuItems = computed(() => [
@@ -1036,7 +1048,8 @@ const viewMenuItems = computed(() => [
 ])
 
 const settingsMenuItems = computed(() => [
-  { key: 'preferences', label: 'Preferences', action: openPreferencesTab }
+  { key: 'preferences', label: 'Preferences', action: openSettingsModal },
+  { key: 'keyboard-shortcuts', label: 'Keyboard Shortcuts', action: openKeyboardShortcuts }
 ])
 
 function showMenuDelayed(type) {
@@ -1068,7 +1081,9 @@ function windowClose() { window.electron?.window?.close?.() }
 
 // ── Command palette ───────────────────────────────────────────────────────────
 
-const commandPaletteOpen = ref(false)
+const commandPaletteOpen        = ref(false)
+const settingsModalOpen         = ref(false)
+const keyboardShortcutsModalOpen = ref(false)
 
 function flattenMenuItems(items, category = '') {
   const out = []
@@ -1102,17 +1117,9 @@ const allCommands = computed(() => [
 
 function openCommandPalette() { commandPaletteOpen.value = true }
 
-// Preferences
-function openPreferencesTab() {
-  const found = findTabByKind('preferences')
-  if (found) { focusTab(found.groupId, found.tab.id); return }
-  addTabToActiveGroup({ id: uuid(), kind: 'preferences', title: 'Preferences', mode: 'normal', pinned: false, selectedItems: [], focusedItem: null, selectedPath: '' })
-}
-
-function onPreferencesChanged() {
-  const found = findTabByKind('preferences')
-  if (found) found.tab.title = 'Preferences (unsaved)'
-}
+// Preferences / Settings modal
+function openSettingsModal() { settingsModalOpen.value = true }
+function openKeyboardShortcuts() { keyboardShortcutsModalOpen.value = true }
 
 async function savePreferences(newPrefs) {
   try {
@@ -1122,11 +1129,7 @@ async function savePreferences(newPrefs) {
     setTimeout(() => { status.value.left = 'Ready' }, 2000)
     return
   }
-  const found = findTabByKind('preferences')
-  if (found) found.tab.title = 'Preferences'
   explorerPanelRef.value?.refresh()
-  status.value.left = 'Preferences saved'
-  setTimeout(() => { status.value.left = 'Ready' }, 2000)
 }
 
 function onSashResizeEnd() {
@@ -1562,9 +1565,12 @@ function focusGroupByIndex(i) {
 }
 
 function onKeyDown(e) {
-  // Command palette shortcut fires even from inputs
+  // Shortcuts that fire even from inputs
   if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'P') {
     e.preventDefault(); openCommandPalette(); return
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+    e.preventDefault(); openSettingsModal(); return
   }
 
   // Skip other shortcuts when typing in an input, textarea, or contenteditable
