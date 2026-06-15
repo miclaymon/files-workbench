@@ -17,11 +17,12 @@ Files Workbench 2 is a multi-process desktop application:
               │ HTTP /_api/v2/*
 ┌──────────────────────────────────────┐
 │  Go HTTP server                      │
-│  http://localhost:8000               │
+│  data:    http://localhost:8001      │
+│  control: http://localhost:8002      │
 └──────────────────────────────────────┘
 ```
 
-In development, Nuxt's Vite dev server proxies `/_api/v2/*` to port 8000. In production, Nuxt generates a static bundle that Electron loads directly from disk; the client calls the Go server on `http://localhost:8000` without a proxy.
+In development, Nuxt's Vite dev server proxies `/_api/v2/*` to the data server on port 8001. Write operations contact the control server directly at port 8002. In production, Nuxt generates a static bundle that Electron loads directly from disk; the client calls both servers by their port numbers without a proxy.
 
 ## Frontend component model
 
@@ -31,11 +32,20 @@ In development, Nuxt's Vite dev server proxies `/_api/v2/*` to port 8000. In pro
 - Global app state: tabs, selected/focused items, clipboard, context menu
 - Activity bar (explorer, search, settings icons)
 - Sidebar (ExplorerPanel)
-- Tab bar with drag-to-reorder (useDragAndDrop)
-- Main content area (DirectoryTab or PreferencesActivity per tab)
+- Editor area: a recursive split grid of editor groups, each a tab strip + the active tab's content (Home / DirectoryTab / PreferencesActivity)
 - Right panel (PreviewPanel, DetailsPanel)
 - All floating UI (context menus, right-drag drop menus)
 - Status bar: directory item count/size, selection count/size, clipboard pill (mode + count + size)
+
+### Editor groups (split grid)
+
+The editor area is a recursive split-view tree (VS Code's "grid") defined in `useLayoutGrid.js`. A node is either a **branch** (`direction: 'row' | 'column'`, `children[]`, and `sizes[]` of flex-grow weights) or a **leaf** = an **editor group** holding `tabs[]` + `activeTabId`. `GridView.vue` renders the tree recursively, placing a `Sash.vue` resize handle between siblings; leaves are emitted through a scoped slot so the engine stays generic (it will later host side-bar/panel views too).
+
+`Workbench.vue` holds the reactive tree (`editorRoot`), the focused group (`activeGroupId`), and the maximized group (`maximizedGroupId`). When `maximizedGroupId` is set, `viewRoot` collapses to just that leaf so `GridView` renders only the maximized group. `Workbench` `provide`s an `editorController` (inject key `editorController`) to the groups with the structural ops: `activateTab`, `promoteTab`, `togglePin`, `closeTab`, `dropTab`, `splitActiveGroup`, `applyLayoutPreset`, `closeAllTabs`, `toggleTabPreviews`, `maximizeGroup`, `toggleLockGroup`. New tabs open in the active group; `activeTab` (the active group's active tab) drives the right panel, status bar, and selection. Each `EditorGroup.vue` re-emits its content events (select/open/navigate/…) up to `Workbench`, preserving the centralized-logic pattern. The grid is persisted per workspace (see State management).
+
+Each leaf carries two per-group flags: `tabPreviews` (default `true`) — when `false`, single-click explorer navigation opens a permanent tab instead of the italic preview slot; `locked` — when `true`, the group rejects incoming tab additions and drops from other groups. `EditorGroup` shows a fixed-right actions section outside the scrollable tab strip: a lock icon (when locked, click to unlock) and a `⋯` button that opens a menu with Close All, Enable Tab Previews (toggle), Maximize/Restore Group, and Lock/Unlock Group.
+
+Tabs support preview mode (`mode: 'peek'`, italic, one reused slot per group; promoted to `'normal'` on double-click or navigation), sticky pinning (`pinned`, grouped to the front with a pin affordance), horizontal-scroll overflow with a dropdown, and region-aware drag (see Drag and drop). View ▸ Editor Layout offers split up/down/left/right and presets (Single, Two Columns, Two Rows, Three Columns, Grid 2×2). Keyboard: `Ctrl+\` split right, `Ctrl+1..9` focus group, `Ctrl+W` close tab (Electron only — browser intercepts).
 
 ### Context menu
 
@@ -70,7 +80,8 @@ This means adding a new event in a leaf component requires threading it through 
 ## State management
 
 No Pinia or Vuex. State lives in:
-- `Workbench.vue` `reactive`/`ref` — global app state (tabs, prefs, clipboard)
+- `Workbench.vue` `reactive`/`ref` — global app state (editor grid, selection, prefs, clipboard)
+- `useWorkspaces.js` — the persisted per-workspace model in `localStorage` (`files-workbench.workspaces`), versioned with forward migration (v1→v2 wraps the flat tabs array into a single-group leaf); serialises the editor grid (groups + tabs, including per-leaf `tabPreviews` and `locked` flags), side bar/panel layout, and explorer tree state
 - `DirectoryTab.vue` — navigation history, items list, thumbnail map
 - `DirectoryPanel.vue` — sort/filter state, layout picker state
 - `ExplorerTree.vue` — expanded Set, children cache (also persisted to localStorage)
@@ -85,7 +96,7 @@ There are four independent drag systems:
 | `useDrag.js` | Directory grid/list/table items (left-button) | Custom mousedown → ghost clone, 200 ms delay, `onActivate` callback for multi-select |
 | `useRightClickDrag.js` | Directory items (right-button) | Suppresses native `contextmenu` on mousedown; ghost clone on move; resolves to `onRightClick` or `onDrop` on mouseup |
 | `useTreeDrag.js` | Explorer tree nodes | Custom mousedown → chip ghost, module-level shared state, directory-only drop targets |
-| `useDragAndDrop.js` | Tab bar | Native HTML5 drag (`draggable`, `@dragstart`/`@dragover`/`@drop`) for list reordering |
+| `useEditorDnd.js` | Editor tabs & groups | Native HTML5 drag with shared module state + region detection (`dropRegion`): dropping on a tab strip reorders/moves a tab; dropping on a group's edge/center splits or merges groups (`DropOverlay.vue` shows the target zone) |
 
 The file drag systems (`useDrag`, `useTreeDrag`, `useRightClickDrag`) do not set `dataTransfer` and therefore cannot interoperate with native OS drop targets.
 

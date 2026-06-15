@@ -36,11 +36,13 @@ export { uuidv4 }
 // ─── Default workspace factory ───────────────────────────────────────────────
 
 function createDefaultWorkspace({ name = 'Default' } = {}) {
-  const now    = new Date().toISOString()
-  const homeId = uuidv4()
+  const now     = new Date().toISOString()
+  const homeId  = uuidv4()
+  const groupId = uuidv4()
   return {
     uuid: uuidv7(),
     name,
+    version: 2,
     dateCreated:  now,
     dateModified: now,
     dateAccessed: now,
@@ -75,22 +77,26 @@ function createDefaultWorkspace({ name = 'Default' } = {}) {
         },
       },
       editor: {
-        tabs: [
-          {
-            id: homeId,
-            type: 'Home',
-            title: 'Home',
-            subtitle: null,
-            timestampAdded:   now,
-            timestampViewed:  now,
-            timestampUpdated: now,
-            isPinned: true,
-            isPeeked: false,
-            isActive: true,
-            context: {},
-          },
-        ],
-        activeTabId: homeId,
+        root: {
+          type: 'leaf',
+          id: groupId,
+          activeTabId: homeId,
+          tabs: [
+            {
+              id: homeId,
+              type: 'Home',
+              title: 'Home',
+              subtitle: null,
+              timestampAdded:   now,
+              timestampViewed:  now,
+              timestampUpdated: now,
+              isPinned: false,
+              isPeeked: false,
+              context: {},
+            },
+          ],
+        },
+        activeGroupId: groupId,
       },
       context: {},
     },
@@ -132,10 +138,38 @@ function loadWorkspaces() {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(migrateWorkspace)
     }
   } catch {}
   return [migrateFromOldKeys()]
+}
+
+// Upgrade an older persisted workspace to the current schema.
+// v1 → v2: a flat `editor.tabs` list becomes a single-group editor grid.
+function migrateWorkspace(ws) {
+  if (!ws || !ws.layout) return ws
+  const editor = ws.layout.editor ?? {}
+  if (!editor.root) {
+    const groupId = uuidv4()
+    // Old `isPinned` meant "not preview"; sticky-pin is a fresh v2 concept, so clear it.
+    const tabs = (editor.tabs ?? []).map(t => ({ ...t, isPinned: false }))
+    if (!tabs.length) {
+      const now = new Date().toISOString()
+      const homeId = uuidv4()
+      tabs.push({
+        id: homeId, type: 'Home', title: 'Home', subtitle: null,
+        timestampAdded: now, timestampViewed: now, timestampUpdated: now,
+        isPinned: false, isPeeked: false, context: {},
+      })
+      editor.activeTabId = homeId
+    }
+    ws.layout.editor = {
+      root: { type: 'leaf', id: groupId, activeTabId: editor.activeTabId ?? tabs[0]?.id ?? null, tabs },
+      activeGroupId: groupId,
+    }
+    ws.version = 2
+  }
+  return ws
 }
 
 // ─── Tab serialisation ───────────────────────────────────────────────────────
@@ -147,7 +181,8 @@ export function wsTabToRuntime(tab) {
     title:         tab.title ?? '',
     path:          tab.context?.path         ?? '',
     selectedPath:  tab.context?.selectedPath ?? '',
-    mode:          tab.isPeeked ? 'peek' : 'pinned',
+    mode:          tab.isPeeked ? 'peek' : 'normal',
+    pinned:        !!tab.isPinned,
     selectedItems: tab.context?.selectedItems ?? [],
     focusedItem:   tab.context?.focusedItem   ?? null,
   }
@@ -164,7 +199,7 @@ export function runtimeTabToWs(tab, existing = null) {
     timestampAdded:   existing?.timestampAdded   ?? now,
     timestampViewed:  now,
     timestampUpdated: now,
-    isPinned:         tab.mode !== 'peek',
+    isPinned:         !!tab.pinned,
     isPeeked:         tab.mode === 'peek',
     isActive:         false,
     context: {
@@ -173,6 +208,57 @@ export function runtimeTabToWs(tab, existing = null) {
       selectedItems: tab.selectedItems ?? [],
       focusedItem:   tab.focusedItem   ?? null,
     },
+  }
+}
+
+// ─── Editor grid serialisation (persisted ⇄ runtime) ──────────────────────────
+
+export function wsGridToRuntime(node) {
+  if (!node) return null
+  if (node.type === 'leaf') {
+    return {
+      type: 'leaf',
+      id: node.id,
+      activeTabId: node.activeTabId ?? node.tabs?.[0]?.id ?? null,
+      tabs: (node.tabs ?? []).map(wsTabToRuntime),
+      tabPreviews: node.tabPreviews !== false,
+      locked: node.locked ?? false,
+    }
+  }
+  return {
+    type: 'branch',
+    id: node.id,
+    direction: node.direction === 'column' ? 'column' : 'row',
+    sizes: Array.isArray(node.sizes) ? [...node.sizes] : (node.children ?? []).map(() => 1),
+    children: (node.children ?? []).map(wsGridToRuntime),
+  }
+}
+
+function collectWsTabs(node, acc = {}) {
+  if (!node) return acc
+  if (node.type === 'leaf') (node.tabs ?? []).forEach(t => { acc[t.id] = t })
+  else (node.children ?? []).forEach(c => collectWsTabs(c, acc))
+  return acc
+}
+
+export function runtimeGridToWs(node, prevById = {}) {
+  if (!node) return null
+  if (node.type === 'leaf') {
+    return {
+      type: 'leaf',
+      id: node.id,
+      activeTabId: node.activeTabId ?? node.tabs?.[0]?.id ?? null,
+      tabs: (node.tabs ?? []).map(t => runtimeTabToWs(t, prevById[t.id])),
+      tabPreviews: node.tabPreviews !== false,
+      locked: node.locked ?? false,
+    }
+  }
+  return {
+    type: 'branch',
+    id: node.id,
+    direction: node.direction === 'column' ? 'column' : 'row',
+    sizes: Array.isArray(node.sizes) ? [...node.sizes] : (node.children ?? []).map(() => 1),
+    children: (node.children ?? []).map(c => runtimeGridToWs(c, prevById)),
   }
 }
 
@@ -269,23 +355,23 @@ export function useWorkspaces() {
 
   // ── Tabs ─────────────────────────────────────────────────────────────────
 
-  function getInitialTabs() {
-    const wsTabs = activeWorkspace.value?.layout.editor.tabs ?? []
-    if (!wsTabs.length) {
-      return [{ id: uuidv4(), kind: 'home', title: 'Home', mode: 'pinned', selectedItems: [], focusedItem: null, selectedPath: '', path: '' }]
+  function getInitialEditor() {
+    const editor = activeWorkspace.value?.layout.editor
+    if (!editor?.root) {
+      const tabId = uuidv4()
+      const leaf = {
+        type: 'leaf', id: uuidv4(), activeTabId: tabId,
+        tabs: [{ id: tabId, kind: 'home', title: 'Home', mode: 'normal', pinned: false, selectedItems: [], focusedItem: null, selectedPath: '', path: '' }],
+      }
+      return { root: leaf, activeGroupId: leaf.id }
     }
-    return wsTabs.map(wsTabToRuntime)
+    return { root: wsGridToRuntime(editor.root), activeGroupId: editor.activeGroupId ?? editor.root.id }
   }
 
-  function getInitialActiveTabId() {
-    return activeWorkspace.value?.layout.editor.activeTabId ?? null
-  }
-
-  function saveTabs(runtimeTabs, activeTabId) {
+  function saveEditor(root, activeGroupId) {
     mutate(ws => {
-      const byId = Object.fromEntries((ws.layout.editor.tabs ?? []).map(t => [t.id, t]))
-      ws.layout.editor.tabs      = runtimeTabs.map(t => runtimeTabToWs(t, byId[t.id]))
-      ws.layout.editor.activeTabId = activeTabId
+      const prevById = collectWsTabs(ws.layout.editor?.root)
+      ws.layout.editor = { root: runtimeGridToWs(root, prevById), activeGroupId }
     })
   }
 
@@ -341,9 +427,8 @@ export function useWorkspaces() {
     rightPanelActivityIds,
     explorerContext,
     updateExplorerContext,
-    getInitialTabs,
-    getInitialActiveTabId,
-    saveTabs,
+    getInitialEditor,
+    saveEditor,
     // Workspace management
     createWorkspace,
     switchWorkspace,

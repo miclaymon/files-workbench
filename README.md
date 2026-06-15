@@ -4,6 +4,7 @@ A desktop file manager built with Electron + Nuxt 3 (Vue 3) on the front end and
 
 ## Features
 
+- Split-pane editor grid: split any group up/down/left/right via drag-drop, View ▸ Editor Layout menu, or `Ctrl+\`; five layout presets (Single, Two Columns, Two Rows, Three Columns, Grid 2×2); per-group lock and maximize; tab previews toggle
 - Multi-tab directory browsing with navigation history and breadcrumbs (overflow-collapsing with expandable `···` chip)
 - Multiple directory view layouts: grid (XS through XXL), list, details, gallery grid, gallery mosaic, and feed
 - Client-side sort (name, size, type, date modified/created/accessed) and filter (by file type, size, date) with a contextual active-state bar showing removable chips
@@ -65,7 +66,7 @@ npm run dev:client
 # Electron desktop app (opens window automatically)
 npm run dev:client:electron
 
-# Go server only (http://localhost:8000)
+# Go server only (data: http://localhost:8001, control: http://localhost:8002)
 npm run dev:server:v2
 
 # Frontend + Go server together (no Electron)

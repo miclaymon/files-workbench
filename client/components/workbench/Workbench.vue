@@ -81,72 +81,32 @@
         <!-- Editor column (editor + bottom panel) -->
         <div class="editor-column">
 
-          <!-- Editor area -->
+          <!-- Editor area: recursive grid of editor groups -->
           <div class="editor-area">
-
-            <!-- Tab bar -->
-            <div class="tabs">
-              <button
-                v-for="t in tabs"
-                :key="t.id"
-                class="tab"
-                :class="{
-                  active: t.id === activeTabId,
-                  peek: t.kind === 'dir' && t.mode === 'peek',
-                  dragging: draggedTab?.id === t.id,
-                  'drag-over': dragOverTab?.id === t.id
-                }"
-                :data-tab-id="t.id"
-                draggable="true"
-                @click="handleTabClick(t)"
-                @dblclick="pinTab(t.id)"
-                @contextmenu.prevent="showTabContextMenu($event, t)"
-                @dragstart="handleDragStart($event, t)"
-                @dragend="handleDragEnd"
-                @dragover="handleDragOver($event, t)"
-                @dragleave="handleDragLeave($event)"
-                @drop="handleTabDrop($event, t)"
-              >
-                <svg v-if="t.kind === 'dir'" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><path :d="mdiFolder" /></svg>
-                <span class="tab-label">{{ t.title }}</span>
-                <span v-if="t.selectedItems?.length > 0" class="tab-badge">{{ t.selectedItems.length }}</span>
-                <span class="tab-close" @click.stop="closeTab(t.id)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiClose" /></svg>
-                </span>
-              </button>
-            </div>
-
-            <!-- Center pane -->
-            <div class="centerpane">
-              <HomePage v-if="activeTab?.kind === 'home'" />
-              <DirectoryTab
-                v-else-if="activeTab?.kind === 'dir'"
-                ref="directoryTabRef"
-                :path="activeTab.path"
-                :excludedCategories="prefs.excludedCategories"
-                :selectedPath="activeTab.selectedPath ?? ''"
-                :selectedItems="selectedItems"
-                :focusedItem="focusedItem"
-                :prefs="prefs.explorer"
-                @select="handleSelectFromDirectory"
-                @open="handleOpenFromTab"
-                @navigate="navigateInCurrentTab"
-                @contextmenu="showItemContextMenu"
-                @background-contextmenu="showBackgroundContextMenu"
-                @right-drag-drop="showRightDragDropMenu"
-                @rename="handleRename"
-                @stats="dirStats = $event"
-                @update:layout="handleLayoutChange"
-              />
-              <PreferencesActivity
-                v-else-if="activeTab?.kind === 'preferences'"
-                :prefs="prefs"
-                @save="savePreferences"
-                @change="onPreferencesChanged"
-              />
-              <div v-else style="padding: 12px; color: var(--text-muted); font-size: 13px;">No tab.</div>
-            </div>
-
+            <GridView :node="viewRoot">
+              <template #leaf="{ node }">
+                <EditorGroup
+                  :ref="el => registerGroup(node.id, el)"
+                  :group="node"
+                  :isActive="node.id === activeGroupId"
+                  :isMaximized="node.id === maximizedGroupId"
+                  :prefs="prefs"
+                  :excludedCategories="prefs.excludedCategories"
+                  @select="handleSelectFromDirectory"
+                  @open="handleOpenFromTab"
+                  @navigate="navigateInCurrentTab"
+                  @contextmenu="showItemContextMenu"
+                  @background-contextmenu="showBackgroundContextMenu"
+                  @right-drag-drop="showRightDragDropMenu"
+                  @rename="handleRename"
+                  @stats="onGroupStats"
+                  @update:layout="handleLayoutChange"
+                  @preferences-save="savePreferences"
+                  @preferences-change="onPreferencesChanged"
+                  @tab-contextmenu="handleTabContextMenu"
+                />
+              </template>
+            </GridView>
           </div>
 
           <!-- Bottom panel resize handle + panel -->
@@ -277,10 +237,10 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { mdiHarddisk, mdiSegment, mdiMagnify, mdiFolder, mdiMessage, mdiCog, mdiClose, mdiEye, mdiInformation, mdiBug,
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
+import { mdiHarddisk, mdiSegment, mdiMagnify, mdiMessage, mdiCog, mdiEye, mdiInformation, mdiBug,
          mdiContentCopy, mdiContentCut, mdiPencilOutline, mdiTrashCanOutline, mdiInformationOutline } from '@mdi/js'
-import { useDragAndDrop } from '~/composables/useDragAndDrop.js'
+import { createLeaf, findLeaf, firstLeaf, collectLeaves, leafCount, insertLeafBeside, removeLeaf, applyPreset } from '~/composables/useLayoutGrid.js'
 import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
 import { usePreferences } from '~/composables/usePreferences.js'
 import { useDebugLog } from '~/composables/useDebugLog.js'
@@ -330,7 +290,7 @@ const {
   rightpaneWidth, rightPanel, bottompaneHeight,
   rightPanelActivityIds,
   explorerContext, updateExplorerContext,
-  getInitialTabs, getInitialActiveTabId, saveTabs,
+  getInitialEditor, saveEditor,
 } = useWorkspaces()
 
 // Debug log
@@ -443,29 +403,239 @@ const selectedItems = ref([])
 const focusedItem = ref(null)
 const selectedDetails = ref(null)
 
-// Tab state — initialised from the active workspace
-const directoryTabRef = ref(null)
+// Editor model — a recursive grid of editor groups (see useLayoutGrid.js).
 const explorerPanelRef = ref(null)
-const tabs       = ref(getInitialTabs())
-const activeTabId = ref(getInitialActiveTabId() ?? tabs.value[0]?.id ?? 'home')
-const activeTab  = computed(() => tabs.value.find(t => t.id === activeTabId.value))
+const _initialEditor = getInitialEditor()
+const editorRoot    = ref(_initialEditor.root)
+const activeGroupId = ref(_initialEditor.activeGroupId ?? firstLeaf(_initialEditor.root)?.id ?? null)
 
-// Persist tab changes to workspace.
-// We track a lightweight signature so we never deep-watch large selectedItems arrays.
-// Selected items are captured via their paths (cheap string join).
-const _tabSignature = computed(() =>
-  tabs.value.map(t =>
-    `${t.id}:${t.kind}:${t.title}:${t.path ?? ''}:${t.mode ?? ''}:`
-    + (t.selectedItems ?? []).map(i => i.path ?? i.name).join(',')
-    + `:${t.focusedItem?.path ?? ''}`
-  ).join('|') + '||' + activeTabId.value
+const maximizedGroupId = ref(null)
+// When a group is maximized, show only that leaf (GridView handles a leaf root fine).
+const viewRoot = computed(() =>
+  maximizedGroupId.value ? (findLeaf(editorRoot.value, maximizedGroupId.value) ?? editorRoot.value) : editorRoot.value
 )
-watch(_tabSignature, () => saveTabs(tabs.value, activeTabId.value))
 
-// Clear dir stats when navigating away from a dir tab
-watch(activeTab, (tab) => {
-  if (tab?.kind !== 'dir') dirStats.value = { count: 0, totalSize: 0 }
+const activeGroup = computed(() => findLeaf(editorRoot.value, activeGroupId.value) ?? firstLeaf(editorRoot.value))
+const activeTabs  = computed(() => activeGroup.value?.tabs ?? [])
+const activeTab   = computed(() => activeTabs.value.find(t => t.id === activeGroup.value?.activeTabId) ?? activeTabs.value[0] ?? null)
+
+// EditorGroup component instances, keyed by group id, for imperative refresh/rename.
+const groupRefs = {}
+function registerGroup(id, el) { if (el) groupRefs[id] = el; else delete groupRefs[id] }
+function activeGroupEl() { return groupRefs[activeGroupId.value] }
+function forEachGroup(fn) { Object.values(groupRefs).forEach(r => { try { fn(r) } catch {} }) }
+function refreshAllDirs() { forEachGroup(r => r?.refresh?.()) }
+
+// Persist the editor grid. A cheap signature avoids deep-watching big selection arrays.
+function gridSignature(node) {
+  if (!node) return ''
+  if (node.type === 'leaf') {
+    return 'L' + node.id + '#' + node.activeTabId
+      + ':tp' + (node.tabPreviews !== false ? 1 : 0)
+      + ':lk' + (node.locked ? 1 : 0)
+      + '[' + node.tabs.map(t =>
+        `${t.id}:${t.kind}:${t.title}:${t.path ?? ''}:${t.mode}:${t.pinned ? 1 : 0}:`
+        + (t.selectedItems ?? []).map(i => i.path ?? i.name).join(',')
+        + `:${t.focusedItem?.path ?? ''}`
+      ).join('|') + ']'
+  }
+  return 'B' + node.direction + '(' + node.sizes.map(s => Math.round(s * 100) / 100).join(',') + ')'
+    + node.children.map(gridSignature).join('~')
+}
+const _editorSignature = computed(() => gridSignature(editorRoot.value) + '||' + activeGroupId.value)
+watch(_editorSignature, () => saveEditor(editorRoot.value, activeGroupId.value))
+
+// Restore per-tab selection when the active group/tab changes; reset dir stats off-dir.
+watch(activeTab, async (tab) => {
+  if (tab?.kind === 'dir') {
+    selectedItems.value = tab.selectedItems ?? []
+    focusedItem.value   = tab.focusedItem ?? null
+    selectedPath.value  = tab.selectedPath ?? tab.path ?? ''
+  } else {
+    dirStats.value = { count: 0, totalSize: 0 }
+    selectedItems.value = []
+    focusedItem.value   = null
+    selectedPath.value  = ''
+  }
+  selectedDetails.value = null
+  if (selectedPath.value) { try { selectedDetails.value = await fsStat(selectedPath.value) } catch { selectedDetails.value = null } }
 })
+
+// ── Editor grid controller (provided to EditorGroup children) ─────────────────
+
+function reorderForPin(g) {
+  const pinned = g.tabs.filter(t => t.pinned)
+  const rest   = g.tabs.filter(t => !t.pinned)
+  g.tabs.splice(0, g.tabs.length, ...pinned, ...rest)
+}
+
+function removeTabFrom(leaf, tabId) {
+  const i = leaf.tabs.findIndex(t => t.id === tabId)
+  if (i < 0) return
+  leaf.tabs.splice(i, 1)
+  if (leaf.activeTabId === tabId) leaf.activeTabId = leaf.tabs[Math.max(0, i - 1)]?.id ?? leaf.tabs[0]?.id ?? null
+}
+
+function cleanupEmpty(groupId) {
+  const g = findLeaf(editorRoot.value, groupId)
+  if (g && g.tabs.length === 0 && leafCount(editorRoot.value) > 1) {
+    editorRoot.value = removeLeaf(editorRoot.value, groupId)
+    if (!findLeaf(editorRoot.value, activeGroupId.value)) activeGroupId.value = firstLeaf(editorRoot.value)?.id ?? null
+  }
+}
+
+function closeTabImpl(groupId, tabId) {
+  const g = findLeaf(editorRoot.value, groupId)
+  if (!g) return
+  const idx = g.tabs.findIndex(t => t.id === tabId)
+  if (idx === -1) return
+  if (g.tabs.length === 1) {
+    if (leafCount(editorRoot.value) === 1) return          // always keep one group + tab
+    editorRoot.value = removeLeaf(editorRoot.value, groupId)
+    if (activeGroupId.value === groupId) activeGroupId.value = firstLeaf(editorRoot.value)?.id ?? null
+    return
+  }
+  g.tabs.splice(idx, 1)
+  if (g.activeTabId === tabId) g.activeTabId = g.tabs[Math.max(0, idx - 1)]?.id ?? null
+}
+
+function dropTabImpl({ sourceGroupId, tabId, targetGroupId, region, side, beforeTabId }) {
+  const source = findLeaf(editorRoot.value, sourceGroupId)
+  const target = findLeaf(editorRoot.value, targetGroupId)
+  if (!source || !target) return
+  const tab = source.tabs.find(t => t.id === tabId)
+  if (!tab) return
+
+  if (region === 'center') {
+    if (sourceGroupId === targetGroupId) {
+      const from = source.tabs.findIndex(t => t.id === tabId)
+      source.tabs.splice(from, 1)
+      let to = beforeTabId ? source.tabs.findIndex(t => t.id === beforeTabId) : source.tabs.length
+      if (to < 0) to = source.tabs.length
+      source.tabs.splice(to, 0, tab)
+    } else {
+      removeTabFrom(source, tabId)
+      let to = beforeTabId ? target.tabs.findIndex(t => t.id === beforeTabId) : target.tabs.length
+      if (to < 0) to = target.tabs.length
+      target.tabs.splice(to, 0, tab)
+    }
+    target.activeTabId = tab.id
+    activeGroupId.value = targetGroupId
+    if (sourceGroupId !== targetGroupId) cleanupEmpty(sourceGroupId)
+    return
+  }
+
+  // edge → new group beside the target on `side`
+  if (sourceGroupId === targetGroupId && source.tabs.length === 1) return  // no-op split of a lone tab
+  removeTabFrom(source, tabId)
+  const newLeaf = createLeaf({ tabs: [tab], activeTabId: tab.id })
+  editorRoot.value = insertLeafBeside(editorRoot.value, targetGroupId, side, newLeaf)
+  activeGroupId.value = newLeaf.id
+  cleanupEmpty(sourceGroupId)
+}
+
+function splitActiveGroupImpl(side) {
+  const g = activeGroup.value
+  if (!g) return
+  const src = g.tabs.find(t => t.id === g.activeTabId) ?? g.tabs[0]
+  const clone = src
+    ? { ...src, id: uuid(), mode: 'normal', pinned: false, selectedItems: [...(src.selectedItems ?? [])] }
+    : { id: uuid(), kind: 'home', title: 'Home', mode: 'normal', pinned: false, selectedItems: [], focusedItem: null, selectedPath: '', path: '' }
+  const newLeaf = createLeaf({ tabs: [clone], activeTabId: clone.id })
+  editorRoot.value = insertLeafBeside(editorRoot.value, g.id, side, newLeaf)
+  activeGroupId.value = newLeaf.id
+  log('editor-layout', `Split ${side}`, { tab: src?.title ?? '(home)', side })
+}
+
+function splitWithTab(groupId, tabId, side) {
+  const g = findLeaf(editorRoot.value, groupId)
+  const src = g?.tabs.find(t => t.id === tabId)
+  if (!src) return
+  const clone = { ...src, id: uuid(), mode: 'normal', pinned: false, selectedItems: [...(src.selectedItems ?? [])] }
+  const newLeaf = createLeaf({ tabs: [clone], activeTabId: clone.id })
+  editorRoot.value = insertLeafBeside(editorRoot.value, groupId, side, newLeaf)
+  activeGroupId.value = newLeaf.id
+}
+
+function closeOtherTabs(groupId, keepId) {
+  const g = findLeaf(editorRoot.value, groupId)
+  const keep = g?.tabs.find(t => t.id === keepId)
+  if (!keep) return
+  g.tabs.splice(0, g.tabs.length, keep)
+  g.activeTabId = keepId
+}
+
+function applyLayoutPreset(name) {
+  editorRoot.value = applyPreset(editorRoot.value, name)
+  if (!findLeaf(editorRoot.value, activeGroupId.value)) activeGroupId.value = firstLeaf(editorRoot.value)?.id ?? null
+  maximizedGroupId.value = null
+  log('editor-layout', `Applied layout: ${name}`, { preset: name })
+}
+
+const editorController = {
+  setActiveGroup(groupId) { if (findLeaf(editorRoot.value, groupId)) activeGroupId.value = groupId },
+  activateTab(groupId, tabId) {
+    const g = findLeaf(editorRoot.value, groupId)
+    if (!g) return
+    activeGroupId.value = groupId
+    g.activeTabId = tabId
+    const t = g.tabs.find(x => x.id === tabId)
+    if (t) log('tab', 'Tab activated', { title: t.title, path: t.path ?? null, kind: t.kind })
+  },
+  promoteTab(groupId, tabId) {
+    const g = findLeaf(editorRoot.value, groupId)
+    if (!g) return
+    const t = g.tabs.find(x => x.id === tabId)
+    if (t && t.mode === 'peek') t.mode = 'normal'
+    activeGroupId.value = groupId
+    g.activeTabId = tabId
+  },
+  togglePin(groupId, tabId) {
+    const g = findLeaf(editorRoot.value, groupId)
+    const t = g?.tabs.find(x => x.id === tabId)
+    if (!t) return
+    t.pinned = !t.pinned
+    if (t.pinned) t.mode = 'normal'
+    reorderForPin(g)
+  },
+  closeTab: closeTabImpl,
+  dropTab: dropTabImpl,
+  splitActiveGroup: splitActiveGroupImpl,
+  applyLayoutPreset,
+  closeAllTabs(groupId) {
+    const g = findLeaf(editorRoot.value, groupId)
+    if (!g || g.tabs.length === 0) return
+    if (leafCount(editorRoot.value) > 1) {
+      editorRoot.value = removeLeaf(editorRoot.value, groupId)
+      if (activeGroupId.value === groupId || !findLeaf(editorRoot.value, activeGroupId.value)) {
+        activeGroupId.value = firstLeaf(editorRoot.value)?.id ?? null
+      }
+    } else {
+      const first = g.tabs[0]
+      g.tabs.splice(0, g.tabs.length, first)
+      g.activeTabId = first.id
+    }
+    log('editor-layout', 'Closed all tabs in group', { groupId })
+  },
+  toggleTabPreviews(groupId) {
+    const g = findLeaf(editorRoot.value, groupId)
+    if (!g) return
+    g.tabPreviews = g.tabPreviews === false ? true : false
+    log('editor-layout', `Tab previews ${g.tabPreviews ? 'enabled' : 'disabled'}`, { groupId })
+  },
+  maximizeGroup(groupId) {
+    const wasMaximized = maximizedGroupId.value === groupId
+    maximizedGroupId.value = wasMaximized ? null : groupId
+    log('editor-layout', wasMaximized ? 'Restored group' : 'Maximized group', { groupId })
+  },
+  toggleLockGroup(groupId) {
+    const g = findLeaf(editorRoot.value, groupId)
+    if (!g) return
+    g.locked = !g.locked
+    log('editor-layout', `Group ${g.locked ? 'locked' : 'unlocked'}`, { groupId })
+  },
+}
+provide('editorController', editorController)
 
 // Preferences
 const { prefs, save: savePrefs } = usePreferences()
@@ -490,30 +660,6 @@ const editMenuPos = ref({ x: 0, y: 0 })
 const viewMenuPos = ref({ x: 0, y: 0 })
 const settingsMenuPos = ref({ x: 0, y: 0 })
 
-// Tab drag-and-drop
-const {
-  draggedItem: draggedTab,
-  dragOverItem: dragOverTab,
-  handleDragStart,
-  handleDragEnd,
-  handleDragOver,
-  handleDragLeave,
-  handleDrop: handleTabDrop
-} = useDragAndDrop({
-  onDragStart: (event) => event.target.classList.add('dragging'),
-  onDragEnd: (event) => event.target.classList.remove('dragging'),
-  onDrop: (event, dragged, target) => {
-    const from = tabs.value.findIndex(t => t.id === dragged.id)
-    const to = tabs.value.findIndex(t => t.id === target.id)
-    if (from === -1 || to === -1) return
-    const copy = [...tabs.value]
-    const [moved] = copy.splice(from, 1)
-    copy.splice(to, 0, moved)
-    tabs.value = copy
-  },
-  dragLeaveSelector: '.tab'
-})
-
 // Menu items
 const fileMenuItems = computed(() => [
   { key: 'newfolder', label: 'New Folder', action: createNewFolder },
@@ -533,6 +679,21 @@ const editMenuItems = computed(() => [
 
 const viewMenuItems = computed(() => [
   { key: 'sidebar', label: 'Toggle Sidebar', action: () => { sidebarVisible.value = !sidebarVisible.value } },
+  { key: 'editorLayout', label: 'Editor Layout', submenu: [
+    { key: 'splitUp',    label: 'Split Up',    action: () => editorController.splitActiveGroup('top') },
+    { key: 'splitDown',  label: 'Split Down',  action: () => editorController.splitActiveGroup('bottom') },
+    { key: 'splitLeft',  label: 'Split Left',  action: () => editorController.splitActiveGroup('left') },
+    { key: 'splitRight', label: 'Split Right', action: () => editorController.splitActiveGroup('right') },
+    { separator: true },
+    { key: 'single',       label: 'Single',         action: () => editorController.applyLayoutPreset('single') },
+    { key: 'twoColumns',   label: 'Two Columns',    action: () => editorController.applyLayoutPreset('twoColumns') },
+    { key: 'twoRows',      label: 'Two Rows',       action: () => editorController.applyLayoutPreset('twoRows') },
+    { key: 'threeColumns', label: 'Three Columns',  action: () => editorController.applyLayoutPreset('threeColumns') },
+    { key: 'grid',         label: 'Grid (2×2)',     action: () => editorController.applyLayoutPreset('grid') },
+    { separator: true },
+    { key: 'moveNewWindow', label: 'Move Editor into New Window', disabled: true },
+    { key: 'copyNewWindow', label: 'Copy Editor into New Window', disabled: true },
+  ] },
   { key: 'alwaysShowCheckboxes', label: 'Always show checkboxes', type: 'toggle', checked: () => prefs.explorer.alwaysShowCheckboxes, action: () => { prefs.explorer.alwaysShowCheckboxes = !prefs.explorer.alwaysShowCheckboxes } },
   { separator: true },
   { key: 'preview', label: 'Preview Panel', type: 'toggle', checked: () => rightPanel.value === 'preview', action: () => { rightPanel.value = 'preview' } },
@@ -581,16 +742,14 @@ function openCommandPalette() {
 
 // Preferences
 function openPreferencesTab() {
-  const existing = tabs.value.find(t => t.kind === 'preferences')
-  if (existing) { activeTabId.value = existing.id; return }
-  const tab = { id: uuid(), kind: 'preferences', title: 'Preferences', selectedItems: [], focusedItem: null, selectedPath: '' }
-  tabs.value.push(tab)
-  nextTick(() => { activeTabId.value = tab.id })
+  const found = findTabByKind('preferences')
+  if (found) { focusTab(found.groupId, found.tab.id); return }
+  addTabToActiveGroup({ id: uuid(), kind: 'preferences', title: 'Preferences', mode: 'normal', pinned: false, selectedItems: [], focusedItem: null, selectedPath: '' })
 }
 
 function onPreferencesChanged() {
-  const tab = tabs.value.find(t => t.kind === 'preferences')
-  if (tab) tab.title = 'Preferences (unsaved)'
+  const found = findTabByKind('preferences')
+  if (found) found.tab.title = 'Preferences (unsaved)'
 }
 
 async function savePreferences(newPrefs) {
@@ -601,17 +760,22 @@ async function savePreferences(newPrefs) {
     setTimeout(() => { status.value.left = 'Ready' }, 2000)
     return
   }
-  const tab = tabs.value.find(t => t.kind === 'preferences')
-  if (tab) tab.title = 'Preferences'
+  const found = findTabByKind('preferences')
+  if (found) found.tab.title = 'Preferences'
   explorerPanelRef.value?.refresh()
   status.value.left = 'Preferences saved'
   setTimeout(() => { status.value.left = 'Ready' }, 2000)
+}
+
+function onSashResizeEnd() {
+  log('editor-layout', 'Resized editor groups', {})
 }
 
 onMounted(async () => {
   pingServer()
   _pingInterval = setInterval(pingServer, 10000)
   window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('editor:sash-resize-end', onSashResizeEnd)
   // Load platform + archive capabilities in the background
   try {
     const init = await fetch('/_api/v2/app/init').then(r => r.json())
@@ -634,6 +798,7 @@ onMounted(async () => {
 onUnmounted(() => {
   clearInterval(_pingInterval)
   window.removeEventListener('keydown', onKeyDown)
+  window.removeEventListener('editor:sash-resize-end', onSashResizeEnd)
 })
 
 async function createNewFolder() {
@@ -643,7 +808,7 @@ async function createNewFolder() {
   const sep = dir.includes('\\') ? '\\' : '/'
   try {
     await enqueue({ label: `Create folder "${name}"`, kind: 'create_dir', params: { path: dir + sep + name } })
-    directoryTabRef.value?.refresh()
+    refreshAllDirs()
   } catch (e) {
     status.value.left = `Error: ${e?.message ?? e}`
     setTimeout(() => { status.value.left = 'Ready' }, 2000)
@@ -657,42 +822,60 @@ async function createNewFile() {
   const sep = dir.includes('\\') ? '\\' : '/'
   try {
     await enqueue({ label: `Create file "${name}"`, kind: 'create_file', params: { path: dir + sep + name } })
-    directoryTabRef.value?.refresh()
+    refreshAllDirs()
   } catch (e) {
     status.value.left = `Error: ${e?.message ?? e}`
     setTimeout(() => { status.value.left = 'Ready' }, 2000)
   }
 }
 
-// Tab management
+// ── Tab helpers (operate on the editor grid) ──────────────────────────────────
+
+function findTabByPath(path) {
+  for (const leaf of collectLeaves(editorRoot.value)) {
+    const tab = leaf.tabs.find(t => t.path === path)
+    if (tab) return { groupId: leaf.id, tab }
+  }
+  return null
+}
+
+function findTabByKind(kind) {
+  for (const leaf of collectLeaves(editorRoot.value)) {
+    const tab = leaf.tabs.find(t => t.kind === kind)
+    if (tab) return { groupId: leaf.id, tab }
+  }
+  return null
+}
+
+function focusTab(groupId, tabId) {
+  const g = findLeaf(editorRoot.value, groupId)
+  if (!g) return
+  activeGroupId.value = groupId
+  g.activeTabId = tabId
+}
+
+async function addTabToActiveGroup(tab, { activate = true } = {}) {
+  const g = activeGroup.value
+  if (!g || g.locked) return
+  g.tabs.push(tab)
+  if (activate) { await nextTick(); g.activeTabId = tab.id }
+}
+
 async function openPeekTabForDir(path) {
+  const g = activeGroup.value
+  if (!g || g.locked) return
   const title = path.split(/[/\\]/).filter(Boolean).pop() || path
-  const tab = { id: uuid(), kind: 'dir', mode: 'peek', title, path, selectedItems: [], focusedItem: null, selectedPath: '' }
-  const existingPeekIdx = tabs.value.findIndex(t => t.kind === 'dir' && t.mode === 'peek')
-  if (existingPeekIdx >= 0) tabs.value.splice(existingPeekIdx, 1, tab)
-  else tabs.value.push(tab)
+  const usePeek = g.tabPreviews !== false
+  const tab = { id: uuid(), kind: 'dir', mode: usePeek ? 'peek' : 'normal', pinned: false, title, path, selectedItems: [], focusedItem: null, selectedPath: '' }
+  if (usePeek) {
+    const peekIdx = g.tabs.findIndex(t => t.kind === 'dir' && t.mode === 'peek')
+    if (peekIdx >= 0) g.tabs.splice(peekIdx, 1, tab)
+    else g.tabs.push(tab)
+  } else {
+    g.tabs.push(tab)
+  }
   await nextTick()
-  activeTabId.value = tab.id
-}
-
-function handleTabClick(tab) {
-  log('tab', 'Tab activated', { title: tab.title, path: tab.path ?? null, kind: tab.kind })
-  nextTick(() => {
-    activeTabId.value = tab.id
-    if (tab.kind === 'dir' && tab.mode === 'peek') tab.mode = 'pinned'
-  })
-}
-
-function pinTab(tabId) {
-  const t = tabs.value.find(x => x.id === tabId)
-  if (t?.kind === 'dir' && t.mode === 'peek') t.mode = 'pinned'
-}
-
-function closeTab(tabId) {
-  const idx = tabs.value.findIndex(t => t.id === tabId)
-  if (idx === -1 || tabs.value.length === 1) return
-  tabs.value.splice(idx, 1)
-  if (activeTabId.value === tabId) nextTick(() => { activeTabId.value = tabs.value[Math.max(0, idx - 1)].id })
+  g.activeTabId = tab.id
 }
 
 function flashTab(tabId) {
@@ -700,6 +883,32 @@ function flashTab(tabId) {
   if (!el) return
   el.classList.add('flash')
   setTimeout(() => el.classList.remove('flash'), 600)
+}
+
+function onGroupStats({ groupId, stats }) {
+  if (groupId === activeGroupId.value) dirStats.value = stats
+}
+
+function triggerInlineRename() {
+  const el = activeGroupEl()?.getDirectoryTab?.()?.$el
+  el?.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true }))
+}
+
+function handleTabContextMenu({ event, tab, groupId }) {
+  contextMenu.value = {
+    visible: true, x: event.clientX, y: event.clientY, quickActions: [],
+    items: [
+      { key: 'close',       label: 'Close',        action: () => editorController.closeTab(groupId, tab.id) },
+      { key: 'closeOthers', label: 'Close Others', action: () => closeOtherTabs(groupId, tab.id) },
+      { separator: true },
+      { key: 'pin', label: tab.pinned ? 'Unpin' : 'Pin', action: () => editorController.togglePin(groupId, tab.id) },
+      { separator: true },
+      { key: 'splitRight', label: 'Split Right', action: () => splitWithTab(groupId, tab.id, 'right') },
+      { key: 'splitDown',  label: 'Split Down',  action: () => splitWithTab(groupId, tab.id, 'bottom') },
+      { separator: true },
+      { key: 'copypath', label: 'Copy Path', action: () => navigator.clipboard.writeText(tab.path ?? ''), disabled: !tab.path },
+    ],
+  }
 }
 
 // ── file operations ───────────────────────────────────────────────────────────
@@ -718,7 +927,7 @@ async function handleRename({ path, newName }) {
   const optimisticPath = dir + sep + newName
 
   // Apply immediately — user sees the change before the server responds
-  directoryTabRef.value?.renameItem(path, newName, optimisticPath)
+  forEachGroup(r => r.renameItem?.(path, newName, optimisticPath))
   updateSelectionAfterRename(path, newName, optimisticPath)
 
   try {
@@ -727,7 +936,7 @@ async function handleRename({ path, newName }) {
     // If the server returned a slightly different path (e.g. case normalization), reconcile
     if (result.path !== optimisticPath) {
       const serverName = result.path.split(/[/\\]/).pop()
-      directoryTabRef.value?.renameItem(optimisticPath, serverName, result.path)
+      forEachGroup(r => r.renameItem?.(optimisticPath, serverName, result.path))
       updateSelectionAfterRename(optimisticPath, serverName, result.path)
     }
 
@@ -739,7 +948,7 @@ async function handleRename({ path, newName }) {
     explorerPanelRef.value?.refresh()
   } catch (e) {
     // Roll back the optimistic update
-    directoryTabRef.value?.renameItem(optimisticPath, oldName, path)
+    forEachGroup(r => r.renameItem?.(optimisticPath, oldName, path))
     updateSelectionAfterRename(optimisticPath, oldName, path)
     status.value.left = `Rename failed: ${e?.message ?? e}`
     setTimeout(() => { status.value.left = 'Ready' }, 2500)
@@ -806,7 +1015,7 @@ async function doDelete(items) {
 }
 
 function afterDelete() {
-  directoryTabRef.value?.refresh()
+  refreshAllDirs()
   explorerPanelRef.value?.refresh()
   selectedItems.value = []
   focusedItem.value = null
@@ -869,7 +1078,7 @@ async function doCompress(items, format) {
   const label = `Compress to ${name}`
   try {
     await enqueue({ label, kind: 'compress', params: { paths, format, dest } })
-    directoryTabRef.value?.refresh()
+    refreshAllDirs()
     log('ops-queue', 'Compressed', { dest, format, count: paths.length, sources: paths })
   } catch (e) {
     status.value.left = `Compress failed: ${e?.message ?? e}`
@@ -903,7 +1112,7 @@ async function doDecompress(item, toNewFolder = false) {
       }
       return
     }
-    directoryTabRef.value?.refresh()
+    refreshAllDirs()
     log('ops-queue', 'Extracted', { source: item.path, dest: destDir, toNewFolder })
   } catch (e) {
     status.value.left = `Extract failed: ${e?.message ?? e}`
@@ -945,7 +1154,7 @@ async function doPaste() {
       _type: 'item-table',
       items: cb.items.map(i => ({ name: i.name, kind: i.kind, size: i.size, path: i.path, thumbnail: i.thumbnail ?? null })),
     })
-    directoryTabRef.value?.refresh()
+    refreshAllDirs()
   } catch (e) {
     status.value.left = `Paste failed: ${e?.message ?? e}`
     setTimeout(() => { status.value.left = 'Ready' }, 2500)
@@ -965,7 +1174,7 @@ async function doMove(items, destDir) {
       undo: () => enqueue({ label: `Undo ${label}`, kind: 'move', params: { paths: movedPaths, dest_dir: srcDir } }),
       redo: () => enqueue({ label: `Redo ${label}`, kind: 'move', params: { paths, dest_dir: destDir } }),
     })
-    directoryTabRef.value?.refresh()
+    refreshAllDirs()
     selectedItems.value = []
     focusedItem.value = null
   } catch (e) {
@@ -975,13 +1184,18 @@ async function doMove(items, destDir) {
 }
 
 async function doUndo() {
-  try { await history.undo(); directoryTabRef.value?.refresh() }
+  try { await history.undo(); refreshAllDirs() }
   catch (e) { status.value.left = `Undo failed: ${e?.message ?? e}`; setTimeout(() => { status.value.left = 'Ready' }, 2500) }
 }
 
 async function doRedo() {
-  try { await history.redo(); directoryTabRef.value?.refresh() }
+  try { await history.redo(); refreshAllDirs() }
   catch (e) { status.value.left = `Redo failed: ${e?.message ?? e}`; setTimeout(() => { status.value.left = 'Ready' }, 2500) }
+}
+
+function focusGroupByIndex(i) {
+  const leaf = collectLeaves(editorRoot.value)[i]
+  if (leaf) editorController.setActiveGroup(leaf.id)
 }
 
 function onKeyDown(e) {
@@ -995,6 +1209,9 @@ function onKeyDown(e) {
     if (e.key === 'c') { e.preventDefault(); copyToClipboard(selectedItems.value); return }
     if (e.key === 'x') { e.preventDefault(); cutToClipboard(selectedItems.value); return }
     if (e.key === 'v') { e.preventDefault(); doPaste(); return }
+    if (e.key === '\\') { e.preventDefault(); editorController.splitActiveGroup('right'); return }
+    if ((e.key === 'w' || e.key === 'W') && activeTab.value) { e.preventDefault(); editorController.closeTab(activeGroupId.value, activeTab.value.id); return }
+    if (e.key >= '1' && e.key <= '9') { e.preventDefault(); focusGroupByIndex(Number(e.key) - 1); return }
   }
   if (e.key === 'Delete') {
     e.preventDefault()
@@ -1013,8 +1230,8 @@ async function handleExplorerSelect(payload) {
   if (kind === 'directory' || kind === 'dir' || kind === 'drive' || kind === 'root') {
     selectedItems.value = []
     focusedItem.value = null
-    const existing = tabs.value.find(t => t.path === path)
-    if (existing) { activeTabId.value = existing.id; flashTab(existing.id) }
+    const existing = findTabByPath(path)
+    if (existing) { focusTab(existing.groupId, existing.tab.id); flashTab(existing.tab.id) }
     else await openPeekTabForDir(path)
   }
   try { selectedDetails.value = await fsStat(path) } catch { selectedDetails.value = null }
@@ -1063,29 +1280,24 @@ async function handleDoubleClick(payload) {
   // Archive files: open as virtual directory
   if (payload.kind === 'archive' || (payload.kind === 'file' && isArchiveItem(payload))) {
     const virtualPath = payload.path + '::'
-    const existing = tabs.value.find(t => t.path === virtualPath)
-    if (existing) { activeTabId.value = existing.id; existing.mode = 'pinned'; return }
+    const existing = findTabByPath(virtualPath)
+    if (existing) { focusTab(existing.groupId, existing.tab.id); existing.tab.mode = 'normal'; return }
     const title = payload.name || payload.path.split(/[/\\]/).filter(Boolean).pop()
-    const tab = { id: uuid(), kind: 'dir', mode: 'pinned', title, path: virtualPath, selectedItems: [], focusedItem: null, selectedPath: '' }
-    tabs.value.push(tab)
-    await nextTick()
-    activeTabId.value = tab.id
+    await addTabToActiveGroup({ id: uuid(), kind: 'dir', mode: 'normal', pinned: false, title, path: virtualPath, selectedItems: [], focusedItem: null, selectedPath: '' })
     return
   }
 
   if (payload.kind !== 'directory' && payload.kind !== 'dir' && payload.kind !== 'drive' && payload.kind !== 'root') return
-  const existing = tabs.value.find(t => t.path === payload.path)
-  if (existing) { activeTabId.value = existing.id; existing.mode = 'pinned'; return }
+  const existing = findTabByPath(payload.path)
+  if (existing) { focusTab(existing.groupId, existing.tab.id); existing.tab.mode = 'normal'; return }
   const title = payload.path.split(/[/\\]/).filter(Boolean).pop() || payload.path
-  const tab = { id: uuid(), kind: 'dir', mode: 'pinned', title, path: payload.path, selectedItems: [], focusedItem: null, selectedPath: '' }
-  tabs.value.push(tab)
-  await nextTick()
-  activeTabId.value = tab.id
+  await addTabToActiveGroup({ id: uuid(), kind: 'dir', mode: 'normal', pinned: false, title, path: payload.path, selectedItems: [], focusedItem: null, selectedPath: '' })
 }
 
 function navigateInCurrentTab(path) {
   const active = activeTab.value
   if (!active || active.kind !== 'dir') return
+  if (active.mode === 'peek') active.mode = 'normal'
   log('nav', 'Navigate', { from: active.path, to: path })
   active.path = path
   if (path.includes('::')) {
@@ -1136,25 +1348,12 @@ function cutToClipboard(items) {
 // Context menus
 function hideContextMenu() { contextMenu.value.visible = false }
 
-function showTabContextMenu(e, tab) {
-  contextMenu.value = {
-    visible: true, x: e.clientX, y: e.clientY, quickActions: [],
-    items: [
-      { key: 'close', label: 'Close', action: () => closeTab(tab.id) },
-      { separator: true },
-      { key: 'copypath', label: 'Copy Path', action: () => navigator.clipboard.writeText(tab.path ?? '') }
-    ]
-  }
-}
-
 function openArchiveInTab(item) {
   const virtualPath = item.path + '::'
-  const existing = tabs.value.find(t => t.path === virtualPath)
-  if (existing) { activeTabId.value = existing.id; return }
+  const existing = findTabByPath(virtualPath)
+  if (existing) { focusTab(existing.groupId, existing.tab.id); return }
   const title = item.name || item.path.split(/[/\\]/).filter(Boolean).pop()
-  const tab = { id: uuid(), kind: 'dir', mode: 'pinned', title, path: virtualPath, selectedItems: [], focusedItem: null, selectedPath: '' }
-  tabs.value.push(tab)
-  nextTick(() => { activeTabId.value = tab.id })
+  addTabToActiveGroup({ id: uuid(), kind: 'dir', mode: 'normal', pinned: false, title, path: virtualPath, selectedItems: [], focusedItem: null, selectedPath: '' })
 }
 
 function showBackgroundContextMenu(event) {
@@ -1197,7 +1396,7 @@ function showRightDragDropMenu({ items, dropPath, x, y }) {
       { key: 'copy-here', label: `Copy Here "${label}"`, action: () => {
         const paths = items.map(i => i.path)
         enqueue({ label: `Copy ${items.length} item(s) to "${label}"`, kind: 'copy', params: { paths, dest_dir: destDir } })
-          .then(() => directoryTabRef.value?.refresh())
+          .then(() => refreshAllDirs())
           .catch(e => { status.value.left = `Error: ${e?.message ?? e}`; setTimeout(() => { status.value.left = 'Ready' }, 2000) })
       }},
       { key: 'link-here', label: 'Create Symlink Here', disabled: true },
@@ -1230,7 +1429,7 @@ function showItemContextMenu({ event, item }) {
   const quickActions = inArchive ? [] : [
     { key: 'copy',   icon: mdiContentCopy,    label: 'Copy',   action: () => copyToClipboard(targets) },
     { key: 'cut',    icon: mdiContentCut,     label: 'Cut',    action: () => cutToClipboard(targets)  },
-    { key: 'rename', icon: mdiPencilOutline,   label: 'Rename', action: () => directoryTabRef.value?.$el?.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true })) },
+    { key: 'rename', icon: mdiPencilOutline,   label: 'Rename', action: () => triggerInlineRename() },
     { key: 'trash',  icon: mdiTrashCanOutline, label: isShift ? 'Delete Permanently' : 'Move to Trash', action: () => isShift ? doDelete(targets) : doTrash(targets) },
     ...(!multi ? [{ key: 'info', icon: mdiInformationOutline, label: 'Info', action: () => {} }] : []),
   ]
@@ -1274,7 +1473,7 @@ function showItemContextMenu({ event, item }) {
         return enqueue({ label: `Duplicate "${t.name}"`, kind: 'copy', params: { paths: [t.path], dest_dir: dir } })
       })
       Promise.all(ops)
-        .then(() => directoryTabRef.value?.refresh())
+        .then(() => refreshAllDirs())
         .catch(e => { status.value.left = `Error: ${e?.message ?? e}`; setTimeout(() => { status.value.left = 'Ready' }, 2000) })
     }},
     ...(!inArchive && !multi ? [{ key: 'copypath', label: 'Copy Path', action: copyPathAction }] : []),
@@ -1282,7 +1481,7 @@ function showItemContextMenu({ event, item }) {
     // Actions section
     { separator: true },
     ...(!inArchive && compressSubmenu.length ? [{ key: 'compress', label: 'Compress', submenu: compressSubmenu }] : []),
-    ...(!inArchive ? [{ key: 'rename', label: 'Rename', action: () => directoryTabRef.value?.$el?.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true })) }] : []),
+    ...(!inArchive ? [{ key: 'rename', label: 'Rename', action: () => triggerInlineRename() }] : []),
     ...(!inArchive ? [{ key: 'delete', label: isShift ? 'Delete Permanently' : 'Delete', action: () => isShift ? doDelete(targets) : doTrash(targets) }] : []),
   ]
 
@@ -1428,76 +1627,8 @@ function showItemContextMenu({ event, item }) {
 .resize-handle--col { width: var(--resize-handle-size); cursor: col-resize; }
 .resize-handle--row { height: var(--resize-handle-size); cursor: row-resize; }
 
-/* Tabs */
-.tabs {
-  height: 35px;
-  min-height: 35px;
-  display: flex;
-  align-items: stretch;
-  background: #252526;
-  border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: thin;
-  flex-shrink: 0;
-}
-.tabs::-webkit-scrollbar { height: 3px; }
-
-.tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  height: 35px;
-  flex-shrink: 0;
-  max-width: 180px;
-  min-width: 0;
-  background: transparent;
-  border: none;
-  border-right: 1px solid #2b2b2b;
-  border-top: 1px solid transparent;
-  color: var(--text-muted);
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.tab:hover { background: rgba(255,255,255,0.05); }
-.tab.active {
-  background: #1e1e1e;
-  color: var(--text);
-  border-top-color: var(--accent);
-  border-bottom: 1px solid #1e1e1e;
-}
-.tab.peek .tab-label { font-style: italic; }
-.tab.dragging { opacity: 0.5; }
-.tab.drag-over { border-left: 2px solid var(--accent); }
-
-.tab-label { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
-.tab-badge {
-  background: var(--accent);
-  color: white;
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 10px;
-  flex-shrink: 0;
-}
-.tab-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  padding: 2px;
-  border-radius: 3px;
-  flex-shrink: 0;
-  color: var(--text-muted);
-  transition: opacity 0.15s;
-}
-.tab:hover .tab-close, .tab.active .tab-close { opacity: 1; }
-.tab-close:hover { background: rgba(255,255,255,0.1); color: var(--text); }
-
-.centerpane { flex: 1; min-height: 0; overflow: auto; background: var(--editor-background); }
+/* Editor area hosts the recursive group grid (see GridView / EditorGroup). */
+.editor-area > * { flex: 1; min-width: 0; min-height: 0; }
 
 .rightpane {
   flex-shrink: 0;

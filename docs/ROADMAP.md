@@ -27,12 +27,14 @@ Items roughly ordered by priority. See `TODO.md` for the full flat list.
 
 - Thumbnail rendering for directories with custom icons (`.directory`, `desktop.ini`) not yet implemented
 - Explorer tree does not show a visual indicator when a directory is empty (cannot expand)
-- Tab bar drag uses native HTML5 drag; should be migrated to the custom `useDrag` system for consistency
+- `useDragAndDrop.js` is now orphaned — editor tabs moved to `useEditorDnd.js` (region-aware drop targets); the generic helper can be removed or repurposed
 - Old per-layout Vue components (`DirectoryGridLayout.vue`, `DirectoryListLayout.vue`, etc.) remain in `client/components/workbench/` but are no longer used — should be removed once the new unified `DirectoryLayout.vue` is confirmed stable
 - Click debounce not yet applied to explorer tree nodes and some directory item edge cases
 - Open-folder icon variants for `vscode-material-icon-theme` require `generateOpenFolderIcons.ts` (needs Bun); currently falls back to the closed-folder variant
 
 ## Recently completed
+
+- **Editor split grid** — recursive split-view grid of editor groups (`useLayoutGrid.js` engine, `GridView.vue`/`Sash.vue` renderer, `EditorGroup.vue` leaf); split any group up/down/left/right via tab drag-drop to an edge, View ▸ Editor Layout menu, or `Ctrl+\`; five layout presets; per-group tab-previews toggle, lock, and maximize; `⋯` group actions menu; workspace schema v2 with forward migration; all layout mutations logged to the debug panel
 
 - **Right-click drag-and-drop** — `useRightClickDrag` composable suppresses native `contextmenu` on mousedown (fixes Linux/X11 early-fire), shows ghost clone during drag, resolves to a "drop action" menu on release: Move Here, Copy Here, Create Symlink Here; archives get Extract Here instead of Compress to Archive Here
 - **Context menu redesign** — two `<teleport to="body">` panels (main + submenu) prevent clipping; MDI SVG icons in quick-action buttons and item rows; split label/chevron item pattern so label click fires action and chevron opens submenu independently; viewport clamping and submenu left-flip on overflow; 1 px separators

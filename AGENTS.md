@@ -5,28 +5,30 @@ Instructions for AI coding agents (Claude Code, etc.) working in this repository
 ## Repository at a glance
 
 - **Frontend**: Nuxt 3 SPA (`client/`) served by Vite in dev and compiled to static in production. Runs inside Electron for the desktop app.
-- **Backend**: Go HTTP server (`server/v2/`) on port 8000. All routes under `/_api/v2/`.
-- **Dev proxy**: Nuxt/Vite proxies `/_api/v2/*` to port 8000. The proxy silently drops large binary responses — use Nitro server routes for file preview content (see below).
+- **Backend**: Go HTTP server (`server/v2/`) — data server on port 8001, control server on port 8002. All routes under `/_api/v2/`.
+- **Dev proxy**: Nuxt/Vite proxies `/_api/v2/*` to port 8001 (data). Write ops contact port 8002 directly via `CONTROL_BASE`. The proxy silently drops large binary responses — use Nitro server routes for file preview content (see below).
 
 ## Component architecture
 
 ```
-Workbench.vue                  Root shell: titlebar, activity bar, sidebar, tab bar, panels
+Workbench.vue                  Root shell: titlebar, activity bar, sidebar, editor grid, panels
 ├── ExplorerPanel.vue          Sidebar left panel
 │   └── ExplorerTree.vue
 │       └── TreeList.vue
 │           └── TreeItem.vue   Recursive tree node
-├── DirectoryTab.vue           Main content area for a directory tab; owns fetch + nav history
-│   └── DirectoryPanel.vue     Navigation header, sort/filter state, layout switcher
-│       └── DirectoryLayout.vue  Unified layout component — all view modes via CSS data-layout attr
-├── SplitView.vue / SplitViewPanel.vue
-├── PreviewPanel.vue           Right panel: dispatches to per-type preview components
-│   ├── preview/ImagePreview.vue
-│   ├── preview/VideoPreview.vue
-│   ├── preview/AudioPreview.vue
-│   ├── preview/TextPreview.vue
-│   └── preview/HtmlPreview.vue
-└── PreferencesActivity.vue
+├── GridView.vue               Recursive editor split-grid (Sash.vue resize handles between siblings)
+│   └── EditorGroup.vue        Editor group: tab strip + active tab content (DropOverlay.vue shows drop zones)
+│       ├── HomePage.vue
+│       ├── DirectoryTab.vue   Directory tab content; owns fetch + nav history
+│       │   └── DirectoryPanel.vue       Navigation header, sort/filter state, layout switcher
+│       │       └── DirectoryLayout.vue  Unified layout component — all view modes via CSS data-layout attr
+│       └── PreferencesActivity.vue
+└── PreviewPanel.vue           Right panel: dispatches to per-type preview components
+    ├── preview/ImagePreview.vue
+    ├── preview/VideoPreview.vue
+    ├── preview/AudioPreview.vue
+    ├── preview/TextPreview.vue
+    └── preview/HtmlPreview.vue
 ```
 
 ## Key lib files and composables
@@ -46,7 +48,8 @@ Workbench.vue                  Root shell: titlebar, activity bar, sidebar, tab 
 | `useDrag.js` | Custom ghost-clone drag for directory items. 200 ms activation delay. `onActivate` callback receives the mousedown item and returns the full array of items being dragged (auto-selects unselected items). |
 | `useRightClickDrag.js` | Right-click drag for directory items. Suppresses the native `contextmenu` event immediately on `mousedown` (Linux/X11 fires it on `mousedown`, not `mouseup`). On `mouseup`: no movement → calls `onRightClick({ item, event })`; movement beyond 6 px threshold → creates ghost clone and calls `onDrop({ items, dropPath, x, y })` where `dropPath` is from `[data-path]` under the cursor. |
 | `useTreeDrag.js` | Module-level singleton drag for tree nodes. Creates a chip-style ghost (icon + name). Valid drop targets: `type === 'directory'` nodes only; root/drive nodes and files are not valid targets. Shared refs mean all `TreeItem` instances see the same `draggingNode`/`dragOverNode`. |
-| `useDragAndDrop.js` | Native HTML5 drag for the tab bar (reordering). Separate from the file drag systems. |
+| `useLayoutGrid.js` | Pure recursive split-view grid engine. Leaves carry `{tabs[], activeTabId, tabPreviews, locked}`; branches carry `{direction, children[], sizes[]}`. Core ops: `insertLeafBeside`, `removeLeaf`, `mergeAll`, five presets. No DOM/reactivity — `Workbench` holds the reactive tree and provides an `editorController` via `inject`. |
+| `useEditorDnd.js` | Editor tab/group drag: shared module drag state + `dropRegion()` edge/center detection. Replaced `useDragAndDrop.js` for the editor tabs (that helper is now unused). |
 | `useIconPack.js` | Module-level singleton composable for the icon pack. Fetches `/icons/manifest` once; exposes `ensureLoaded()`, `resolveIcon(filename, isDir)`, `iconUrl(iconName)`, and `isAvailable`. All components that need pack icons call `ensureLoaded()` once at mount time. |
 | `useCustomIcon.js` | Pure helper (no reactive state). `resolveCustomIcon(iconStr)` returns `null`, `{ type: 'url', url }` (absolute path → `fs/preview`), or `{ type: 'folder-color', color }` (Dolphin `folder-<color>` names). Folder-color must render as an inline `<svg>`, not an `<img>`, so CSS `color` applies via `fill="currentColor"`. |
 
