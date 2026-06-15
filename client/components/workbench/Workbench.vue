@@ -9,9 +9,9 @@
         <button ref="editMenuButton" class="no-drag titlebar-menu-btn" @click.stop="showMenuDelayed('edit')">Edit</button>
         <button ref="viewMenuButton" class="no-drag titlebar-menu-btn" @click.stop="showMenuDelayed('view')">View</button>
 
-        <FloatingMenu :visible="fileMenuOpen" type="menu" :items="fileMenuItems" :x="fileMenuPos.x" :y="fileMenuPos.y" @close="fileMenuOpen = false" @item-click="runAction" />
-        <FloatingMenu :visible="editMenuOpen" type="menu" :items="editMenuItems" :x="editMenuPos.x" :y="editMenuPos.y" @close="editMenuOpen = false" @item-click="runAction" />
-        <FloatingMenu :visible="viewMenuOpen" type="menu" :items="viewMenuItems" :x="viewMenuPos.x" :y="viewMenuPos.y" @close="viewMenuOpen = false" @item-click="runAction" />
+        <FloatingMenu :visible="fileMenuOpen" type="menu" :items="fileMenuItems" :x="fileMenuPos.x" :y="fileMenuPos.y" @close="fileMenuOpen = false" />
+        <FloatingMenu :visible="editMenuOpen" type="menu" :items="editMenuItems" :x="editMenuPos.x" :y="editMenuPos.y" @close="editMenuOpen = false" />
+        <FloatingMenu :visible="viewMenuOpen" type="menu" :items="viewMenuItems" :x="viewMenuPos.x" :y="viewMenuPos.y" @close="viewMenuOpen = false" />
       </div>
 
       <div class="center">
@@ -33,13 +33,13 @@
       <!-- Activity Bar -->
       <div class="activitybar">
         <div class="activitybar-top">
-          <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activeActivity === 'explorer' }" title="Explorer" @click="toggleActivity('explorer')">
+          <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activePrimaryView === 'explorer' }" title="Explorer" @click="toggleActivity('explorer')">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiSegment" /></svg>
           </a>
-          <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activeActivity === 'search' }" title="Search" @click="toggleActivity('search')">
+          <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activePrimaryView === 'search' }" title="Search" @click="toggleActivity('search')">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiMagnify" /></svg>
           </a>
-          <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activeActivity === 'storage' }" title="Storage" @click="toggleActivity('storage')">
+          <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activePrimaryView === 'storage' }" title="Storage" @click="toggleActivity('storage')">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiHarddisk" /></svg>
           </a>
         </div>
@@ -48,38 +48,55 @@
             <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiCog" /></svg>
           </a>
         </div>
-        <FloatingMenu :visible="settingsMenuOpen" type="menu" :items="settingsMenuItems" :x="settingsMenuPos.x" :y="settingsMenuPos.y" @close="settingsMenuOpen = false" @item-click="runAction" />
+        <FloatingMenu :visible="settingsMenuOpen" type="menu" :items="settingsMenuItems" :x="settingsMenuPos.x" :y="settingsMenuPos.y" @close="settingsMenuOpen = false" />
       </div>
 
       <!-- Sidebar + Editor split -->
-      <div class="workbench-content">
+      <div class="workbench-content" :class="{ 'left-maximized': leftPaneMaximized, 'right-maximized': rightPaneMaximized }">
 
         <!-- Sidebar -->
         <div v-if="sidebarVisible" class="sidebar" :style="{ width: sidebarWidth + 'px' }">
-          <ExplorerPanel
-            v-if="activeActivity === 'explorer'"
-            ref="explorerPanelRef"
-            :selectedPath="selectedPath"
-            :showCheckboxes="prefs.explorer.alwaysShowCheckboxes"
-            :isTreeView="true"
-            :excludedCategories="prefs.excludedCategories"
-            :indentScale="prefs.explorer.indentScale ?? 1.0"
-            :explorerState="explorerContext"
-            @select="handleExplorerSelect"
-            @dblclick="handleDoubleClick"
-            @contextmenu="showItemContextMenu"
-            @rename="handleRename"
-            @move="({ items, destPath }) => doMove(items, destPath)"
-            @state-change="updateExplorerContext"
-          />
-          <div v-else-if="activeActivity === 'search'" class="sidebar-placeholder">
+          <ViewContainer
+            v-if="activePrimaryView === 'explorer'"
+            containerId="primarySidebar"
+            :activities="primarySidebarActivities"
+            v-model="activePrimaryView"
+            :sections="explorerSections"
+            @update:sections="sections => { explorerSections = sections }"
+            @transfer="handleActivityTransfer"
+          >
+            <template #openEditors>
+              <OpenEditorsView
+                :editorRoot="editorRoot"
+                :activeGroupId="activeGroupId"
+              />
+            </template>
+            <template #places>
+              <ExplorerPanel
+                ref="explorerPanelRef"
+                :selectedPath="selectedPath"
+                :showCheckboxes="prefs.explorer.alwaysShowCheckboxes"
+                :isTreeView="true"
+                :excludedCategories="prefs.excludedCategories"
+                :indentScale="prefs.explorer.indentScale ?? 1.0"
+                :explorerState="explorerContext"
+                @select="handleExplorerSelect"
+                @dblclick="handleDoubleClick"
+                @contextmenu="showItemContextMenu"
+                @rename="handleRename"
+                @move="({ items, destPath }) => doMove(items, destPath)"
+                @state-change="updateExplorerContext"
+              />
+            </template>
+          </ViewContainer>
+          <div v-else-if="activePrimaryView === 'search'" class="sidebar-placeholder">
             Search panel coming soon…
           </div>
         </div>
         <div v-if="sidebarVisible" class="resize-handle resize-handle--col" @mousedown="onResizeSidebar" />
 
         <!-- Editor column (editor + bottom panel) -->
-        <div class="editor-column">
+        <div class="editor-column" :class="{ 'bottom-maximized': bottomPaneMaximized }">
 
           <!-- Editor area: recursive grid of editor groups -->
           <div class="editor-area">
@@ -110,26 +127,64 @@
           </div>
 
           <!-- Bottom panel resize handle + panel -->
-          <div class="resize-handle resize-handle--row" @mousedown="onResizeBottompane" />
-          <div class="bottompane" :style="{ height: bottompaneHeight + 'px' }">
-            <Panel :activities="bottomPanelActivities" v-model="bottomPanel">
+          <div v-show="bottompaneVisible" class="resize-handle resize-handle--row" @mousedown="onResizeBottompane" />
+          <div v-show="bottompaneVisible" class="bottompane" :style="{ height: bottompaneHeight + 'px' }">
+            <ViewContainer
+              containerId="panel"
+              :activities="bottomPanelActivities"
+              v-model="bottomPanel"
+              :mergedSlots="bottomPanelMerges"
+              dropDirection="row"
+              @update:mergedSlots="slots => { bottomPanelMerges = slots }"
+              @transfer="handleActivityTransfer"
+              @merge="handleActivityMerge"
+              @unmerge="handleActivityUnmerge"
+            >
+              <template #preview>
+                <PreviewPanel :selectedItems="selectedItems" :editorFontSize="prefs.preview?.editorFontSize ?? 13" />
+              </template>
+              <template #details>
+                <DetailsPanel :selectedPath="selectedPath" :details="selectedDetails" />
+              </template>
+              <template #chat>
+                <div style="padding: 12px; color: var(--text-muted); font-size: 13px;">
+                  Chat panel coming soon.
+                </div>
+              </template>
               <template #debug-actions>
-                <button class="bp-action-btn" @click="debugLog.clear()" title="Clear">
+                <button class="panel-action-btn" @click="debugLog.clear()" title="Clear">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
                 </button>
               </template>
               <template #debug>
                 <DebugPanel />
               </template>
-            </Panel>
+              <template #panel-actions>
+                <button class="panel-action-btn" :title="bottomPaneMaximized ? 'Restore Panel' : 'Maximize Panel'" @click="toggleBottomPaneMaximize">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path :d="bottomPaneMaximized ? mdiArrowCollapse : mdiArrowExpand" /></svg>
+                </button>
+                <button class="panel-action-btn" title="Hide Panel" @click="bottompaneVisible = false">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiClose" /></svg>
+                </button>
+              </template>
+            </ViewContainer>
           </div>
 
         </div>
 
         <!-- Right pane -->
-        <div class="resize-handle resize-handle--col" @mousedown="onResizeRightpane" />
-        <div class="rightpane" :style="{ width: rightpaneWidth + 'px' }">
-          <Panel :activities="rightPanelActivities" v-model="rightPanel" :maxActivities="4" @reorder="reorderRightPanel">
+        <div v-show="rightpaneVisible" class="resize-handle resize-handle--col" @mousedown="onResizeRightpane" />
+        <div v-show="rightpaneVisible" class="rightpane" :style="{ width: rightpaneWidth + 'px' }">
+          <ViewContainer
+            containerId="secondarySidebar"
+            :activities="rightPanelActivities"
+            v-model="rightPanel"
+            :mergedSlots="rightPanelMerges"
+            @update:mergedSlots="slots => { rightPanelMerges = slots }"
+            @transfer="handleActivityTransfer"
+            @merge="handleActivityMerge"
+            @unmerge="handleActivityUnmerge"
+          >
             <template #preview>
               <PreviewPanel :selectedItems="selectedItems" :editorFontSize="prefs.preview?.editorFontSize ?? 13" />
             </template>
@@ -137,20 +192,34 @@
               <DetailsPanel :selectedPath="selectedPath" :details="selectedDetails" />
             </template>
             <template #chat>
-              <div :selectedPath="selectedPath" :details="selectedDetails">
-                <div style="padding: 12px; color: var(--text-muted); font-size: 13px;">
-                  Chat panel coming soon.
-                </div>
+              <div style="padding: 12px; color: var(--text-muted); font-size: 13px;">
+                Chat panel coming soon.
               </div>
             </template>
-          </Panel>
+            <template #debug-actions>
+              <button class="panel-action-btn" @click="debugLog.clear()" title="Clear">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+              </button>
+            </template>
+            <template #debug>
+              <DebugPanel />
+            </template>
+            <template #panel-actions>
+              <button class="panel-action-btn" :title="rightPaneMaximized ? 'Restore Secondary Side Bar' : 'Maximize Secondary Side Bar'" @click="toggleRightPaneMaximize">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path :d="rightPaneMaximized ? mdiArrowCollapse : mdiArrowExpand" /></svg>
+              </button>
+              <button class="panel-action-btn" title="Hide Secondary Side Bar" @click="rightpaneVisible = false">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiClose" /></svg>
+              </button>
+            </template>
+          </ViewContainer>
         </div>
 
       </div>
     </div>
 
     <!-- Status bar -->
-    <div class="statusbar">
+    <div v-show="statusbarVisible" class="statusbar">
       <div class="status-left">
         <template v-if="activeTab?.kind === 'dir'">
           <div class="status-bar-item">Directory: {{ formatCount(dirStats.count) }} item{{ dirStats.count === 1 ? '' : 's' }} | {{ formatBytes(dirStats.totalSize) }}</div>
@@ -239,9 +308,12 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { mdiHarddisk, mdiSegment, mdiMagnify, mdiMessage, mdiCog, mdiEye, mdiInformation, mdiBug,
-         mdiContentCopy, mdiContentCut, mdiPencilOutline, mdiTrashCanOutline, mdiInformationOutline } from '@mdi/js'
+         mdiContentCopy, mdiContentCut, mdiPencilOutline, mdiTrashCanOutline, mdiInformationOutline,
+         mdiFileTree, mdiClose, mdiArrowExpand, mdiArrowCollapse } from '@mdi/js'
 import { createLeaf, findLeaf, firstLeaf, collectLeaves, leafCount, insertLeafBeside, removeLeaf, applyPreset } from '~/composables/useLayoutGrid.js'
 import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
+import ViewContainer from './ViewContainer.vue'
+import OpenEditorsView from './OpenEditorsView.vue'
 import { usePreferences } from '~/composables/usePreferences.js'
 import { useDebugLog } from '~/composables/useDebugLog.js'
 import { useFileOpsQueue } from '~/composables/useFileOpsQueue.js'
@@ -286,12 +358,27 @@ const status = ref({ left: 'Ready', right: 'Connected' })
 
 // Layout state (persisted via workspace)
 const {
-  sidebarVisible, sidebarWidth, activeActivity,
-  rightpaneWidth, rightPanel, bottompaneHeight,
-  rightPanelActivityIds,
+  sidebarVisible, sidebarWidth, activePrimaryView,
+  rightpaneVisible, rightpaneWidth, rightPanel, rightPanelActivityIds,
+  secondarySidebarMergeGroups,
+  bottompaneVisible, bottompaneHeight,
+  bottomPanel, bottomPanelActivityIds,
+  hiddenActivities,
+  panelMergeGroups,
   explorerContext, updateExplorerContext,
+  getSectionState, saveSectionState,
   getInitialEditor, saveEditor,
 } = useWorkspaces()
+
+// Primary sidebar view container definitions
+const primarySidebarActivities = [{ id: 'explorer', icon: mdiFileTree, label: 'Explorer' }]
+
+// Explorer sidebar sections (Open Editors + Places accordion)
+const explorerSections = ref(getSectionState('explorer'))
+const _expSecSig = computed(() =>
+  explorerSections.value.map(s => `${s.id}:${s.collapsed ? 1 : 0}:${Math.round(s.size * 100)}`).join('|')
+)
+watch(_expSecSig, () => saveSectionState('explorer', explorerSections.value))
 
 // Debug log
 const debugLog = useDebugLog()
@@ -328,16 +415,39 @@ function getArchiveExt(name) {
 }
 function isArchiveItem(item) { return !!getArchiveExt(item.name) }
 
-// Bottom panel
-const bottomPanel = ref('debug')
-const bottomPanelActivities = [{ id: 'debug', icon: mdiBug, label: 'Debug' }]
+// Appearance / visibility state (local, not persisted)
+const statusbarVisible    = ref(true)
+const zenMode             = ref(false)
+const centeredLayout      = ref(false)
 
-// Icon registry for well-known right-panel activities
+// Maximize state (local, not persisted)
+const rightPaneMaximized  = ref(false)
+const leftPaneMaximized   = ref(false)
+const bottomPaneMaximized = ref(false)
+
+function toggleRightPaneMaximize()  { rightPaneMaximized.value  = !rightPaneMaximized.value  }
+function toggleLeftPaneMaximize() {
+  leftPaneMaximized.value = !leftPaneMaximized.value
+  if (leftPaneMaximized.value) sidebarVisible.value = true
+}
+function toggleBottomPaneMaximize() { bottomPaneMaximized.value = !bottomPaneMaximized.value }
+
+// Icon registry for well-known panel activities
 const PANEL_ACTIVITY_REGISTRY = {
   preview: { icon: mdiEye,         label: 'Preview' },
   details: { icon: mdiInformation, label: 'Details' },
   chat:    { icon: mdiMessage,      label: 'Chat'    },
+  debug:   { icon: mdiBug,          label: 'Debug'   },
 }
+
+// Bottom panel
+const bottomPanelActivities = computed(() =>
+  bottomPanelActivityIds.value.map(id => ({
+    id,
+    icon:  PANEL_ACTIVITY_REGISTRY[id]?.icon,
+    label: PANEL_ACTIVITY_REGISTRY[id]?.label ?? id,
+  }))
+)
 
 const rightPanelActivities = computed({
   get: () => rightPanelActivityIds.value.map(id => ({
@@ -348,15 +458,173 @@ const rightPanelActivities = computed({
   set: list => { rightPanelActivityIds.value = list.map(a => a.id) },
 })
 
-function reorderRightPanel({ activityId, targetId, before }) {
-  const list = [...rightPanelActivities.value]
-  const fromIdx = list.findIndex(a => a.id === activityId)
-  const toIdx   = list.findIndex(a => a.id === targetId)
-  if (fromIdx === -1 || toIdx === -1) return
-  const [item] = list.splice(fromIdx, 1)
-  const insertAt = list.findIndex(a => a.id === targetId)
-  list.splice(before ? insertAt : insertAt + 1, 0, item)
-  rightPanelActivities.value = list
+// ── Merge state: which tab slots hold multiple stacked views ──────────────────
+// Initialised from workspace; persisted via signature watches below.
+const rightPanelMerges = ref(secondarySidebarMergeGroups.value)
+const bottomPanelMerges = ref(panelMergeGroups.value)
+const _rightMergeSig = computed(() => JSON.stringify(rightPanelMerges.value))
+watch(_rightMergeSig, () => { secondarySidebarMergeGroups.value = rightPanelMerges.value })
+const _botMergeSig = computed(() => JSON.stringify(bottomPanelMerges.value))
+watch(_botMergeSig, () => { panelMergeGroups.value = bottomPanelMerges.value })
+
+// Default container for each known activity (used when restoring a lost activity)
+const ACTIVITY_DEFAULT_CONTAINER = {
+  preview: 'secondarySidebar',
+  details: 'secondarySidebar',
+  chat:    'secondarySidebar',
+  debug:   'panel',
+}
+
+// Returns true if the activity is visible in any container or merge group.
+function isActivityVisible(id) {
+  if (rightPanelActivityIds.value.includes(id)) return true
+  if (bottomPanelActivityIds.value.includes(id)) return true
+  const inMerges = (merges) => Object.values(merges).some(g => g.some(sv => sv.id === id))
+  return inMerges(rightPanelMerges.value) || inMerges(bottomPanelMerges.value)
+}
+
+// Adds a missing activity back to its default container and makes it visible.
+function addActivity(id) {
+  if (isActivityVisible(id)) return
+  hiddenActivities.value = hiddenActivities.value.filter(h => h !== id)
+  const cid = ACTIVITY_DEFAULT_CONTAINER[id] ?? 'secondarySidebar'
+  if (cid === 'panel') {
+    bottomPanelActivityIds.value = [...bottomPanelActivityIds.value, id]
+    bottomPanel.value = id
+    bottompaneVisible.value = true
+  } else {
+    rightPanelActivityIds.value = [...rightPanelActivityIds.value, id]
+    rightPanel.value = id
+    rightpaneVisible.value = true
+  }
+}
+
+// On startup: restore any known activities that got lost (e.g. from an un-persisted merge).
+// Skips activities the user has intentionally hidden via the Views menu.
+function recoverMissingActivities() {
+  for (const id of Object.keys(PANEL_ACTIVITY_REGISTRY)) {
+    if (!isActivityVisible(id) && !hiddenActivities.value.includes(id)) addActivity(id)
+  }
+}
+
+// ── Container helpers ─────────────────────────────────────────────────────────
+
+const MOVABLE_CONTAINERS = new Set(['secondarySidebar', 'panel'])
+
+function getContainerIds(cid) {
+  if (cid === 'secondarySidebar') return [...rightPanelActivityIds.value]
+  if (cid === 'panel')            return [...bottomPanelActivityIds.value]
+  return []
+}
+function setContainerIds(cid, ids) {
+  if (cid === 'secondarySidebar') rightPanelActivityIds.value = ids
+  if (cid === 'panel')            bottomPanelActivityIds.value = ids
+}
+function getContainerMerges(cid) {
+  if (cid === 'secondarySidebar') return rightPanelMerges.value
+  if (cid === 'panel')            return bottomPanelMerges.value
+  return {}
+}
+function setContainerMerges(cid, merges) {
+  if (cid === 'secondarySidebar') rightPanelMerges.value = merges
+  if (cid === 'panel')            bottomPanelMerges.value = merges
+}
+function getActiveTab(cid) {
+  if (cid === 'secondarySidebar') return rightPanel.value
+  if (cid === 'panel')            return bottomPanel.value
+  return ''
+}
+function setActiveTab(cid, id) {
+  if (cid === 'secondarySidebar') rightPanel.value = id
+  if (cid === 'panel')            bottomPanel.value = id
+}
+
+// ── Transfer: tab drag-to-reorder and cross-container ────────────────────────
+
+function handleActivityTransfer({ fromContainerId, toContainerId, activityId, toIndex }) {
+  if (!MOVABLE_CONTAINERS.has(fromContainerId) || !MOVABLE_CONTAINERS.has(toContainerId)) return
+
+  if (fromContainerId === toContainerId) {
+    // Reorder within the same container
+    const list = getContainerIds(fromContainerId)
+    const fromIdx = list.indexOf(activityId)
+    if (fromIdx < 0) return
+    list.splice(fromIdx, 1)
+    const adjustedIdx = toIndex > fromIdx ? toIndex - 1 : toIndex
+    list.splice(adjustedIdx, 0, activityId)
+    setContainerIds(fromContainerId, list)
+    // Merge group travels with the tab (already keyed by activityId, nothing to move)
+  } else {
+    // Cross-container: remove from source, insert in target
+    const srcList = getContainerIds(fromContainerId).filter(id => id !== activityId)
+    const dstList = getContainerIds(toContainerId)
+    dstList.splice(toIndex, 0, activityId)
+    setContainerIds(fromContainerId, srcList)
+    setContainerIds(toContainerId, dstList)
+
+    // If this activity was the primary of a merge group, move the group too
+    const fromMerges = getContainerMerges(fromContainerId)
+    if (fromMerges[activityId]) {
+      const { [activityId]: group, ...restFromMerges } = fromMerges
+      setContainerMerges(fromContainerId, restFromMerges)
+      setContainerMerges(toContainerId, { ...getContainerMerges(toContainerId), [activityId]: group })
+    }
+
+    // Update active tabs
+    if (getActiveTab(fromContainerId) === activityId) setActiveTab(fromContainerId, srcList[0] ?? '')
+    setActiveTab(toContainerId, activityId)
+  }
+}
+
+// ── Merge: drop on content area → stack as sections inside target tab slot ────
+
+function handleActivityMerge({ toContainerId, toActivityId, fromContainerId, activityId, zone }) {
+  if (!MOVABLE_CONTAINERS.has(fromContainerId)) return
+  if (!MOVABLE_CONTAINERS.has(toContainerId)) return
+  if (activityId === toActivityId && fromContainerId === toContainerId) return
+
+  // Remove activityId from source container's tab list
+  const srcList = getContainerIds(fromContainerId).filter(id => id !== activityId)
+  setContainerIds(fromContainerId, srcList)
+
+  // Add to target activity's merge group
+  const toMerges = getContainerMerges(toContainerId)
+  const existing = toMerges[toActivityId] ?? [
+    { id: toActivityId, title: PANEL_ACTIVITY_REGISTRY[toActivityId]?.label ?? toActivityId, collapsed: false, size: 1 },
+  ]
+  const newEntry = { id: activityId, title: PANEL_ACTIVITY_REGISTRY[activityId]?.label ?? activityId, collapsed: false, size: 1 }
+  const newGroup = zone === 'before' ? [newEntry, ...existing] : [...existing, newEntry]
+  setContainerMerges(toContainerId, { ...toMerges, [toActivityId]: newGroup })
+
+  // Update active tabs
+  if (getActiveTab(fromContainerId) === activityId) setActiveTab(fromContainerId, srcList[0] ?? '')
+  setActiveTab(toContainerId, toActivityId)
+}
+
+// ── Unmerge: section header dragged back to tab bar ───────────────────────────
+
+function handleActivityUnmerge({ fromActivityId, fromContainerId, extractId, toContainerId, toIndex }) {
+  if (!MOVABLE_CONTAINERS.has(fromContainerId)) return
+
+  // Remove from the merge group
+  const fromMerges = getContainerMerges(fromContainerId)
+  const currentGroup = fromMerges[fromActivityId] ?? []
+  const newGroup = currentGroup.filter(sv => sv.id !== extractId)
+
+  if (newGroup.length <= 1) {
+    // Only one view left → dissolve the merge group entirely
+    const { [fromActivityId]: _, ...rest } = fromMerges
+    setContainerMerges(fromContainerId, rest)
+  } else {
+    setContainerMerges(fromContainerId, { ...fromMerges, [fromActivityId]: newGroup })
+  }
+
+  // Insert extracted activity as a standalone tab
+  const targetCid = MOVABLE_CONTAINERS.has(toContainerId) ? toContainerId : fromContainerId
+  const dstList = getContainerIds(targetCid)
+  dstList.splice(toIndex, 0, extractId)
+  setContainerIds(targetCid, dstList)
+  setActiveTab(targetCid, extractId)
 }
 
 function startResize(event, sizeRef, { axis = 'x', sign = 1, min = 60 } = {}) {
@@ -389,10 +657,10 @@ function handleLayoutChange(layout) {
 }
 
 function toggleActivity(name) {
-  if (activeActivity.value === name && sidebarVisible.value) {
+  if (activePrimaryView.value === name && sidebarVisible.value) {
     sidebarVisible.value = false
   } else {
-    activeActivity.value = name
+    activePrimaryView.value = name
     sidebarVisible.value = true
   }
 }
@@ -678,7 +946,43 @@ const editMenuItems = computed(() => [
 ])
 
 const viewMenuItems = computed(() => [
-  { key: 'sidebar', label: 'Toggle Sidebar', action: () => { sidebarVisible.value = !sidebarVisible.value } },
+  { key: 'appearance', label: 'Appearance', submenu: [
+    { key: 'fullscreen',     label: 'Full Screen',     type: 'toggle',
+      checked: () => !!document.fullscreenElement,
+      action:  () => { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen() } },
+    { key: 'zenMode',        label: 'Zen Mode',        type: 'toggle', checked: () => zenMode.value,        action: () => { zenMode.value        = !zenMode.value        } },
+    { key: 'centeredLayout', label: 'Centered Layout', type: 'toggle', checked: () => centeredLayout.value, action: () => { centeredLayout.value = !centeredLayout.value } },
+    { separator: true },
+    { key: 'menuBar',          label: 'Menu Bar',           type: 'toggle', checked: () => true,                      disabled: true },
+    { key: 'primarySidebar',   label: 'Primary Side Bar',   type: 'toggle', checked: () => sidebarVisible.value,   action: () => { sidebarVisible.value   = !sidebarVisible.value   } },
+    { key: 'secondarySidebar', label: 'Secondary Side Bar', type: 'toggle', checked: () => rightpaneVisible.value, action: () => { rightpaneVisible.value = !rightpaneVisible.value } },
+    { key: 'statusBar',        label: 'Status Bar',         type: 'toggle', checked: () => statusbarVisible.value, action: () => { statusbarVisible.value = !statusbarVisible.value } },
+    { key: 'panel',            label: 'Panel',              type: 'toggle', checked: () => bottompaneVisible.value, action: () => { bottompaneVisible.value = !bottompaneVisible.value } },
+    { separator: true },
+    { key: 'moveSidebar',      label: 'Move Primary Side Bar Right', disabled: true },
+    { key: 'activityBarPos',   label: 'Activity Bar Position', submenu: [
+      { key: 'activityDefault', label: 'Default', disabled: true },
+      { key: 'activityTop',     label: 'Top',     disabled: true },
+      { key: 'activityBottom',  label: 'Bottom',  disabled: true },
+      { key: 'activityHidden',  label: 'Hidden',  disabled: true },
+    ]},
+    { key: 'panelPos',         label: 'Panel Position', submenu: [
+      { key: 'panelBottom', label: 'Bottom', disabled: true },
+      { key: 'panelTop',    label: 'Top',    disabled: true },
+      { key: 'panelLeft',   label: 'Left',   disabled: true },
+      { key: 'panelRight',  label: 'Right',  disabled: true },
+    ]},
+    { key: 'editorActionsPos', label: 'Editor Actions Position', submenu: [
+      { key: 'editorActionsTitleBar', label: 'Title Bar', disabled: true },
+      { key: 'editorActionsHidden',   label: 'Hidden',    disabled: true },
+    ]},
+    { key: 'tabBar', label: 'Tab Bar', submenu: [
+      { key: 'tabBarShow', label: 'Show', disabled: true },
+      { key: 'tabBarHide', label: 'Hide', disabled: true },
+    ]},
+    { separator: true },
+    { key: 'wordWrap', label: 'Word Wrap', type: 'toggle', checked: () => false, disabled: true },
+  ]},
   { key: 'editorLayout', label: 'Editor Layout', submenu: [
     { key: 'splitUp',    label: 'Split Up',    action: () => editorController.splitActiveGroup('top') },
     { key: 'splitDown',  label: 'Split Down',  action: () => editorController.splitActiveGroup('bottom') },
@@ -696,8 +1000,31 @@ const viewMenuItems = computed(() => [
   ] },
   { key: 'alwaysShowCheckboxes', label: 'Always show checkboxes', type: 'toggle', checked: () => prefs.explorer.alwaysShowCheckboxes, action: () => { prefs.explorer.alwaysShowCheckboxes = !prefs.explorer.alwaysShowCheckboxes } },
   { separator: true },
-  { key: 'preview', label: 'Preview Panel', type: 'toggle', checked: () => rightPanel.value === 'preview', action: () => { rightPanel.value = 'preview' } },
-  { key: 'details', label: 'Details Panel', type: 'toggle', checked: () => rightPanel.value === 'details', action: () => { rightPanel.value = 'details' } }
+  { key: 'views', label: 'Views', submenu:
+    Object.entries(PANEL_ACTIVITY_REGISTRY).map(([id, meta]) => ({
+      key:     `view-${id}`,
+      label:   meta.label,
+      type:    'toggle',
+      checked: () => isActivityVisible(id),
+      action:  () => {
+        if (isActivityVisible(id)) {
+          // remove from wherever it currently lives and mark as intentionally hidden
+          rightPanelActivityIds.value  = rightPanelActivityIds.value.filter(a => a !== id)
+          bottomPanelActivityIds.value = bottomPanelActivityIds.value.filter(a => a !== id)
+          const stripId = (merges) => {
+            const out = {}
+            for (const [k, arr] of Object.entries(merges)) out[k] = arr.filter(sv => sv.id !== id)
+            return out
+          }
+          rightPanelMerges.value  = stripId(rightPanelMerges.value)
+          bottomPanelMerges.value = stripId(bottomPanelMerges.value)
+          hiddenActivities.value  = [...hiddenActivities.value.filter(h => h !== id), id]
+        } else {
+          addActivity(id)
+        }
+      },
+    }))
+  },
 ])
 
 const settingsMenuItems = computed(() => [
@@ -724,10 +1051,6 @@ function showMenuDelayed(type) {
     }
     openRef.value = true
   }, 50)
-}
-
-function runAction(item) {
-  if (typeof item.action === 'function') item.action()
 }
 
 // Window controls
@@ -772,6 +1095,7 @@ function onSashResizeEnd() {
 }
 
 onMounted(async () => {
+  recoverMissingActivities()
   pingServer()
   _pingInterval = setInterval(pingServer, 10000)
   window.addEventListener('keydown', onKeyDown)
@@ -1606,7 +1930,8 @@ function showItemContextMenu({ event, item }) {
   border-top: 1px solid var(--border);
   overflow: hidden;
 }
-.bp-action-btn {
+.bp-action-btn,
+.panel-action-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1619,7 +1944,36 @@ function showItemContextMenu({ event, item }) {
   cursor: pointer;
   opacity: 0.55;
 }
-.bp-action-btn:hover { opacity: 1; background: rgba(255,255,255,0.08); }
+.bp-action-btn:hover,
+.panel-action-btn:hover { opacity: 1; background: rgba(255,255,255,0.08); }
+
+/* ── Maximize layout overrides ────────────────────────────────────────────── */
+.workbench-content.right-maximized .sidebar,
+.workbench-content.right-maximized .editor-column,
+.workbench-content.right-maximized .resize-handle { display: none !important; }
+.workbench-content.right-maximized .rightpane {
+  flex: 1 !important;
+  min-width: 0 !important;
+  border-left: none !important;
+}
+
+.workbench-content.left-maximized .editor-column,
+.workbench-content.left-maximized .rightpane,
+.workbench-content.left-maximized .resize-handle { display: none !important; }
+.workbench-content.left-maximized .sidebar {
+  display: flex !important;
+  flex: 1 !important;
+  min-width: 0 !important;
+  width: auto !important;
+}
+
+.editor-column.bottom-maximized .editor-area,
+.editor-column.bottom-maximized .resize-handle { display: none !important; }
+.editor-column.bottom-maximized .bottompane {
+  flex: 1 !important;
+  min-height: 0 !important;
+  height: auto !important;
+}
 
 /* Resize handles */
 .resize-handle { flex-shrink: 0; background: transparent; transition: background 0.15s; z-index: 10; --resize-handle-size: 2px; }

@@ -35,6 +35,11 @@
                 @click="item.disabled ? null : onItemClick(item)"
                 @mouseenter="item.submenu ? showSubmenu(item, $event) : hideSubmenu()"
               >
+                <span v-if="item.type === 'toggle'" class="menu-item__check">
+                  <svg v-if="item.checked?.()" viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
+                    <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" />
+                  </svg>
+                </span>
                 <span v-if="item.icon" class="menu-item__icon">
                   <svg v-if="typeof item.icon === 'string' && item.icon.startsWith('M')" :width="16" :height="16" viewBox="0 0 24 24" fill="currentColor">
                     <path :d="item.icon" />
@@ -66,6 +71,11 @@
               :class="{ 'menu-item--disabled': item.disabled }"
               @click="item.disabled ? null : onItemClick(item)"
             >
+              <span v-if="item.type === 'toggle'" class="menu-item__check">
+                <svg v-if="item.checked?.()" viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
+                  <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" />
+                </svg>
+              </span>
               <span v-if="item.icon" class="menu-item__icon">
                 <svg v-if="typeof item.icon === 'string' && item.icon.startsWith('M')" :width="16" :height="16" viewBox="0 0 24 24" fill="currentColor">
                   <path :d="item.icon" />
@@ -264,6 +274,16 @@ onUnmounted(() => {
 .menu-item:hover:not(.menu-item--disabled) { background: var(--hover-background, #2a2d2e); }
 .menu-item--disabled { color: var(--text-disabled, #5a5a5a); cursor: not-allowed; }
 
+.menu-item__check {
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+}
 .menu-item__icon { margin-right: 8px; width: 16px; text-align: center; flex-shrink: 0; }
 .menu-item__label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .menu-item__shortcut { margin-left: 12px; color: var(--text-muted); font-size: 11px; flex-shrink: 0; }

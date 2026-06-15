@@ -302,9 +302,11 @@ const groupMenuItems = computed(() => [
     action: () => { controller.toggleTabPreviews(props.group.id) } },
   { key: 'maximize',
     label: props.isMaximized ? 'Restore Group' : 'Maximize Group',
+    type: 'toggle', checked: () => props.isMaximized,
     action: () => { controller.maximizeGroup(props.group.id); groupMenuOpen.value = false } },
   { key: 'lock',
     label: props.group.locked ? 'Unlock Group' : 'Lock Group',
+    type: 'toggle', checked: () => !!props.group.locked,
     action: () => { controller.toggleLockGroup(props.group.id) } },
 ])
 

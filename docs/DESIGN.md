@@ -31,11 +31,13 @@ In development, Nuxt's Vite dev server proxies `/_api/v2/*` to the data server o
 `Workbench.vue` is the root component. It owns:
 - Global app state: tabs, selected/focused items, clipboard, context menu
 - Activity bar (explorer, search, settings icons)
-- Sidebar (ExplorerPanel)
+- Primary sidebar — a `ViewContainer` in sections/accordion mode hosting Open Editors and Places sub-views
 - Editor area: a recursive split grid of editor groups, each a tab strip + the active tab's content (Home / DirectoryTab / PreferencesActivity)
-- Right panel (PreviewPanel, DetailsPanel)
-- All floating UI (context menus, right-drag drop menus)
+- Secondary sidebar and bottom panel — each a `ViewContainer` in tabs mode (see ViewContainer panel system)
+- All floating UI (context menus, right-drag drop menus, View menu)
 - Status bar: directory item count/size, selection count/size, clipboard pill (mode + count + size)
+
+The View menu exposes two submenus: **Appearance** (toggle sidebar/panel/status bar visibility, zen mode, centered layout) and **Views** (toggle individual activities such as Preview, Details, Chat, and Debug on or off). Toggling an activity off marks it as intentionally hidden in the workspace; startup recovery (`recoverMissingActivities`) skips hidden activities so they stay off across reloads.
 
 ### Editor groups (split grid)
 
@@ -46,6 +48,21 @@ The editor area is a recursive split-view tree (VS Code's "grid") defined in `us
 Each leaf carries two per-group flags: `tabPreviews` (default `true`) — when `false`, single-click explorer navigation opens a permanent tab instead of the italic preview slot; `locked` — when `true`, the group rejects incoming tab additions and drops from other groups. `EditorGroup` shows a fixed-right actions section outside the scrollable tab strip: a lock icon (when locked, click to unlock) and a `⋯` button that opens a menu with Close All, Enable Tab Previews (toggle), Maximize/Restore Group, and Lock/Unlock Group.
 
 Tabs support preview mode (`mode: 'peek'`, italic, one reused slot per group; promoted to `'normal'` on double-click or navigation), sticky pinning (`pinned`, grouped to the front with a pin affordance), horizontal-scroll overflow with a dropdown, and region-aware drag (see Drag and drop). View ▸ Editor Layout offers split up/down/left/right and presets (Single, Two Columns, Two Rows, Three Columns, Grid 2×2). Keyboard: `Ctrl+\` split right, `Ctrl+1..9` focus group, `Ctrl+W` close tab (Electron only — browser intercepts).
+
+### ViewContainer panel system
+
+`ViewContainer.vue` is the unified panel container used for the primary sidebar, secondary sidebar, and bottom panel. It operates in one of two modes depending on the `sections` prop:
+
+- **Sections mode** (`sections` is an array): renders activities as stacked collapsible accordion panels with `Sash.vue` resize handles between them. Used by the primary sidebar (Open Editors + Places).
+- **Tabs mode** (`sections` is null): renders a horizontal tab strip at the top; one activity's slot is shown at a time. Used by the secondary sidebar and bottom panel.
+
+**Tab drag**: each tab in tabs mode is HTML5-draggable. Dropping a tab onto another container's tab strip reorders or transfers the tab between containers (secondary sidebar ↔ bottom panel). Module-level `_activeDrag` shared across all `ViewContainer` instances provides a global drag signal without per-instance cleanup.
+
+**Drag-to-merge**: while a tab drag is active, each visible tab slot shows a `ViewDropOverlay` covering the content area. Dropping onto the overlay stacks the dragged activity as a collapsible `ViewSection` inside the target tab's slot — the `mergedSlots` prop tracks these groupings as `{ [primaryId]: [{ id, title, collapsed, size }] }`. Sub-sections resize via sash handles; the `dropDirection` prop controls whether they stack top/bottom (`col`, secondary sidebar) or left/right (`row`, bottom panel). In row mode, sub-sections stay expanded and resize on the X axis. Dragging a merged section's header back to the tab bar extracts it as a standalone tab (via the `fromMergedActivityId` field on the same MIME type, distinguished in `onBarDrop`).
+
+**Slot architecture**: all activity slots (`#preview`, `#details`, `#chat`, `#debug`) are defined in **both** the secondary sidebar and bottom panel ViewContainers in `Workbench.vue`. This allows any activity to be hosted in either container without rendering an empty slot when it moves.
+
+**Activity management**: `PANEL_ACTIVITY_REGISTRY` maps activity IDs to icons and labels. `ACTIVITY_DEFAULT_CONTAINER` maps each ID to its home container. `isActivityVisible` checks all containers and merge groups; `addActivity` places a missing activity back in its default container; `recoverMissingActivities` (called on `onMounted`) restores any activities lost due to corrupted workspace state, skipping those in `hiddenActivities`.
 
 ### Context menu
 
@@ -81,7 +98,7 @@ This means adding a new event in a leaf component requires threading it through 
 
 No Pinia or Vuex. State lives in:
 - `Workbench.vue` `reactive`/`ref` — global app state (editor grid, selection, prefs, clipboard)
-- `useWorkspaces.js` — the persisted per-workspace model in `localStorage` (`files-workbench.workspaces`), versioned with forward migration (v1→v2 wraps the flat tabs array into a single-group leaf); serialises the editor grid (groups + tabs, including per-leaf `tabPreviews` and `locked` flags), side bar/panel layout, and explorer tree state
+- `useWorkspaces.js` — the persisted per-workspace model in `localStorage` (`files-workbench.workspaces`), versioned with forward migration (v1→v2 wraps the flat tabs array into a single-group leaf; v2→v3 renames panel areas to primarySidebar/secondarySidebar/panel and adds `viewContainerOrder`, `mergeGroups`, `hiddenActivities`, and `activeViewContainerId` for the panel containers); serialises the editor grid, sidebar/panel layout, and explorer tree state
 - `DirectoryTab.vue` — navigation history, items list, thumbnail map
 - `DirectoryPanel.vue` — sort/filter state, layout picker state
 - `ExplorerTree.vue` — expanded Set, children cache (also persisted to localStorage)
@@ -97,6 +114,7 @@ There are four independent drag systems:
 | `useRightClickDrag.js` | Directory items (right-button) | Suppresses native `contextmenu` on mousedown; ghost clone on move; resolves to `onRightClick` or `onDrop` on mouseup |
 | `useTreeDrag.js` | Explorer tree nodes | Custom mousedown → chip ghost, module-level shared state, directory-only drop targets |
 | `useEditorDnd.js` | Editor tabs & groups | Native HTML5 drag with shared module state + region detection (`dropRegion`): dropping on a tab strip reorders/moves a tab; dropping on a group's edge/center splits or merges groups (`DropOverlay.vue` shows the target zone) |
+| `ViewContainer.vue` (inline) | Secondary sidebar and bottom panel tabs | Native HTML5 drag with module-level `_activeDrag` ref; tab strip drop reorders or transfers between containers; content-area drop (`ViewDropOverlay`) merges activities into stacked sub-sections; section header drag extracts a merged section back to a standalone tab |
 
 The file drag systems (`useDrag`, `useTreeDrag`, `useRightClickDrag`) do not set `dataTransfer` and therefore cannot interoperate with native OS drop targets.
 

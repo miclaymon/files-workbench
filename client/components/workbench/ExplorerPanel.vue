@@ -1,72 +1,56 @@
 <template>
-  <Panel :activities="activities" v-model="activeActivity" :maxActivities="1">
-    <template #explorer-actions>
-      <slot name="actions" />
-      <button class="panel-icon-btn" title="More options">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-          <path :d="mdiDotsVertical" />
-        </svg>
-      </button>
-    </template>
-
-    <template #explorer>
-      <div v-if="loading" class="state-message">Loading…</div>
-      <div v-else-if="error" class="state-message error">
-        <div>{{ error }}</div>
-        <button @click="loadRootItems">Retry</button>
-      </div>
-      <ExplorerTree
-        v-else-if="isTreeView"
-        :items="items"
-        :selectedPath="selectedPath"
-        :selectedPaths="selectedPaths"
-        :showCheckboxes="showCheckboxes"
-        :clipboardData="clipboardData"
-        :excludedCategories="excludedCategories"
-        :indentScale="indentScale"
-        :explorerState="explorerState"
-        @select="$emit('select', $event)"
-        @open="$emit('dblclick', $event)"
-        @contextmenu="$emit('contextmenu', $event)"
-        @toggleSelect="$emit('toggleSelect', $event)"
-        @selectAll="$emit('selectAll', $event)"
-        @paste="$emit('paste', $event)"
-        @rename="$emit('rename', $event)"
-        @move="$emit('move', $event)"
-        @state-change="$emit('state-change', $event)"
-      />
-      <div v-else class="state-message">Flat list view not yet implemented.</div>
-    </template>
-  </Panel>
+  <div class="explorer-panel">
+    <div v-if="loading" class="state-message">Loading…</div>
+    <div v-else-if="error" class="state-message error">
+      <div>{{ error }}</div>
+      <button @click="loadRootItems">Retry</button>
+    </div>
+    <ExplorerTree
+      v-else-if="isTreeView"
+      :items="items"
+      :selectedPath="selectedPath"
+      :selectedPaths="selectedPaths"
+      :showCheckboxes="showCheckboxes"
+      :clipboardData="clipboardData"
+      :excludedCategories="excludedCategories"
+      :indentScale="indentScale"
+      :explorerState="explorerState"
+      @select="$emit('select', $event)"
+      @open="$emit('dblclick', $event)"
+      @contextmenu="$emit('contextmenu', $event)"
+      @toggleSelect="$emit('toggleSelect', $event)"
+      @selectAll="$emit('selectAll', $event)"
+      @paste="$emit('paste', $event)"
+      @rename="$emit('rename', $event)"
+      @move="$emit('move', $event)"
+      @state-change="$emit('state-change', $event)"
+    />
+    <div v-else class="state-message">Flat list view not yet implemented.</div>
+  </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import Panel from './Panel.vue'
 import ExplorerTree from './ExplorerTree.vue'
 import { explorerRoot, explorerHome, explorerDrives } from '~/lib/explorer-api.js'
-import { mdiFolder, mdiDotsVertical } from '@mdi/js'
-
-const activities = [{ id: 'explorer', icon: mdiFolder, label: 'Explorer' }]
-const activeActivity = ref('explorer')
 
 const props = defineProps({
-  selectedPath: { type: String, default: '' },
-  selectedPaths: { type: Set, default: () => new Set() },
-  showIcons: { type: Boolean, default: true },
-  showHiddenFiles: { type: Boolean, default: false },
-  showCheckboxes: { type: Boolean, default: false },
-  isTreeView: { type: Boolean, default: true },
-  clipboardData: { type: Object, default: null },
-  excludedCategories: { type: Array, default: () => ['System'] },
-  indentScale: { type: Number, default: 1.0 },
-  explorerState: { type: Object, default: null },
+  selectedPath:       { type: String,  default: '' },
+  selectedPaths:      { type: Set,     default: () => new Set() },
+  showIcons:          { type: Boolean, default: true },
+  showHiddenFiles:    { type: Boolean, default: false },
+  showCheckboxes:     { type: Boolean, default: false },
+  isTreeView:         { type: Boolean, default: true },
+  clipboardData:      { type: Object,  default: null },
+  excludedCategories: { type: Array,   default: () => ['System'] },
+  indentScale:        { type: Number,  default: 1.0 },
+  explorerState:      { type: Object,  default: null },
 })
 
 const emit = defineEmits(['select', 'dblclick', 'contextmenu', 'toggleSelect', 'selectAll', 'paste', 'rename', 'move', 'state-change'])
 
-const loading = ref(false)
-const error = ref('')
+const loading   = ref(false)
+const error     = ref('')
 const rootItems = ref([])
 
 const items = computed(() => rootItems.value)
@@ -76,21 +60,22 @@ const platform = (typeof window !== 'undefined' && window.electron?.platform) ??
 async function loadRootItems() {
   try {
     loading.value = true
-    error.value = ''
+    error.value   = ''
 
-    const showHidden = props.showHiddenFiles ?? false
+    const showHidden       = props.showHiddenFiles ?? false
     const excludeCategories = (props.excludedCategories ?? ['System']).join(',')
 
     const tasks = [
-      platform !== 'win32' ? explorerRoot({ showHidden, excludeCategories, includeMetadata: false }) : Promise.reject(new Error('not applicable')),
+      platform !== 'win32'
+        ? explorerRoot({ showHidden, excludeCategories, includeMetadata: false })
+        : Promise.reject(new Error('not applicable')),
       explorerHome({ showHidden, excludeCategories, includeMetadata: false }),
-      explorerDrives({ showHidden, excludeCategories })
+      explorerDrives({ showHidden, excludeCategories }),
     ]
 
     const [rootResult, homeResult, drivesResult] = await Promise.allSettled(tasks)
 
     const roots = []
-
     if (platform !== 'win32' && rootResult.status === 'fulfilled' && rootResult.value?.root) {
       roots.push({ ...rootResult.value.root, _preloadedItems: rootResult.value.items ?? [] })
     }
@@ -114,6 +99,15 @@ defineExpose({ refresh: loadRootItems })
 </script>
 
 <style scoped>
+.explorer-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  height: 100%;
+}
+
 .state-message {
   display: flex;
   flex-direction: column;
@@ -127,28 +121,15 @@ defineExpose({ refresh: loadRootItems })
   text-align: center;
   user-select: none;
 }
-
 .state-message.error { color: var(--danger, #f14c4c); }
-
 .state-message button {
   border: 1px solid var(--border);
   padding: 6px 12px;
   border-radius: 6px;
   color: var(--text-muted);
   font-size: 12px;
-}
-.state-message button:hover { color: var(--text); background: var(--hover-background); }
-
-.panel-icon-btn {
-  border: none;
-  background: transparent;
-  padding: 3px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  border-radius: 4px;
-  color: var(--text-muted);
+  background: none;
   cursor: pointer;
 }
-.panel-icon-btn:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+.state-message button:hover { color: var(--text); background: var(--hover); }
 </style>

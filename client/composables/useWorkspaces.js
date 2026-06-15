@@ -33,6 +33,15 @@ function uuidv4() {
 
 export { uuidv4 }
 
+// ─── Default section layouts ─────────────────────────────────────────────────
+
+const DEFAULT_SECTIONS = {
+  explorer: [
+    { id: 'openEditors', title: 'Open Editors', collapsed: true,  size: 1 },
+    { id: 'places',      title: 'Places',        collapsed: false, size: 4 },
+  ],
+}
+
 // ─── Default workspace factory ───────────────────────────────────────────────
 
 function createDefaultWorkspace({ name = 'Default' } = {}) {
@@ -42,39 +51,47 @@ function createDefaultWorkspace({ name = 'Default' } = {}) {
   return {
     uuid: uuidv7(),
     name,
-    version: 2,
+    version: 3,
     dateCreated:  now,
     dateModified: now,
     dateAccessed: now,
     dateDeleted:  null,
     layout: {
+      primarySidebar: {
+        isOpen: true,
+        width: 240,
+        activeViewContainerId: 'explorer',
+        sectionState: {
+          explorer: { sections: DEFAULT_SECTIONS.explorer.map(s => ({ ...s })) },
+        },
+        activities: [
+          {
+            id: 'explorer',
+            name: 'Explorer',
+            context: { childrenByPath: {}, expandedNodes: [], selectedNodes: [] },
+          },
+        ],
+      },
+      secondarySidebar: {
+        isOpen: true,
+        width: 380,
+        activeViewContainerId: 'preview',
+        viewContainerOrder: ['preview', 'details', 'chat'],
+        sectionState: [
+          { id: 'preview', collapsed: false, size: 2 },
+          { id: 'details', collapsed: true,  size: 1 },
+          { id: 'chat',    collapsed: true,  size: 1 },
+        ],
+        mergeGroups: {},
+      },
       panel: {
-        left: {
-          isOpen: true,
-          width: 240,
-          activeActivityId: 'explorer',
-          activities: [
-            {
-              id: 'explorer',
-              name: 'Explorer',
-              context: { childrenByPath: {}, expandedNodes: [], selectedNodes: [] },
-            },
-          ],
-        },
-        right: {
-          isOpen: true,
-          width: 380,
-          activeActivityId: 'preview',
-          activities: [
-            { id: 'preview', name: 'Preview', context: {} },
-            { id: 'details', name: 'Details', context: {} },
-            { id: 'chat',    name: 'Chat',    context: {} },
-          ],
-        },
-        bottom: {
-          isOpen: false,
-          height: 150,
-        },
+        isOpen: true,
+        height: 150,
+        activeViewContainerId: 'debug',
+        viewContainerOrder: ['debug'],
+        sectionState: [{ id: 'debug', collapsed: false, size: 1 }],
+        mergeGroups: {},
+        hiddenActivities: [],
       },
       editor: {
         root: {
@@ -110,18 +127,18 @@ function migrateFromOldKeys() {
   try {
     const s = JSON.parse(localStorage.getItem(OLD_STATE_KEY) ?? 'null')
     if (s) {
-      ws.layout.panel.left.isOpen          = s.sidebarVisible   ?? true
-      ws.layout.panel.left.width           = s.sidebarWidth     ?? 240
-      ws.layout.panel.left.activeActivityId  = s.activeActivity ?? 'explorer'
-      ws.layout.panel.right.width          = s.rightpaneWidth   ?? 380
-      ws.layout.panel.right.activeActivityId = s.rightPanel     ?? 'preview'
-      ws.layout.panel.bottom.height        = s.bottompaneHeight ?? 150
+      ws.layout.primarySidebar.isOpen               = s.sidebarVisible   ?? true
+      ws.layout.primarySidebar.width                = s.sidebarWidth     ?? 240
+      ws.layout.primarySidebar.activeViewContainerId = s.activeActivity  ?? 'explorer'
+      ws.layout.secondarySidebar.width              = s.rightpaneWidth   ?? 380
+      ws.layout.secondarySidebar.activeViewContainerId = s.rightPanel    ?? 'preview'
+      ws.layout.panel.height                        = s.bottompaneHeight ?? 150
     }
   } catch {}
   try {
     const t = JSON.parse(localStorage.getItem(OLD_TREE_KEY) ?? 'null')
     if (t) {
-      const act = ws.layout.panel.left.activities.find(a => a.id === 'explorer')
+      const act = ws.layout.primarySidebar.activities.find(a => a.id === 'explorer')
       if (act) {
         act.context.childrenByPath = t.childrenByPath ?? {}
         act.context.expandedNodes  = t.expanded       ?? []
@@ -146,12 +163,14 @@ function loadWorkspaces() {
 
 // Upgrade an older persisted workspace to the current schema.
 // v1 → v2: a flat `editor.tabs` list becomes a single-group editor grid.
+// v2 → v3: panel.left/right/bottom renamed to primarySidebar/secondarySidebar/panel.
 function migrateWorkspace(ws) {
   if (!ws || !ws.layout) return ws
+
+  // v1 → v2
   const editor = ws.layout.editor ?? {}
   if (!editor.root) {
     const groupId = uuidv4()
-    // Old `isPinned` meant "not preview"; sticky-pin is a fresh v2 concept, so clear it.
     const tabs = (editor.tabs ?? []).map(t => ({ ...t, isPinned: false }))
     if (!tabs.length) {
       const now = new Date().toISOString()
@@ -169,6 +188,83 @@ function migrateWorkspace(ws) {
     }
     ws.version = 2
   }
+
+  // v2 → v3: rename panel areas to VS Code naming
+  if (!ws.layout.primarySidebar) {
+    const oldPanel = ws.layout.panel ?? {}
+    const left   = oldPanel.left   ?? {}
+    const right  = oldPanel.right  ?? {}
+    const bottom = oldPanel.bottom ?? {}
+
+    ws.layout.primarySidebar = {
+      isOpen: left.isOpen ?? true,
+      width:  left.width  ?? 240,
+      activeViewContainerId: left.activeActivityId ?? 'explorer',
+      sectionState: {
+        explorer: { sections: DEFAULT_SECTIONS.explorer.map(s => ({ ...s })) },
+      },
+      activities: left.activities ?? [
+        { id: 'explorer', name: 'Explorer', context: { childrenByPath: {}, expandedNodes: [], selectedNodes: [] } },
+      ],
+    }
+
+    ws.layout.secondarySidebar = {
+      isOpen: right.isOpen ?? true,
+      width:  right.width  ?? 380,
+      activeViewContainerId: right.activeActivityId ?? 'preview',
+      viewContainerOrder: (right.activities ?? [
+        { id: 'preview' }, { id: 'details' }, { id: 'chat' },
+      ]).map(a => a.id),
+      sectionState: [
+        { id: 'preview', collapsed: false, size: 2 },
+        { id: 'details', collapsed: true,  size: 1 },
+        { id: 'chat',    collapsed: true,  size: 1 },
+      ],
+      mergeGroups: {},
+    }
+
+    ws.layout.panel = {
+      isOpen: bottom.isOpen ?? true,
+      height: bottom.height ?? 150,
+      activeViewContainerId: 'debug',
+      viewContainerOrder: ['debug'],
+      sectionState: [{ id: 'debug', collapsed: false, size: 1 }],
+      mergeGroups: {},
+      hiddenActivities: [],
+    }
+
+    ws.version = 3
+  }
+
+  // v3 patch: panel.isOpen was false by default before hide/show UI existed.
+  // Since users never had a way to hide the panel, any false value is from the
+  // old default — reset to true so the panel stays visible after the upgrade.
+  if (ws.version === 3 && ws.layout.panel?.isOpen === false) {
+    ws.layout.panel.isOpen = true
+  }
+
+  // v3 patch: backfill sectionState for secondarySidebar/panel if missing
+  // (workspaces created before accordion-sections support was added).
+  if (ws.layout.secondarySidebar && !ws.layout.secondarySidebar.sectionState) {
+    const order = ws.layout.secondarySidebar.viewContainerOrder ?? ['preview', 'details', 'chat']
+    ws.layout.secondarySidebar.sectionState = order.map((id, i) => ({ id, collapsed: i > 0, size: i === 0 ? 2 : 1 }))
+  }
+  if (ws.layout.panel && !ws.layout.panel.sectionState) {
+    ws.layout.panel.sectionState = [{ id: 'debug', collapsed: false, size: 1 }]
+  }
+  if (ws.layout.secondarySidebar && !ws.layout.secondarySidebar.mergeGroups) {
+    ws.layout.secondarySidebar.mergeGroups = {}
+  }
+  if (ws.layout.panel && !ws.layout.panel.mergeGroups) {
+    ws.layout.panel.mergeGroups = {}
+  }
+  if (ws.layout.panel && !ws.layout.panel.viewContainerOrder) {
+    ws.layout.panel.viewContainerOrder = [ws.layout.panel.activeViewContainerId ?? 'debug']
+  }
+  if (ws.layout.panel && !ws.layout.panel.hiddenActivities) {
+    ws.layout.panel.hiddenActivities = []
+  }
+
   return ws
 }
 
@@ -291,53 +387,135 @@ export function useWorkspaces() {
     scheduleSave()
   }
 
-  // ── Layout: left (sidebar) ──────────────────────────────────────────────
+  // ── Layout: primary sidebar ─────────────────────────────────────────────
 
   const sidebarVisible = computed({
-    get: () => activeWorkspace.value?.layout.panel.left.isOpen ?? true,
-    set: v  => mutate(ws => { ws.layout.panel.left.isOpen = v }),
+    get: () => activeWorkspace.value?.layout.primarySidebar?.isOpen ?? true,
+    set: v  => mutate(ws => { ws.layout.primarySidebar.isOpen = v }),
   })
   const sidebarWidth = computed({
-    get: () => activeWorkspace.value?.layout.panel.left.width ?? 240,
-    set: v  => mutate(ws => { ws.layout.panel.left.width = v }),
+    get: () => activeWorkspace.value?.layout.primarySidebar?.width ?? 240,
+    set: v  => mutate(ws => { ws.layout.primarySidebar.width = v }),
   })
-  const activeActivity = computed({
-    get: () => activeWorkspace.value?.layout.panel.left.activeActivityId ?? 'explorer',
-    set: v  => mutate(ws => { ws.layout.panel.left.activeActivityId = v }),
+  const activePrimaryView = computed({
+    get: () => activeWorkspace.value?.layout.primarySidebar?.activeViewContainerId ?? 'explorer',
+    set: v  => mutate(ws => { ws.layout.primarySidebar.activeViewContainerId = v }),
   })
 
-  // ── Layout: right panel ─────────────────────────────────────────────────
+  // ── Layout: secondary sidebar ────────────────────────────────────────────
 
+  const rightpaneVisible = computed({
+    get: () => activeWorkspace.value?.layout.secondarySidebar?.isOpen ?? true,
+    set: v  => mutate(ws => { ws.layout.secondarySidebar.isOpen = v }),
+  })
   const rightpaneWidth = computed({
-    get: () => activeWorkspace.value?.layout.panel.right.width ?? 380,
-    set: v  => mutate(ws => { ws.layout.panel.right.width = v }),
+    get: () => activeWorkspace.value?.layout.secondarySidebar?.width ?? 380,
+    set: v  => mutate(ws => { ws.layout.secondarySidebar.width = v }),
   })
   const rightPanel = computed({
-    get: () => activeWorkspace.value?.layout.panel.right.activeActivityId ?? 'preview',
-    set: v  => mutate(ws => { ws.layout.panel.right.activeActivityId = v }),
+    get: () => activeWorkspace.value?.layout.secondarySidebar?.activeViewContainerId ?? 'preview',
+    set: v  => mutate(ws => { ws.layout.secondarySidebar.activeViewContainerId = v }),
   })
 
-  // Ordered activity IDs for the right panel (without icons — merged in Workbench.vue)
+  // Ordered view container IDs for the secondary sidebar
   const rightPanelActivityIds = computed({
-    get: () => (activeWorkspace.value?.layout.panel.right.activities ?? []).map(a => a.id),
-    set: ids => mutate(ws => {
-      const current = ws.layout.panel.right.activities
-      const byId    = Object.fromEntries(current.map(a => [a.id, a]))
-      ws.layout.panel.right.activities = ids.map(id => byId[id] ?? { id, name: id, context: {} })
-    }),
+    get: () => activeWorkspace.value?.layout.secondarySidebar?.viewContainerOrder ?? ['preview', 'details', 'chat'],
+    set: ids => mutate(ws => { ws.layout.secondarySidebar.viewContainerOrder = ids }),
+  })
+
+  // Merge groups for the secondary sidebar (persisted)
+  const secondarySidebarMergeGroups = computed({
+    get: () => activeWorkspace.value?.layout.secondarySidebar?.mergeGroups ?? {},
+    set: v  => mutate(ws => { ws.layout.secondarySidebar.mergeGroups = v }),
   })
 
   // ── Layout: bottom panel ────────────────────────────────────────────────
 
-  const bottompaneHeight = computed({
-    get: () => activeWorkspace.value?.layout.panel.bottom.height ?? 150,
-    set: v  => mutate(ws => { ws.layout.panel.bottom.height = v }),
+  const bottompaneVisible = computed({
+    get: () => activeWorkspace.value?.layout.panel?.isOpen ?? true,
+    set: v  => mutate(ws => { ws.layout.panel.isOpen = v }),
   })
+  const bottompaneHeight = computed({
+    get: () => activeWorkspace.value?.layout.panel?.height ?? 150,
+    set: v  => mutate(ws => { ws.layout.panel.height = v }),
+  })
+
+  const bottomPanel = computed({
+    get: () => activeWorkspace.value?.layout.panel?.activeViewContainerId ?? 'debug',
+    set: v  => mutate(ws => { ws.layout.panel.activeViewContainerId = v }),
+  })
+  const bottomPanelActivityIds = computed({
+    get: () => activeWorkspace.value?.layout.panel?.viewContainerOrder ?? ['debug'],
+    set: ids => mutate(ws => { ws.layout.panel.viewContainerOrder = ids }),
+  })
+
+  const hiddenActivities = computed({
+    get: () => activeWorkspace.value?.layout.panel?.hiddenActivities ?? [],
+    set: v  => mutate(ws => { ws.layout.panel.hiddenActivities = v }),
+  })
+
+  // Merge groups for the bottom panel (persisted)
+  const panelMergeGroups = computed({
+    get: () => activeWorkspace.value?.layout.panel?.mergeGroups ?? {},
+    set: v  => mutate(ws => { ws.layout.panel.mergeGroups = v }),
+  })
+
+  // ── Primary sidebar section state ────────────────────────────────────────
+
+  function getSectionState(viewContainerId) {
+    const stored = activeWorkspace.value?.layout.primarySidebar?.sectionState?.[viewContainerId]?.sections
+    if (Array.isArray(stored) && stored.length > 0) {
+      // Rename 'folders' → 'places' for any data written before this rename
+      return stored.map(s => s.id === 'folders'
+        ? { ...s, id: 'places', title: s.title === 'Folders' ? 'Places' : s.title }
+        : { ...s })
+    }
+    return (DEFAULT_SECTIONS[viewContainerId] ?? []).map(s => ({ ...s }))
+  }
+
+  function saveSectionState(viewContainerId, sections) {
+    mutate(ws => {
+      ws.layout.primarySidebar.sectionState ??= {}
+      ws.layout.primarySidebar.sectionState[viewContainerId] = { sections: sections.map(s => ({ ...s })) }
+    })
+  }
+
+  // ── Secondary sidebar section state ─────────────────────────────────────
+
+  function getSecondarySidebarSections(activityIds) {
+    const stored = activeWorkspace.value?.layout.secondarySidebar?.sectionState ?? []
+    return activityIds.map(id => {
+      const found = stored.find(s => s.id === id)
+      return found ? { ...found } : { id, collapsed: true, size: 1 }
+    })
+  }
+
+  function saveSecondarySidebarSections(sections) {
+    mutate(ws => {
+      ws.layout.secondarySidebar.sectionState = sections.map(({ id, collapsed, size }) => ({ id, collapsed, size }))
+    })
+  }
+
+  // ── Bottom panel section state ───────────────────────────────────────────
+
+  function getPanelSections(activityIds) {
+    const stored = activeWorkspace.value?.layout.panel?.sectionState ?? []
+    return activityIds.map(id => {
+      const found = stored.find(s => s.id === id)
+      return found ? { ...found } : { id, collapsed: true, size: 1 }
+    })
+  }
+
+  function savePanelSections(sections) {
+    mutate(ws => {
+      ws.layout.panel.sectionState = sections.map(({ id, collapsed, size }) => ({ id, collapsed, size }))
+    })
+  }
 
   // ── Explorer tree context ────────────────────────────────────────────────
 
   function _explorerAct(ws) {
-    return ws.layout.panel.left.activities?.find(a => a.id === 'explorer')
+    return ws.layout.primarySidebar?.activities?.find(a => a.id === 'explorer')
   }
 
   const explorerContext = computed(() => {
@@ -416,17 +594,36 @@ export function useWorkspaces() {
     workspaces,
     activeWorkspaceId,
     activeWorkspace,
-    // Backward-compatible with useWorkbenchState
+    // Layout: primary sidebar
     sidebarVisible,
     sidebarWidth,
-    activeActivity,
+    activePrimaryView,
+    // Layout: secondary sidebar
+    rightpaneVisible,
     rightpaneWidth,
     rightPanel,
-    bottompaneHeight,
-    // Extended
     rightPanelActivityIds,
+    secondarySidebarMergeGroups,
+    // Layout: bottom panel
+    bottompaneVisible,
+    bottompaneHeight,
+    bottomPanel,
+    bottomPanelActivityIds,
+    hiddenActivities,
+    panelMergeGroups,
+    // Section state — primary sidebar
+    getSectionState,
+    saveSectionState,
+    // Section state — secondary sidebar
+    getSecondarySidebarSections,
+    saveSecondarySidebarSections,
+    // Section state — bottom panel
+    getPanelSections,
+    savePanelSections,
+    // Explorer
     explorerContext,
     updateExplorerContext,
+    // Editor grid
     getInitialEditor,
     saveEditor,
     // Workspace management

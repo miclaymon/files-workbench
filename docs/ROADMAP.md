@@ -34,6 +34,14 @@ Items roughly ordered by priority. See `TODO.md` for the full flat list.
 
 ## Recently completed
 
+- **ViewContainer panel system** — unified `ViewContainer.vue` replaces the old `Panel` component for secondary sidebar and bottom panel; two modes: tabs (one activity visible at a time) and accordion sections (primary sidebar Open Editors + Places); tab drag-to-reorder within a container and cross-container drag between secondary sidebar and bottom panel; drag-to-merge drops a tab onto a panel's content area to stack it as a collapsible sub-section inside the target slot (`mergedSlots`); sub-sections resize with sash handles (top/bottom for secondary sidebar, left/right for bottom panel); section headers drag back to the tab bar to extract; `ViewSection.vue`, `ViewDropOverlay.vue`, and `OpenEditorsView.vue` added as new components
+
+- **Activity management** — `PANEL_ACTIVITY_REGISTRY` + View ▸ Views submenu to show/hide individual activities (Preview, Details, Chat, Debug); hiding marks the activity in `hiddenActivities` so it stays hidden after reload; startup recovery (`recoverMissingActivities`) restores activities lost due to corrupted workspace state; panel action buttons to maximize and hide each panel
+
+- **View menu additions** — View ▸ Appearance submenu with per-element toggle checkmarks (primary sidebar, secondary sidebar, bottom panel, status bar, zen mode, centered layout); View ▸ Views submenu for per-activity toggles; `FloatingMenu` now renders a checkmark glyph for `type: 'toggle'` items with a truthy `checked()` callback
+
+- **Workspace schema v3** — `panel.viewContainerOrder`, `panel.activeViewContainerId`, `panel.mergeGroups`, `panel.hiddenActivities`, and `secondarySidebar.mergeGroups` added to the persisted workspace model; forward-compat backfill patches ensure existing workspaces upgrade automatically; v2→v3 migration renames panel areas to `primarySidebar`/`secondarySidebar`/`panel`
+
 - **Editor split grid** — recursive split-view grid of editor groups (`useLayoutGrid.js` engine, `GridView.vue`/`Sash.vue` renderer, `EditorGroup.vue` leaf); split any group up/down/left/right via tab drag-drop to an edge, View ▸ Editor Layout menu, or `Ctrl+\`; five layout presets; per-group tab-previews toggle, lock, and maximize; `⋯` group actions menu; workspace schema v2 with forward migration; all layout mutations logged to the debug panel
 
 - **Right-click drag-and-drop** — `useRightClickDrag` composable suppresses native `contextmenu` on mousedown (fixes Linux/X11 early-fire), shows ghost clone during drag, resolves to a "drop action" menu on release: Move Here, Copy Here, Create Symlink Here; archives get Extract Here instead of Compress to Archive Here
