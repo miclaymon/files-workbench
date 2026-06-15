@@ -49,6 +49,14 @@ Each leaf carries two per-group flags: `tabPreviews` (default `true`) — when `
 
 Tabs support preview mode (`mode: 'peek'`, italic, one reused slot per group; promoted to `'normal'` on double-click or navigation), sticky pinning (`pinned`, grouped to the front with a pin affordance), horizontal-scroll overflow with a dropdown, and region-aware drag (see Drag and drop). View ▸ Editor Layout offers split up/down/left/right and presets (Single, Two Columns, Two Rows, Three Columns, Grid 2×2). Keyboard: `Ctrl+\` split right, `Ctrl+1..9` focus group, `Ctrl+W` close tab (Electron only — browser intercepts).
 
+### Command palette
+
+`CommandPalette.vue` is a floating modal overlay (teleported to `<body>`) that provides fuzzy command search across all menu items. It opens via `Ctrl+Shift+P` or clicking the omnibar in the title bar.
+
+Commands are sourced by flattening the four menu item arrays (`fileMenuItems`, `editMenuItems`, `viewMenuItems`, `settingsMenuItems`) at open time via `flattenMenuItems()`, which recurses through submenus and emits only leaf items with an `action`, skipping separators and currently-disabled items. Each command carries a `category` string built from the submenu path (e.g. `"View > Editor Layout"`) shown right-aligned in the result row. Toggle items (`type: 'toggle'`) show a checkmark when their `checked()` callback returns true.
+
+Fuzzy scoring ranks results: exact label match → prefix match → substring match → sequential character match → no match (excluded). Results are capped at 50 and re-ranked on every keystroke. Arrow keys navigate, Enter executes (action deferred one frame so the palette closes first), Escape dismisses. The `Ctrl+Shift+P` handler is checked before the early-return guard that skips shortcuts when an input is focused, so the palette can be opened from any context.
+
 ### ViewContainer panel system
 
 `ViewContainer.vue` is the unified panel container used for the primary sidebar, secondary sidebar, and bottom panel. It operates in one of two modes depending on the `sections` prop:

@@ -302,6 +302,13 @@
       </div>
     </div>
 
+    <!-- Command palette -->
+    <CommandPalette
+      :visible="commandPaletteOpen"
+      :commands="allCommands"
+      @close="commandPaletteOpen = false"
+    />
+
   </div>
 </template>
 
@@ -314,6 +321,7 @@ import { createLeaf, findLeaf, firstLeaf, collectLeaves, leafCount, insertLeafBe
 import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
 import ViewContainer from './ViewContainer.vue'
 import OpenEditorsView from './OpenEditorsView.vue'
+import CommandPalette from './CommandPalette.vue'
 import { usePreferences } from '~/composables/usePreferences.js'
 import { useDebugLog } from '~/composables/useDebugLog.js'
 import { useFileOpsQueue } from '~/composables/useFileOpsQueue.js'
@@ -1058,10 +1066,41 @@ function windowMinimize() { window.electron?.window?.minimize?.() }
 function windowToggleMaximize() { window.electron?.window?.toggleMaximize?.() }
 function windowClose() { window.electron?.window?.close?.() }
 
-function openCommandPalette() {
-  status.value.left = 'Command palette not implemented yet'
-  setTimeout(() => { status.value.left = 'Ready' }, 1200)
+// ── Command palette ───────────────────────────────────────────────────────────
+
+const commandPaletteOpen = ref(false)
+
+function flattenMenuItems(items, category = '') {
+  const out = []
+  for (const item of items) {
+    if (item.separator || item.type === 'separator') continue
+    const path = category
+      ? (item.submenu ? `${category} > ${item.label}` : category)
+      : (item.submenu ? item.label : '')
+    if (item.submenu) {
+      out.push(...flattenMenuItems(item.submenu, path))
+    } else if (item.action && !item.disabled) {
+      out.push({
+        key:       item.key ?? item.label,
+        label:     item.label,
+        category:  path,
+        action:    item.action,
+        checkable: item.type === 'toggle',
+        checked:   item.type === 'toggle' ? !!(item.checked?.()) : false,
+      })
+    }
+  }
+  return out
 }
+
+const allCommands = computed(() => [
+  ...flattenMenuItems(fileMenuItems.value,     'File'),
+  ...flattenMenuItems(editMenuItems.value,     'Edit'),
+  ...flattenMenuItems(viewMenuItems.value,     'View'),
+  ...flattenMenuItems(settingsMenuItems.value, 'Settings'),
+])
+
+function openCommandPalette() { commandPaletteOpen.value = true }
 
 // Preferences
 function openPreferencesTab() {
@@ -1523,7 +1562,12 @@ function focusGroupByIndex(i) {
 }
 
 function onKeyDown(e) {
-  // Skip when typing in an input, textarea, or contenteditable
+  // Command palette shortcut fires even from inputs
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'P') {
+    e.preventDefault(); openCommandPalette(); return
+  }
+
+  // Skip other shortcuts when typing in an input, textarea, or contenteditable
   const tag = e.target?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return
 
