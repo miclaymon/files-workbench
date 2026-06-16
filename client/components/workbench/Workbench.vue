@@ -633,8 +633,21 @@ function handleActivityUnmerge({ fromActivityId, fromContainerId, extractId, toC
   const currentGroup = fromMerges[fromActivityId] ?? []
   const newGroup = currentGroup.filter(sv => sv.id !== extractId)
 
-  if (newGroup.length <= 1) {
-    // Only one view left → dissolve the merge group entirely
+  if (extractId === fromActivityId && newGroup.length > 0) {
+    // The slot's own original activity was extracted, but other sections
+    // remain — re-key the slot to the next section so the tab strip label
+    // reflects what's actually displayed, instead of the now-departed activity.
+    const newPrimaryId = newGroup[0].id
+    const { [fromActivityId]: _, ...restMerges } = fromMerges
+    setContainerMerges(fromContainerId, newGroup.length > 1
+      ? { ...restMerges, [newPrimaryId]: newGroup }
+      : restMerges)
+
+    const slotList = getContainerIds(fromContainerId).map(id => id === fromActivityId ? newPrimaryId : id)
+    setContainerIds(fromContainerId, slotList)
+    if (getActiveTab(fromContainerId) === fromActivityId) setActiveTab(fromContainerId, newPrimaryId)
+  } else if (newGroup.length <= 1) {
+    // Only one (or zero) views left → dissolve the merge group entirely
     const { [fromActivityId]: _, ...rest } = fromMerges
     setContainerMerges(fromContainerId, rest)
   } else {
@@ -644,7 +657,7 @@ function handleActivityUnmerge({ fromActivityId, fromContainerId, extractId, toC
   // Insert extracted activity as a standalone tab
   const targetCid = MOVABLE_CONTAINERS.has(toContainerId) ? toContainerId : fromContainerId
   const dstList = getContainerIds(targetCid)
-  dstList.splice(toIndex, 0, extractId)
+  if (!dstList.includes(extractId)) dstList.splice(toIndex, 0, extractId)
   setContainerIds(targetCid, dstList)
   setActiveTab(targetCid, extractId)
 }
