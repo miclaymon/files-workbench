@@ -33,13 +33,13 @@
       <!-- Activity Bar -->
       <div class="activitybar">
         <div class="activitybar-top">
-          <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activePrimaryView === 'explorer' }" title="Explorer" @click="toggleActivity('explorer')">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiSegment" /></svg>
+          <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activePrimaryView === 'explorer' }" title="Explorer" @click="togglePrimaryView('explorer')">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiFileTree" /></svg>
           </a>
-          <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activePrimaryView === 'search' }" title="Search" @click="toggleActivity('search')">
+          <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activePrimaryView === 'search' }" title="Search" @click="togglePrimaryView('search')">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiMagnify" /></svg>
           </a>
-          <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activePrimaryView === 'storage' }" title="Storage" @click="toggleActivity('storage')">
+          <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activePrimaryView === 'storage' }" title="Storage" @click="togglePrimaryView('storage')">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiHarddisk" /></svg>
           </a>
         </div>
@@ -59,36 +59,15 @@
           <ViewContainer
             v-if="activePrimaryView === 'explorer'"
             containerId="primarySidebar"
-            :activities="primarySidebarActivities"
+            :views="primarySidebarViews"
             v-model="activePrimaryView"
-            :sections="explorerSections"
-            @update:sections="sections => { explorerSections = sections }"
-            @transfer="handleActivityTransfer"
-          >
-            <template #openEditors>
-              <OpenEditorsView
-                :editorRoot="editorRoot"
-                :activeGroupId="activeGroupId"
-              />
-            </template>
-            <template #places>
-              <ExplorerPanel
-                ref="explorerPanelRef"
-                :selectedPath="selectedPath"
-                :showCheckboxes="prefs.explorer.alwaysShowCheckboxes"
-                :isTreeView="true"
-                :excludedCategories="prefs.excludedCategories"
-                :indentScale="prefs.explorer.indentScale ?? 1.0"
-                :explorerState="explorerContext"
-                @select="handleExplorerSelect"
-                @dblclick="handleDoubleClick"
-                @contextmenu="showItemContextMenu"
-                @rename="handleRename"
-                @move="({ items, destPath }) => doMove(items, destPath)"
-                @state-change="updateExplorerContext"
-              />
-            </template>
-          </ViewContainer>
+            :viewSections="primaryViewSections"
+            :droppable="false"
+            @update:viewSections="m => { primaryViewSections = m }"
+            @transfer="handleViewTransfer"
+            @section-move="handleSectionMove"
+          />
+          <!-- view/section content is rendered via the registry (ViewContentHost) -->
           <div v-else-if="activePrimaryView === 'search'" class="sidebar-placeholder">
             Search panel coming soon…
           </div>
@@ -129,34 +108,18 @@
           <div v-show="bottompaneVisible" class="bottompane" :style="{ height: bottompaneHeight + 'px' }">
             <ViewContainer
               containerId="panel"
-              :activities="bottomPanelActivities"
+              :views="bottomPanelViews"
               v-model="bottomPanel"
               :mergedSlots="bottomPanelMerges"
+              :viewSections="panelViewSections"
               dropDirection="row"
               @update:mergedSlots="slots => { bottomPanelMerges = slots }"
-              @transfer="handleActivityTransfer"
-              @merge="handleActivityMerge"
-              @unmerge="handleActivityUnmerge"
+              @update:viewSections="m => { panelViewSections = m }"
+              @transfer="handleViewTransfer"
+              @merge="handleViewMerge"
+              @unmerge="handleViewUnmerge"
+              @section-move="handleSectionMove"
             >
-              <template #preview>
-                <PreviewPanel :selectedItems="selectedItems" :editorFontSize="prefs.preview?.editorFontSize ?? 13" />
-              </template>
-              <template #details>
-                <DetailsPanel :selectedPath="selectedPath" :details="selectedDetails" />
-              </template>
-              <template #chat>
-                <div style="padding: 12px; color: var(--text-muted); font-size: 13px;">
-                  Chat panel coming soon.
-                </div>
-              </template>
-              <template #debug-actions>
-                <button class="panel-action-btn" @click="debugLog.clear()" title="Clear">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-                </button>
-              </template>
-              <template #debug>
-                <DebugPanel />
-              </template>
               <template #panel-actions>
                 <button class="panel-action-btn" :title="bottomPaneMaximized ? 'Restore Panel' : 'Maximize Panel'" @click="toggleBottomPaneMaximize">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path :d="bottomPaneMaximized ? mdiArrowCollapse : mdiArrowExpand" /></svg>
@@ -175,33 +138,17 @@
         <div v-show="rightpaneVisible" class="rightpane" :style="{ width: rightpaneWidth + 'px' }">
           <ViewContainer
             containerId="secondarySidebar"
-            :activities="rightPanelActivities"
+            :views="rightPanelViews"
             v-model="rightPanel"
             :mergedSlots="rightPanelMerges"
+            :viewSections="secondaryViewSections"
             @update:mergedSlots="slots => { rightPanelMerges = slots }"
-            @transfer="handleActivityTransfer"
-            @merge="handleActivityMerge"
-            @unmerge="handleActivityUnmerge"
+            @update:viewSections="m => { secondaryViewSections = m }"
+            @transfer="handleViewTransfer"
+            @merge="handleViewMerge"
+            @unmerge="handleViewUnmerge"
+            @section-move="handleSectionMove"
           >
-            <template #preview>
-              <PreviewPanel :selectedItems="selectedItems" :editorFontSize="prefs.preview?.editorFontSize ?? 13" />
-            </template>
-            <template #details>
-              <DetailsPanel :selectedPath="selectedPath" :details="selectedDetails" />
-            </template>
-            <template #chat>
-              <div style="padding: 12px; color: var(--text-muted); font-size: 13px;">
-                Chat panel coming soon.
-              </div>
-            </template>
-            <template #debug-actions>
-              <button class="panel-action-btn" @click="debugLog.clear()" title="Clear">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-              </button>
-            </template>
-            <template #debug>
-              <DebugPanel />
-            </template>
             <template #panel-actions>
               <button class="panel-action-btn" :title="rightPaneMaximized ? 'Restore Secondary Side Bar' : 'Maximize Secondary Side Bar'" @click="toggleRightPaneMaximize">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path :d="rightPaneMaximized ? mdiArrowCollapse : mdiArrowExpand" /></svg>
@@ -332,7 +279,6 @@ import { mdiHarddisk, mdiSegment, mdiMagnify, mdiMessage, mdiCog, mdiEye, mdiInf
 import { createLeaf, findLeaf, firstLeaf, collectLeaves, leafCount, insertLeafBeside, removeLeaf, applyPreset } from '~/composables/useLayoutGrid.js'
 import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
 import ViewContainer from './ViewContainer.vue'
-import OpenEditorsView from './OpenEditorsView.vue'
 import CommandPalette from './CommandPalette.vue'
 import SettingsModal from './SettingsModal.vue'
 import KeyboardShortcutsModal from './KeyboardShortcutsModal.vue'
@@ -381,26 +327,30 @@ const status = ref({ left: 'Ready', right: 'Connected' })
 // Layout state (persisted via workspace)
 const {
   sidebarVisible, sidebarWidth, activePrimaryView,
-  rightpaneVisible, rightpaneWidth, rightPanel, rightPanelActivityIds,
+  rightpaneVisible, rightpaneWidth, rightPanel, rightPanelViewIds,
   secondarySidebarMergeGroups,
   bottompaneVisible, bottompaneHeight,
-  bottomPanel, bottomPanelActivityIds,
-  hiddenActivities,
+  bottomPanel, bottomPanelViewIds,
+  hiddenViews,
   panelMergeGroups,
   explorerContext, updateExplorerContext,
-  getSectionState, saveSectionState,
+  getViewSections, saveViewSections,
   getInitialEditor, saveEditor,
 } = useWorkspaces()
 
 // Primary sidebar view container definitions
-const primarySidebarActivities = [{ id: 'explorer', icon: mdiFileTree, label: 'Explorer' }]
+const primarySidebarViews = [{ id: 'explorer', icon: mdiFileTree, label: 'Explorer' }]
 
-// Explorer sidebar sections (Open Editors + Places accordion)
-const explorerSections = ref(getSectionState('explorer'))
-const _expSecSig = computed(() =>
-  explorerSections.value.map(s => `${s.id}:${s.collapsed ? 1 : 0}:${Math.round(s.size * 100)}`).join('|')
-)
-watch(_expSecSig, () => saveSectionState('explorer', explorerSections.value))
+// Per-view section state for each container (the SplitSectionArea level). The
+// primary sidebar's Explorer view owns Places + Open Editors; the movable
+// containers start empty (a view gains an entry only once it owns >1 section or
+// adopts a foreign one). Persisted via signature watches.
+const primaryViewSections   = ref(getViewSections('primarySidebar'))
+const secondaryViewSections = ref(getViewSections('secondarySidebar'))
+const panelViewSections     = ref(getViewSections('panel'))
+watch(() => JSON.stringify(primaryViewSections.value),   () => saveViewSections('primarySidebar',   primaryViewSections.value))
+watch(() => JSON.stringify(secondaryViewSections.value), () => saveViewSections('secondarySidebar', secondaryViewSections.value))
+watch(() => JSON.stringify(panelViewSections.value),     () => saveViewSections('panel',             panelViewSections.value))
 
 // Debug log
 const debugLog = useDebugLog()
@@ -454,8 +404,8 @@ function toggleLeftPaneMaximize() {
 }
 function toggleBottomPaneMaximize() { bottomPaneMaximized.value = !bottomPaneMaximized.value }
 
-// Icon registry for well-known panel activities
-const PANEL_ACTIVITY_REGISTRY = {
+// Icon registry for well-known panel views
+const PANEL_VIEW_REGISTRY = {
   preview: { icon: mdiEye,         label: 'Preview' },
   details: { icon: mdiInformation, label: 'Details' },
   chat:    { icon: mdiMessage,      label: 'Chat'    },
@@ -463,21 +413,21 @@ const PANEL_ACTIVITY_REGISTRY = {
 }
 
 // Bottom panel
-const bottomPanelActivities = computed(() =>
-  bottomPanelActivityIds.value.map(id => ({
+const bottomPanelViews = computed(() =>
+  bottomPanelViewIds.value.map(id => ({
     id,
-    icon:  PANEL_ACTIVITY_REGISTRY[id]?.icon,
-    label: PANEL_ACTIVITY_REGISTRY[id]?.label ?? id,
+    icon:  PANEL_VIEW_REGISTRY[id]?.icon,
+    label: PANEL_VIEW_REGISTRY[id]?.label ?? id,
   }))
 )
 
-const rightPanelActivities = computed({
-  get: () => rightPanelActivityIds.value.map(id => ({
+const rightPanelViews = computed({
+  get: () => rightPanelViewIds.value.map(id => ({
     id,
-    icon:  PANEL_ACTIVITY_REGISTRY[id]?.icon,
-    label: PANEL_ACTIVITY_REGISTRY[id]?.label ?? id,
+    icon:  PANEL_VIEW_REGISTRY[id]?.icon,
+    label: PANEL_VIEW_REGISTRY[id]?.label ?? id,
   })),
-  set: list => { rightPanelActivityIds.value = list.map(a => a.id) },
+  set: list => { rightPanelViewIds.value = list.map(v => v.id) },
 })
 
 // ── Merge state: which tab slots hold multiple stacked views ──────────────────
@@ -489,43 +439,43 @@ watch(_rightMergeSig, () => { secondarySidebarMergeGroups.value = rightPanelMerg
 const _botMergeSig = computed(() => JSON.stringify(bottomPanelMerges.value))
 watch(_botMergeSig, () => { panelMergeGroups.value = bottomPanelMerges.value })
 
-// Default container for each known activity (used when restoring a lost activity)
-const ACTIVITY_DEFAULT_CONTAINER = {
+// Default container for each known view (used when restoring a lost view)
+const VIEW_DEFAULT_CONTAINER = {
   preview: 'secondarySidebar',
   details: 'secondarySidebar',
   chat:    'secondarySidebar',
   debug:   'panel',
 }
 
-// Returns true if the activity is visible in any container or merge group.
-function isActivityVisible(id) {
-  if (rightPanelActivityIds.value.includes(id)) return true
-  if (bottomPanelActivityIds.value.includes(id)) return true
+// Returns true if the view is visible in any container or merge group.
+function isViewVisible(id) {
+  if (rightPanelViewIds.value.includes(id)) return true
+  if (bottomPanelViewIds.value.includes(id)) return true
   const inMerges = (merges) => Object.values(merges).some(g => g.some(sv => sv.id === id))
   return inMerges(rightPanelMerges.value) || inMerges(bottomPanelMerges.value)
 }
 
-// Adds a missing activity back to its default container and makes it visible.
-function addActivity(id) {
-  if (isActivityVisible(id)) return
-  hiddenActivities.value = hiddenActivities.value.filter(h => h !== id)
-  const cid = ACTIVITY_DEFAULT_CONTAINER[id] ?? 'secondarySidebar'
+// Adds a missing view back to its default container and makes it visible.
+function addView(id) {
+  if (isViewVisible(id)) return
+  hiddenViews.value = hiddenViews.value.filter(h => h !== id)
+  const cid = VIEW_DEFAULT_CONTAINER[id] ?? 'secondarySidebar'
   if (cid === 'panel') {
-    bottomPanelActivityIds.value = [...bottomPanelActivityIds.value, id]
+    bottomPanelViewIds.value = [...bottomPanelViewIds.value, id]
     bottomPanel.value = id
     bottompaneVisible.value = true
   } else {
-    rightPanelActivityIds.value = [...rightPanelActivityIds.value, id]
+    rightPanelViewIds.value = [...rightPanelViewIds.value, id]
     rightPanel.value = id
     rightpaneVisible.value = true
   }
 }
 
-// On startup: restore any known activities that got lost (e.g. from an un-persisted merge).
-// Skips activities the user has intentionally hidden via the Views menu.
-function recoverMissingActivities() {
-  for (const id of Object.keys(PANEL_ACTIVITY_REGISTRY)) {
-    if (!isActivityVisible(id) && !hiddenActivities.value.includes(id)) addActivity(id)
+// On startup: restore any known views that got lost (e.g. from an un-persisted merge).
+// Skips views the user has intentionally hidden via the Views menu.
+function recoverMissingViews() {
+  for (const id of Object.keys(PANEL_VIEW_REGISTRY)) {
+    if (!isViewVisible(id) && !hiddenViews.value.includes(id)) addView(id)
   }
 }
 
@@ -534,13 +484,13 @@ function recoverMissingActivities() {
 const MOVABLE_CONTAINERS = new Set(['secondarySidebar', 'panel'])
 
 function getContainerIds(cid) {
-  if (cid === 'secondarySidebar') return [...rightPanelActivityIds.value]
-  if (cid === 'panel')            return [...bottomPanelActivityIds.value]
+  if (cid === 'secondarySidebar') return [...rightPanelViewIds.value]
+  if (cid === 'panel')            return [...bottomPanelViewIds.value]
   return []
 }
 function setContainerIds(cid, ids) {
-  if (cid === 'secondarySidebar') rightPanelActivityIds.value = ids
-  if (cid === 'panel')            bottomPanelActivityIds.value = ids
+  if (cid === 'secondarySidebar') rightPanelViewIds.value = ids
+  if (cid === 'panel')            bottomPanelViewIds.value = ids
 }
 function getContainerMerges(cid) {
   if (cid === 'secondarySidebar') return rightPanelMerges.value
@@ -563,103 +513,149 @@ function setActiveTab(cid, id) {
 
 // ── Transfer: tab drag-to-reorder and cross-container ────────────────────────
 
-function handleActivityTransfer({ fromContainerId, toContainerId, activityId, toIndex }) {
+function handleViewTransfer({ fromContainerId, toContainerId, viewId, toIndex }) {
   if (!MOVABLE_CONTAINERS.has(fromContainerId) || !MOVABLE_CONTAINERS.has(toContainerId)) return
 
   if (fromContainerId === toContainerId) {
     // Reorder within the same container
     const list = getContainerIds(fromContainerId)
-    const fromIdx = list.indexOf(activityId)
+    const fromIdx = list.indexOf(viewId)
     if (fromIdx < 0) return
     list.splice(fromIdx, 1)
     const adjustedIdx = toIndex > fromIdx ? toIndex - 1 : toIndex
-    list.splice(adjustedIdx, 0, activityId)
+    list.splice(adjustedIdx, 0, viewId)
     setContainerIds(fromContainerId, list)
-    // Merge group travels with the tab (already keyed by activityId, nothing to move)
+    // Merge group travels with the tab (already keyed by viewId, nothing to move)
   } else {
     // Cross-container: remove from source, insert in target
-    const srcList = getContainerIds(fromContainerId).filter(id => id !== activityId)
+    const srcList = getContainerIds(fromContainerId).filter(id => id !== viewId)
     const dstList = getContainerIds(toContainerId)
-    dstList.splice(toIndex, 0, activityId)
+    dstList.splice(toIndex, 0, viewId)
     setContainerIds(fromContainerId, srcList)
     setContainerIds(toContainerId, dstList)
 
-    // If this activity was the primary of a merge group, move the group too
+    // If this view was the primary of a merge group, move the group too
     const fromMerges = getContainerMerges(fromContainerId)
-    if (fromMerges[activityId]) {
-      const { [activityId]: group, ...restFromMerges } = fromMerges
+    if (fromMerges[viewId]) {
+      const { [viewId]: group, ...restFromMerges } = fromMerges
       setContainerMerges(fromContainerId, restFromMerges)
-      setContainerMerges(toContainerId, { ...getContainerMerges(toContainerId), [activityId]: group })
+      setContainerMerges(toContainerId, { ...getContainerMerges(toContainerId), [viewId]: group })
     }
 
     // Update active tabs
-    if (getActiveTab(fromContainerId) === activityId) setActiveTab(fromContainerId, srcList[0] ?? '')
-    setActiveTab(toContainerId, activityId)
+    if (getActiveTab(fromContainerId) === viewId) setActiveTab(fromContainerId, srcList[0] ?? '')
+    setActiveTab(toContainerId, viewId)
   }
 }
 
 // ── Merge: drop on content area → stack as sections inside target tab slot ────
 
-function handleActivityMerge({ toContainerId, toActivityId, fromContainerId, activityId, zone }) {
+function handleViewMerge({ toContainerId, toViewId, fromContainerId, viewId, zone }) {
   if (!MOVABLE_CONTAINERS.has(fromContainerId)) return
   if (!MOVABLE_CONTAINERS.has(toContainerId)) return
-  if (activityId === toActivityId && fromContainerId === toContainerId) return
+  if (viewId === toViewId && fromContainerId === toContainerId) return
 
-  // Remove activityId from source container's tab list
-  const srcList = getContainerIds(fromContainerId).filter(id => id !== activityId)
+  // Remove viewId from source container's tab list
+  const srcList = getContainerIds(fromContainerId).filter(id => id !== viewId)
   setContainerIds(fromContainerId, srcList)
 
-  // Add to target activity's merge group
+  // Add to target view's merge group
   const toMerges = getContainerMerges(toContainerId)
-  const existing = toMerges[toActivityId] ?? [
-    { id: toActivityId, title: PANEL_ACTIVITY_REGISTRY[toActivityId]?.label ?? toActivityId, collapsed: false, size: 1 },
+  const existing = toMerges[toViewId] ?? [
+    { id: toViewId, title: PANEL_VIEW_REGISTRY[toViewId]?.label ?? toViewId, collapsed: false, size: 1 },
   ]
-  const newEntry = { id: activityId, title: PANEL_ACTIVITY_REGISTRY[activityId]?.label ?? activityId, collapsed: false, size: 1 }
+  const newEntry = { id: viewId, title: PANEL_VIEW_REGISTRY[viewId]?.label ?? viewId, collapsed: false, size: 1 }
   const newGroup = zone === 'before' ? [newEntry, ...existing] : [...existing, newEntry]
-  setContainerMerges(toContainerId, { ...toMerges, [toActivityId]: newGroup })
+  setContainerMerges(toContainerId, { ...toMerges, [toViewId]: newGroup })
 
   // Update active tabs
-  if (getActiveTab(fromContainerId) === activityId) setActiveTab(fromContainerId, srcList[0] ?? '')
-  setActiveTab(toContainerId, toActivityId)
+  if (getActiveTab(fromContainerId) === viewId) setActiveTab(fromContainerId, srcList[0] ?? '')
+  setActiveTab(toContainerId, toViewId)
 }
 
 // ── Unmerge: section header dragged back to tab bar ───────────────────────────
 
-function handleActivityUnmerge({ fromActivityId, fromContainerId, extractId, toContainerId, toIndex }) {
+function handleViewUnmerge({ fromViewId, fromContainerId, extractViewId, toContainerId, toIndex }) {
   if (!MOVABLE_CONTAINERS.has(fromContainerId)) return
 
   // Remove from the merge group
   const fromMerges = getContainerMerges(fromContainerId)
-  const currentGroup = fromMerges[fromActivityId] ?? []
-  const newGroup = currentGroup.filter(sv => sv.id !== extractId)
+  const currentGroup = fromMerges[fromViewId] ?? []
+  const newGroup = currentGroup.filter(sv => sv.id !== extractViewId)
 
-  if (extractId === fromActivityId && newGroup.length > 0) {
-    // The slot's own original activity was extracted, but other sections
+  if (extractViewId === fromViewId && newGroup.length > 0) {
+    // The slot's own original view was extracted, but other sections
     // remain — re-key the slot to the next section so the tab strip label
-    // reflects what's actually displayed, instead of the now-departed activity.
+    // reflects what's actually displayed, instead of the now-departed view.
     const newPrimaryId = newGroup[0].id
-    const { [fromActivityId]: _, ...restMerges } = fromMerges
+    const { [fromViewId]: _, ...restMerges } = fromMerges
     setContainerMerges(fromContainerId, newGroup.length > 1
       ? { ...restMerges, [newPrimaryId]: newGroup }
       : restMerges)
 
-    const slotList = getContainerIds(fromContainerId).map(id => id === fromActivityId ? newPrimaryId : id)
+    const slotList = getContainerIds(fromContainerId).map(id => id === fromViewId ? newPrimaryId : id)
     setContainerIds(fromContainerId, slotList)
-    if (getActiveTab(fromContainerId) === fromActivityId) setActiveTab(fromContainerId, newPrimaryId)
+    if (getActiveTab(fromContainerId) === fromViewId) setActiveTab(fromContainerId, newPrimaryId)
   } else if (newGroup.length <= 1) {
     // Only one (or zero) views left → dissolve the merge group entirely
-    const { [fromActivityId]: _, ...rest } = fromMerges
+    const { [fromViewId]: _, ...rest } = fromMerges
     setContainerMerges(fromContainerId, rest)
   } else {
-    setContainerMerges(fromContainerId, { ...fromMerges, [fromActivityId]: newGroup })
+    setContainerMerges(fromContainerId, { ...fromMerges, [fromViewId]: newGroup })
   }
 
-  // Insert extracted activity as a standalone tab
+  // Insert extracted view as a standalone tab
   const targetCid = MOVABLE_CONTAINERS.has(toContainerId) ? toContainerId : fromContainerId
   const dstList = getContainerIds(targetCid)
-  if (!dstList.includes(extractId)) dstList.splice(toIndex, 0, extractId)
+  if (!dstList.includes(extractViewId)) dstList.splice(toIndex, 0, extractViewId)
   setContainerIds(targetCid, dstList)
-  setActiveTab(targetCid, extractId)
+  setActiveTab(targetCid, extractViewId)
+}
+
+// ── Section adoption: a SplitSection dragged into a different View's area ──────
+
+function _viewSectionsRef(containerId) {
+  if (containerId === 'primarySidebar')   return primaryViewSections
+  if (containerId === 'secondarySidebar') return secondaryViewSections
+  if (containerId === 'panel')            return panelViewSections
+  return null
+}
+
+function handleSectionMove({ sectionId, fromViewId, fromContainerId, toViewId, toContainerId, toIndex }) {
+  if (fromContainerId === toContainerId && fromViewId === toViewId) return  // same area → handled locally
+  const srcRef = _viewSectionsRef(fromContainerId)
+  const dstRef = _viewSectionsRef(toContainerId)
+  if (!srcRef || !dstRef) return
+
+  const sameContainer = fromContainerId === toContainerId
+  const srcMap = { ...srcRef.value }
+  const dstMap = sameContainer ? srcMap : { ...dstRef.value }
+
+  // Pull the section out of the source View.
+  const srcList = [...(srcMap[fromViewId] ?? [])]
+  const idx = srcList.findIndex(s => s.id === sectionId)
+  if (idx < 0) return
+  const [moved] = srcList.splice(idx, 1)
+  // Drop the source entry entirely if only its own self-section would remain.
+  if (srcList.length <= 1 && srcList.every(s => s.id === fromViewId)) {
+    delete srcMap[fromViewId]
+  } else {
+    srcMap[fromViewId] = srcList
+  }
+
+  // Add it to the target View, materialising the target's own self-section first
+  // (so the View keeps its native content alongside the adopted section).
+  const dstList = [...(dstMap[toViewId] ?? [{ id: toViewId, homeViewId: toViewId, collapsed: false, size: 1 }])]
+  if (!dstList.some(s => s.id === moved.id)) {
+    const at = Math.max(0, Math.min(toIndex, dstList.length))
+    dstList.splice(at, 0, moved)
+  }
+  // Keep locked sections (e.g. Places) pinned to the front of the target.
+  dstList.sort((a, b) => (b.locked ? 1 : 0) - (a.locked ? 1 : 0))
+  dstMap[toViewId] = dstList
+
+  srcRef.value = srcMap
+  if (!sameContainer) dstRef.value = dstMap
 }
 
 function startResize(event, sizeRef, { axis = 'x', sign = 1, min = 60 } = {}) {
@@ -691,7 +687,7 @@ function handleLayoutChange(layout) {
   log('layout', 'Layout changed', layout)
 }
 
-function toggleActivity(name) {
+function togglePrimaryView(name) {
   if (activePrimaryView.value === name && sidebarVisible.value) {
     sidebarVisible.value = false
   } else {
@@ -943,6 +939,27 @@ provide('editorController', editorController)
 // Preferences
 const { prefs, save: savePrefs } = usePreferences()
 
+// ── View content context ─────────────────────────────────────────────────────
+// Shared bag of state + handlers that the view registry binds into each panel
+// component (see useViewRegistry.js / ViewContentHost.vue). Provided once here
+// so any view/section renders identically in any container. Handler functions
+// referenced below are hoisted declarations defined later in this script.
+const viewCtx = {
+  // reactive state (refs / computeds — registry reads .value)
+  selectedPath, selectedItems, selectedDetails,
+  editorRoot, activeGroupId,
+  explorerContext,
+  prefs,            // reactive object (no .value)
+  debugLog,
+  // handlers
+  handleExplorerSelect, handleDoubleClick, showItemContextMenu,
+  handleRename, doMove, updateExplorerContext,
+  // imperative ref forwarding (e.g. explorerPanelRef.refresh())
+  setRef(name, el) { if (name === 'explorerPanelRef') explorerPanelRef.value = el },
+  refreshExplorer: () => explorerPanelRef.value?.refresh(),
+}
+provide('viewCtx', viewCtx)
+
 // Clipboard
 const clipboard = ref({ mode: 'Copy', count: 0, items: [] })
 
@@ -1034,16 +1051,16 @@ const viewMenuItems = computed(() => [
   { key: 'alwaysShowCheckboxes', label: 'Always show checkboxes', type: 'toggle', checked: () => prefs.explorer.alwaysShowCheckboxes, action: () => { prefs.explorer.alwaysShowCheckboxes = !prefs.explorer.alwaysShowCheckboxes } },
   { separator: true },
   { key: 'views', label: 'Views', submenu:
-    Object.entries(PANEL_ACTIVITY_REGISTRY).map(([id, meta]) => ({
+    Object.entries(PANEL_VIEW_REGISTRY).map(([id, meta]) => ({
       key:     `view-${id}`,
       label:   meta.label,
       type:    'toggle',
-      checked: () => isActivityVisible(id),
+      checked: () => isViewVisible(id),
       action:  () => {
-        if (isActivityVisible(id)) {
+        if (isViewVisible(id)) {
           // remove from wherever it currently lives and mark as intentionally hidden
-          rightPanelActivityIds.value  = rightPanelActivityIds.value.filter(a => a !== id)
-          bottomPanelActivityIds.value = bottomPanelActivityIds.value.filter(a => a !== id)
+          rightPanelViewIds.value  = rightPanelViewIds.value.filter(v => v !== id)
+          bottomPanelViewIds.value = bottomPanelViewIds.value.filter(v => v !== id)
           const stripId = (merges) => {
             const out = {}
             for (const [k, arr] of Object.entries(merges)) out[k] = arr.filter(sv => sv.id !== id)
@@ -1051,9 +1068,9 @@ const viewMenuItems = computed(() => [
           }
           rightPanelMerges.value  = stripId(rightPanelMerges.value)
           bottomPanelMerges.value = stripId(bottomPanelMerges.value)
-          hiddenActivities.value  = [...hiddenActivities.value.filter(h => h !== id), id]
+          hiddenViews.value  = [...hiddenViews.value.filter(h => h !== id), id]
         } else {
-          addActivity(id)
+          addView(id)
         }
       },
     }))
@@ -1150,7 +1167,7 @@ function onSashResizeEnd() {
 }
 
 onMounted(async () => {
-  recoverMissingActivities()
+  recoverMissingViews()
   pingServer()
   _pingInterval = setInterval(pingServer, 10000)
   window.addEventListener('keydown', onKeyDown)

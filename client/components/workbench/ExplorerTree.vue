@@ -1,9 +1,5 @@
 <template>
   <div class="explorer-tree">
-    <div v-if="showHeader" class="view-header">
-      <button @click="onSelectAll">Select All</button>
-      <button @click="onPaste" :disabled="!clipboardData">Paste</button>
-    </div>
     <TreeList
       :items="treeItems"
       :selectedPaths="selectedPaths"

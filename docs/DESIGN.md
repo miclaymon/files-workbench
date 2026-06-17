@@ -30,14 +30,14 @@ In development, Nuxt's Vite dev server proxies `/_api/v2/*` to the data server o
 
 `Workbench.vue` is the root component. It owns:
 - Global app state: tabs, selected/focused items, clipboard, context menu
-- Activity bar (explorer, search, settings icons)
-- Primary sidebar — a `ViewContainer` in sections/accordion mode hosting Open Editors and Places sub-views
+- Activity Bar (explorer, search, settings icons)
+- Primary sidebar — a non-droppable `ViewContainer` whose Explorer view hosts the Open Editors + Places sections
 - Editor area: a recursive split grid of editor groups, each a tab strip + the active tab's content (Home / DirectoryTab)
-- Secondary sidebar and bottom panel — each a `ViewContainer` in tabs mode (see ViewContainer panel system)
+- Secondary sidebar and bottom panel — each a tabbed `ViewContainer` (see ViewContainer panel system)
 - All floating UI (context menus, right-drag drop menus, View menu, command palette, settings modal, keyboard shortcuts modal)
 - Status bar: directory item count/size, selection count/size, clipboard pill (mode + count + size)
 
-The View menu exposes two submenus: **Appearance** (toggle sidebar/panel/status bar visibility, zen mode, centered layout) and **Views** (toggle individual activities such as Preview, Details, Chat, and Debug on or off). Toggling an activity off marks it as intentionally hidden in the workspace; startup recovery (`recoverMissingActivities`) skips hidden activities so they stay off across reloads.
+The View menu exposes two submenus: **Appearance** (toggle sidebar/panel/status bar visibility, zen mode, centered layout) and **Views** (toggle individual views such as Preview, Details, Chat, and Debug on or off). Toggling a view off marks it as intentionally hidden in the workspace; startup recovery (`recoverMissingViews`) skips hidden views so they stay off across reloads.
 
 ### Editor groups (split grid)
 
@@ -73,18 +73,31 @@ Fuzzy scoring ranks results: exact label match → prefix match → substring ma
 
 ### ViewContainer panel system
 
-`ViewContainer.vue` is the unified panel container used for the primary sidebar, secondary sidebar, and bottom panel. It operates in one of two modes depending on the `sections` prop:
+`ViewContainer.vue` is the unified panel container used for the primary sidebar, secondary sidebar, and bottom panel. It renders a tab strip at the top and, for the active tab, delegates its body to a recursive **SplitView / SplitSection** hierarchy:
 
-- **Sections mode** (`sections` is an array): renders activities as stacked collapsible accordion panels with `Sash.vue` resize handles between them. Used by the primary sidebar (Open Editors + Places).
-- **Tabs mode** (`sections` is null): renders a horizontal tab strip at the top; one activity's slot is shown at a time. Used by the secondary sidebar and bottom panel.
+```
+ViewContainer (tab strip + ⋯ menu + merge/transfer orchestration)
+└─ SplitViewArea     stacks SplitViews for one tab slot; heading shown only when >1
+   └─ SplitView      a whole View context; lighter "context" heading; drag-out = unmerge
+      └─ SplitSectionArea   stacks the View's SplitSections; heading shown only when >1
+         └─ SplitSection     a UI group within a View; renders ViewContentHost(:id)
+```
 
-**Tab drag**: each tab in tabs mode is HTML5-draggable. Dropping a tab onto another container's tab strip reorders or transfers the tab between containers (secondary sidebar ↔ bottom panel). Module-level `_activeDrag` shared across all `ViewContainer` instances provides a global drag signal without per-instance cleanup.
+Two orthogonal axes drive it. `mergedSlots` (`{ [primaryId]: [{ id, collapsed, size }] }`) tracks **which Views stack in a slot** (the SplitViewArea level). `viewSections` (`{ [viewId]: Section[] }`, `Section = { id, homeViewId, collapsed, size, locked? }`) tracks **each View's own sections** (the SplitSectionArea level). A heading appears only when its level has more than one sibling — so a standalone View with one implicit self-section renders as plain content, exactly as before. The primary sidebar is just a non-droppable (`:droppable="false"`) single-View container whose Explorer view owns the `places` + `openEditors` sections; there is no longer a separate "sections mode".
 
-**Drag-to-merge**: while a tab drag is active, each visible tab slot shows a `ViewDropOverlay` covering the content area. Dropping onto the overlay stacks the dragged activity as a collapsible `ViewSection` inside the target tab's slot — the `mergedSlots` prop tracks these groupings as `{ [primaryId]: [{ id, title, collapsed, size }] }`. Sub-sections resize via sash handles; the `dropDirection` prop controls whether they stack top/bottom (`col`, secondary sidebar) or left/right (`row`, bottom panel). In row mode, sub-sections stay expanded and resize on the X axis. Dragging a merged section's header back to the tab bar extracts it as a standalone tab (via the `fromMergedActivityId` field on the same MIME type, distinguished in `onBarDrop`).
+**Content registry**: view/section content is rendered by id through `ViewContentHost.vue`, which looks the id up in `useViewRegistry.js` (`{ label, icon, component, props(ctx), on(ctx), homeView, sections, actions, expose }`) and binds it against a shared `viewCtx` provided by `Workbench.vue`. Rendering by id (rather than container-scoped named slots) lets any view or section render in any container — the prerequisite for cross-context section drag.
 
-**Slot architecture**: all activity slots (`#preview`, `#details`, `#chat`, `#debug`) are defined in **both** the secondary sidebar and bottom panel ViewContainers in `Workbench.vue`. This allows any activity to be hosted in either container without rendering an empty slot when it moves.
+**Tab drag**: each tab is HTML5-draggable. Dropping a tab onto another container's tab strip reorders or transfers it (secondary sidebar ↔ bottom panel). Shared drag state lives in `useViewDrag.js` (`activeDrag` + `DRAG_MIME`).
 
-**Activity management**: `PANEL_ACTIVITY_REGISTRY` maps activity IDs to icons and labels. `ACTIVITY_DEFAULT_CONTAINER` maps each ID to its home container. `isActivityVisible` checks all containers and merge groups; `addActivity` places a missing activity back in its default container; `recoverMissingActivities` (called on `onMounted`) restores any activities lost due to corrupted workspace state, skipping those in `hiddenActivities`.
+**Drag-to-merge**: while a tab drag is active, each visible slot shows a `ViewDropOverlay`; dropping stacks the dragged view as another `SplitView` in the target slot. The `dropDirection` prop controls whether SplitViews stack top/bottom (`col`, secondary sidebar) or left/right (`row`, bottom panel). Dragging a SplitViewHeading back to the tab bar extracts it (via the `fromMergedViewId` field on `DRAG_MIME`, distinguished in `onBarDrop`).
+
+**Section reorder & cross-context adoption**: SplitSection headings are draggable (their own `SECTION_DRAG_MIME`, separate from tab/view drags). Dropping within the same area reorders; dropping onto a *different* View's area moves the section there ("adoption") — a `section-move` event bubbles to `handleSectionMove` in `Workbench.vue`, which updates the source and target `viewSections` maps (materialising the target's own self-section first). An adopted section's heading shows its home View as a display-only prefix (e.g. `Explorer: Open Editors`) whenever `homeViewId !==` the View it currently sits under. A View's own self-section (`id === viewId`), locked sections (Places), and any section flagged `dockable: false` can't be dragged out, so a View's primary content stays anchored and Explorer can't be emptied. A View only accepts *incoming* docked sections when its registry entry's `acceptsSections !== false` — Preview and Chat opt out (single-section, headerless), so they're never dock targets.
+
+**Action buttons**: registry `actions` render via `ViewActions.vue` against `viewCtx`. View-level actions show in the tab strip while a view is standalone and in its SplitViewHeading once merged (hover/focus-revealed, `@click.stop`); a multi-section View's section actions show in each SplitSectionHeading. Because a section header only appears when a View has >1 section, a View that collapses to a single (headerless) section has its lone section's actions **promoted** up into the view-level set (`resolveViewActions`) so they stay reachable — e.g. Explorer down to just Places shows Places' *Refresh* in the tab strip. Examples: Debug's *Clear*, Places' *Refresh*.
+
+**View management**: `PANEL_VIEW_REGISTRY` maps view IDs to icons and labels. `VIEW_DEFAULT_CONTAINER` maps each ID to its home container. `isViewVisible` checks all containers and merge groups; `addView` places a missing view back in its default container; `recoverMissingViews` (called on `onMounted`) restores any views lost due to corrupted workspace state, skipping those in `hiddenViews`.
+
+Note: the **Activity Bar** (`.activitybar`, the icon-only strip with Explorer/Search/Storage/Settings) is a distinct, separate VS Code concept from the views described above — it switches which view container is shown in the primary sidebar and is unaffected by this naming.
 
 ### Context menu
 
@@ -120,7 +133,7 @@ This means adding a new event in a leaf component requires threading it through 
 
 No Pinia or Vuex. State lives in:
 - `Workbench.vue` `reactive`/`ref` — global app state (editor grid, selection, prefs, clipboard)
-- `useWorkspaces.js` — the persisted per-workspace model in `localStorage` (`files-workbench.workspaces`), versioned with forward migration (v1→v2 wraps the flat tabs array into a single-group leaf; v2→v3 renames panel areas to primarySidebar/secondarySidebar/panel and adds `viewContainerOrder`, `mergeGroups`, `hiddenActivities`, and `activeViewContainerId` for the panel containers); serialises the editor grid, sidebar/panel layout, and explorer tree state
+- `useWorkspaces.js` — the persisted per-workspace model in `localStorage` (`files-workbench.workspaces`), versioned with forward migration (v1→v2 wraps the flat tabs array into a single-group leaf; v2→v3 renames panel areas to primarySidebar/secondarySidebar/panel and adds `viewContainerOrder`, `mergeGroups`, and `activeViewContainerId`; v3→v4 renames the `activity` fields to `view`; v4→v5 unifies per-container section storage into a `viewSections` map keyed by view id, with `homeViewId` on each section, replacing the old `sectionState`); serialises the editor grid, sidebar/panel layout, and explorer tree state
 - `DirectoryTab.vue` — navigation history, items list, thumbnail map
 - `DirectoryPanel.vue` — sort/filter state, layout picker state
 - `ExplorerTree.vue` — expanded Set, children cache (also persisted to localStorage)
@@ -136,7 +149,7 @@ There are four independent drag systems:
 | `useRightClickDrag.js` | Directory items (right-button) | Suppresses native `contextmenu` on mousedown; ghost clone on move; resolves to `onRightClick` or `onDrop` on mouseup |
 | `useTreeDrag.js` | Explorer tree nodes | Custom mousedown → chip ghost, module-level shared state, directory-only drop targets |
 | `useEditorDnd.js` | Editor tabs & groups | Native HTML5 drag with shared module state + region detection (`dropRegion`): dropping on a tab strip reorders/moves a tab; dropping on a group's edge/center splits or merges groups (`DropOverlay.vue` shows the target zone) |
-| `ViewContainer.vue` (inline) | Secondary sidebar and bottom panel tabs | Native HTML5 drag with module-level `_activeDrag` ref; tab strip drop reorders or transfers between containers; content-area drop (`ViewDropOverlay`) merges activities into stacked sub-sections; section header drag extracts a merged section back to a standalone tab |
+| `ViewContainer.vue` + `useViewDrag.js` | Panel views & sections | Native HTML5 drag with shared `activeDrag`/`activeSectionDrag` refs. `DRAG_MIME`: tab-strip drop reorders/transfers between containers, content-area drop (`ViewDropOverlay`) merges views as stacked SplitViews, SplitViewHeading drag extracts back to a tab. `SECTION_DRAG_MIME`: SplitSection heading drag reorders within an area or adopts the section into another View's area (`section-move` → `handleSectionMove`) |
 
 The file drag systems (`useDrag`, `useTreeDrag`, `useRightClickDrag`) do not set `dataTransfer` and therefore cannot interoperate with native OS drop targets.
 

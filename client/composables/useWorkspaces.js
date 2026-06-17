@@ -37,8 +37,8 @@ export { uuidv4 }
 
 const DEFAULT_SECTIONS = {
   explorer: [
-    { id: 'openEditors', title: 'Open Editors', collapsed: true,  size: 1 },
-    { id: 'places',      title: 'Places',        collapsed: false, size: 4 },
+    { id: 'places',      title: 'Places',       homeViewId: 'explorer', collapsed: false, size: 4, locked: true },
+    { id: 'openEditors', title: 'Open Editors', homeViewId: 'explorer', collapsed: true,  size: 1 },
   ],
 }
 
@@ -51,7 +51,7 @@ function createDefaultWorkspace({ name = 'Default' } = {}) {
   return {
     uuid: uuidv7(),
     name,
-    version: 3,
+    version: 5,
     dateCreated:  now,
     dateModified: now,
     dateAccessed: now,
@@ -61,10 +61,12 @@ function createDefaultWorkspace({ name = 'Default' } = {}) {
         isOpen: true,
         width: 240,
         activeViewContainerId: 'explorer',
-        sectionState: {
-          explorer: { sections: DEFAULT_SECTIONS.explorer.map(s => ({ ...s })) },
+        // Per-view section lists (the SplitSectionArea level). Keyed by view id;
+        // each section carries its home ("biological") View.
+        viewSections: {
+          explorer: DEFAULT_SECTIONS.explorer.map(s => ({ ...s })),
         },
-        activities: [
+        views: [
           {
             id: 'explorer',
             name: 'Explorer',
@@ -77,11 +79,7 @@ function createDefaultWorkspace({ name = 'Default' } = {}) {
         width: 380,
         activeViewContainerId: 'preview',
         viewContainerOrder: ['preview', 'details', 'chat'],
-        sectionState: [
-          { id: 'preview', collapsed: false, size: 2 },
-          { id: 'details', collapsed: true,  size: 1 },
-          { id: 'chat',    collapsed: true,  size: 1 },
-        ],
+        viewSections: {},
         mergeGroups: {},
       },
       panel: {
@@ -89,9 +87,9 @@ function createDefaultWorkspace({ name = 'Default' } = {}) {
         height: 150,
         activeViewContainerId: 'debug',
         viewContainerOrder: ['debug'],
-        sectionState: [{ id: 'debug', collapsed: false, size: 1 }],
+        viewSections: {},
         mergeGroups: {},
-        hiddenActivities: [],
+        hiddenViews: [],
       },
       editor: {
         root: {
@@ -138,10 +136,10 @@ function migrateFromOldKeys() {
   try {
     const t = JSON.parse(localStorage.getItem(OLD_TREE_KEY) ?? 'null')
     if (t) {
-      const act = ws.layout.primarySidebar.activities.find(a => a.id === 'explorer')
-      if (act) {
-        act.context.childrenByPath = t.childrenByPath ?? {}
-        act.context.expandedNodes  = t.expanded       ?? []
+      const view = ws.layout.primarySidebar.views.find(v => v.id === 'explorer')
+      if (view) {
+        view.context.childrenByPath = t.childrenByPath ?? {}
+        view.context.expandedNodes  = t.expanded       ?? []
       }
     }
   } catch {}
@@ -164,6 +162,8 @@ function loadWorkspaces() {
 // Upgrade an older persisted workspace to the current schema.
 // v1 → v2: a flat `editor.tabs` list becomes a single-group editor grid.
 // v2 → v3: panel.left/right/bottom renamed to primarySidebar/secondarySidebar/panel.
+// v3 → v4: "activity" terminology renamed to "view" (Activity Bar stays a
+// distinct concept; what we called activities are views hosted in a ViewContainer).
 function migrateWorkspace(ws) {
   if (!ws || !ws.layout) return ws
 
@@ -203,7 +203,7 @@ function migrateWorkspace(ws) {
       sectionState: {
         explorer: { sections: DEFAULT_SECTIONS.explorer.map(s => ({ ...s })) },
       },
-      activities: left.activities ?? [
+      views: left.views ?? left.activities ?? [
         { id: 'explorer', name: 'Explorer', context: { childrenByPath: {}, expandedNodes: [], selectedNodes: [] } },
       ],
     }
@@ -230,10 +230,45 @@ function migrateWorkspace(ws) {
       viewContainerOrder: ['debug'],
       sectionState: [{ id: 'debug', collapsed: false, size: 1 }],
       mergeGroups: {},
-      hiddenActivities: [],
+      hiddenViews: [],
     }
 
     ws.version = 3
+  }
+
+  // v3 → v4: rename persisted "activity" fields to "view" terminology
+  if (ws.version === 3) {
+    if (ws.layout.primarySidebar && !ws.layout.primarySidebar.views) {
+      ws.layout.primarySidebar.views = ws.layout.primarySidebar.activities ?? []
+      delete ws.layout.primarySidebar.activities
+    }
+    if (ws.layout.panel && !ws.layout.panel.hiddenViews) {
+      ws.layout.panel.hiddenViews = ws.layout.panel.hiddenActivities ?? []
+      delete ws.layout.panel.hiddenActivities
+    }
+    ws.version = 4
+  }
+
+  // v4 → v5: unify section storage into a per-container `viewSections` map keyed
+  // by view id (the SplitSectionArea level). The primary sidebar's explorer
+  // sections move out of `sectionState.explorer.sections`; movable containers
+  // start empty (per-view sections only appear once a section is adopted in).
+  if (ws.version === 4) {
+    const ps = ws.layout.primarySidebar
+    if (ps && !ps.viewSections) {
+      const stored = ps.sectionState?.explorer?.sections
+      ps.viewSections = {
+        explorer: (Array.isArray(stored) && stored.length ? stored : DEFAULT_SECTIONS.explorer).map(s => ({ ...s })),
+      }
+      delete ps.sectionState
+    }
+    for (const cid of ['secondarySidebar', 'panel']) {
+      if (ws.layout[cid] && !ws.layout[cid].viewSections) {
+        ws.layout[cid].viewSections = {}
+        delete ws.layout[cid].sectionState   // legacy, unused
+      }
+    }
+    ws.version = 5
   }
 
   // v3 patch: panel.isOpen was false by default before hide/show UI existed.
@@ -243,14 +278,13 @@ function migrateWorkspace(ws) {
     ws.layout.panel.isOpen = true
   }
 
-  // v3 patch: backfill sectionState for secondarySidebar/panel if missing
-  // (workspaces created before accordion-sections support was added).
-  if (ws.layout.secondarySidebar && !ws.layout.secondarySidebar.sectionState) {
-    const order = ws.layout.secondarySidebar.viewContainerOrder ?? ['preview', 'details', 'chat']
-    ws.layout.secondarySidebar.sectionState = order.map((id, i) => ({ id, collapsed: i > 0, size: i === 0 ? 2 : 1 }))
-  }
-  if (ws.layout.panel && !ws.layout.panel.sectionState) {
-    ws.layout.panel.sectionState = [{ id: 'debug', collapsed: false, size: 1 }]
+  // Backfill the per-container viewSections map for any container missing it.
+  for (const cid of ['primarySidebar', 'secondarySidebar', 'panel']) {
+    if (ws.layout[cid] && !ws.layout[cid].viewSections) {
+      ws.layout[cid].viewSections = cid === 'primarySidebar'
+        ? { explorer: DEFAULT_SECTIONS.explorer.map(s => ({ ...s })) }
+        : {}
+    }
   }
   if (ws.layout.secondarySidebar && !ws.layout.secondarySidebar.mergeGroups) {
     ws.layout.secondarySidebar.mergeGroups = {}
@@ -261,8 +295,8 @@ function migrateWorkspace(ws) {
   if (ws.layout.panel && !ws.layout.panel.viewContainerOrder) {
     ws.layout.panel.viewContainerOrder = [ws.layout.panel.activeViewContainerId ?? 'debug']
   }
-  if (ws.layout.panel && !ws.layout.panel.hiddenActivities) {
-    ws.layout.panel.hiddenActivities = []
+  if (ws.layout.panel && !ws.layout.panel.hiddenViews) {
+    ws.layout.panel.hiddenViews = []
   }
 
   return ws
@@ -418,7 +452,7 @@ export function useWorkspaces() {
   })
 
   // Ordered view container IDs for the secondary sidebar
-  const rightPanelActivityIds = computed({
+  const rightPanelViewIds = computed({
     get: () => activeWorkspace.value?.layout.secondarySidebar?.viewContainerOrder ?? ['preview', 'details', 'chat'],
     set: ids => mutate(ws => { ws.layout.secondarySidebar.viewContainerOrder = ids }),
   })
@@ -444,14 +478,14 @@ export function useWorkspaces() {
     get: () => activeWorkspace.value?.layout.panel?.activeViewContainerId ?? 'debug',
     set: v  => mutate(ws => { ws.layout.panel.activeViewContainerId = v }),
   })
-  const bottomPanelActivityIds = computed({
+  const bottomPanelViewIds = computed({
     get: () => activeWorkspace.value?.layout.panel?.viewContainerOrder ?? ['debug'],
     set: ids => mutate(ws => { ws.layout.panel.viewContainerOrder = ids }),
   })
 
-  const hiddenActivities = computed({
-    get: () => activeWorkspace.value?.layout.panel?.hiddenActivities ?? [],
-    set: v  => mutate(ws => { ws.layout.panel.hiddenActivities = v }),
+  const hiddenViews = computed({
+    get: () => activeWorkspace.value?.layout.panel?.hiddenViews ?? [],
+    set: v  => mutate(ws => { ws.layout.panel.hiddenViews = v }),
   })
 
   // Merge groups for the bottom panel (persisted)
@@ -460,74 +494,79 @@ export function useWorkspaces() {
     set: v  => mutate(ws => { ws.layout.panel.mergeGroups = v }),
   })
 
-  // ── Primary sidebar section state ────────────────────────────────────────
+  // ── Per-view section state (unified across all containers) ────────────────
+  //
+  // viewSections[containerId] = { [viewId]: Section[] }
+  // Section = { id, homeViewId, collapsed, size, title?, locked? }
+  // A view absent from the map renders a single implicit self-section (its own
+  // content, no section heading). Sections only get an explicit entry once a
+  // view owns >1 section (Explorer) or has adopted a foreign section (P4).
 
-  function getSectionState(viewContainerId) {
-    const stored = activeWorkspace.value?.layout.primarySidebar?.sectionState?.[viewContainerId]?.sections
-    if (Array.isArray(stored) && stored.length > 0) {
-      // Rename 'folders' → 'places' for any data written before this rename
-      return stored.map(s => s.id === 'folders'
+  // The home ("biological") View of a section: explicit if set, else 'explorer'
+  // for the explorer container, else the view's own id (an implicit self-section).
+  function _homeOf(viewId, s) {
+    if (s.homeViewId) return s.homeViewId
+    return viewId === 'explorer' ? 'explorer' : s.id
+  }
+
+  function _normalizeSections(viewId, sections) {
+    const out = sections.map(s => {
+      // Rename 'folders' → 'places' for any data written before that rename.
+      const r = s.id === 'folders'
         ? { ...s, id: 'places', title: s.title === 'Folders' ? 'Places' : s.title }
-        : { ...s })
+        : { ...s }
+      r.homeViewId = _homeOf(viewId, r)
+      return r
+    })
+    // Explorer invariants: Places leads and stays locked.
+    if (viewId === 'explorer') {
+      const pi = out.findIndex(s => s.id === 'places')
+      if (pi > 0) out.unshift(out.splice(pi, 1)[0])
+      for (const s of out) {
+        if (DEFAULT_SECTIONS.explorer.find(d => d.id === s.id)?.locked) s.locked = true
+      }
     }
-    return (DEFAULT_SECTIONS[viewContainerId] ?? []).map(s => ({ ...s }))
+    return out
   }
 
-  function saveSectionState(viewContainerId, sections) {
+  function getViewSections(containerId) {
+    const stored = activeWorkspace.value?.layout[containerId]?.viewSections ?? {}
+    const out = {}
+    for (const [viewId, sections] of Object.entries(stored)) {
+      if (Array.isArray(sections) && sections.length) out[viewId] = _normalizeSections(viewId, sections)
+    }
+    // The primary sidebar always has Explorer's sections.
+    if (containerId === 'primarySidebar' && !out.explorer) {
+      out.explorer = DEFAULT_SECTIONS.explorer.map(s => ({ ...s }))
+    }
+    return out
+  }
+
+  function saveViewSections(containerId, map) {
     mutate(ws => {
-      ws.layout.primarySidebar.sectionState ??= {}
-      ws.layout.primarySidebar.sectionState[viewContainerId] = { sections: sections.map(s => ({ ...s })) }
-    })
-  }
-
-  // ── Secondary sidebar section state ─────────────────────────────────────
-
-  function getSecondarySidebarSections(activityIds) {
-    const stored = activeWorkspace.value?.layout.secondarySidebar?.sectionState ?? []
-    return activityIds.map(id => {
-      const found = stored.find(s => s.id === id)
-      return found ? { ...found } : { id, collapsed: true, size: 1 }
-    })
-  }
-
-  function saveSecondarySidebarSections(sections) {
-    mutate(ws => {
-      ws.layout.secondarySidebar.sectionState = sections.map(({ id, collapsed, size }) => ({ id, collapsed, size }))
-    })
-  }
-
-  // ── Bottom panel section state ───────────────────────────────────────────
-
-  function getPanelSections(activityIds) {
-    const stored = activeWorkspace.value?.layout.panel?.sectionState ?? []
-    return activityIds.map(id => {
-      const found = stored.find(s => s.id === id)
-      return found ? { ...found } : { id, collapsed: true, size: 1 }
-    })
-  }
-
-  function savePanelSections(sections) {
-    mutate(ws => {
-      ws.layout.panel.sectionState = sections.map(({ id, collapsed, size }) => ({ id, collapsed, size }))
+      ws.layout[containerId] ??= {}
+      ws.layout[containerId].viewSections = Object.fromEntries(
+        Object.entries(map).map(([viewId, sections]) => [viewId, sections.map(s => ({ ...s }))])
+      )
     })
   }
 
   // ── Explorer tree context ────────────────────────────────────────────────
 
-  function _explorerAct(ws) {
-    return ws.layout.primarySidebar?.activities?.find(a => a.id === 'explorer')
+  function _explorerView(ws) {
+    return ws.layout.primarySidebar?.views?.find(v => v.id === 'explorer')
   }
 
   const explorerContext = computed(() => {
     const ws = activeWorkspace.value
     if (!ws) return { childrenByPath: {}, expandedNodes: [], selectedNodes: [] }
-    return _explorerAct(ws)?.context ?? { childrenByPath: {}, expandedNodes: [], selectedNodes: [] }
+    return _explorerView(ws)?.context ?? { childrenByPath: {}, expandedNodes: [], selectedNodes: [] }
   })
 
   function updateExplorerContext(ctx) {
     mutate(ws => {
-      const act = _explorerAct(ws)
-      if (act) act.context = { ...act.context, ...ctx }
+      const view = _explorerView(ws)
+      if (view) view.context = { ...view.context, ...ctx }
     })
   }
 
@@ -602,24 +641,18 @@ export function useWorkspaces() {
     rightpaneVisible,
     rightpaneWidth,
     rightPanel,
-    rightPanelActivityIds,
+    rightPanelViewIds,
     secondarySidebarMergeGroups,
     // Layout: bottom panel
     bottompaneVisible,
     bottompaneHeight,
     bottomPanel,
-    bottomPanelActivityIds,
-    hiddenActivities,
+    bottomPanelViewIds,
+    hiddenViews,
     panelMergeGroups,
-    // Section state — primary sidebar
-    getSectionState,
-    saveSectionState,
-    // Section state — secondary sidebar
-    getSecondarySidebarSections,
-    saveSecondarySidebarSections,
-    // Section state — bottom panel
-    getPanelSections,
-    savePanelSections,
+    // Per-view section state (unified across all containers)
+    getViewSections,
+    saveViewSections,
     // Explorer
     explorerContext,
     updateExplorerContext,
