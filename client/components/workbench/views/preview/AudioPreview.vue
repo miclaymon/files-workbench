@@ -5,7 +5,7 @@
 </template>
 
 <script setup>
-import AudioPlayer from '../AudioPlayer.vue'
+import AudioPlayer from '../../directory/AudioPlayer.vue'
 
 defineProps({
   src: { type: String, required: true },

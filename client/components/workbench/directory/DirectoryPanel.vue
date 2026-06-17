@@ -41,7 +41,7 @@
         </div>
       </div>
 
-      <BreadcrumbFullPath
+      <DirectoryBreadcrumb
         :path="currentPath"
         :changeTabPath="changeTabPath"
         @navigate="handleNavigate"
@@ -197,9 +197,9 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import DirectoryLayout from './DirectoryLayout.vue'
-import BreadcrumbFullPath from './BreadcrumbFullPath.vue'
-import Tooltip from './Tooltip.vue'
-import FloatingMenu from './FloatingMenu.vue'
+import DirectoryBreadcrumb from './DirectoryBreadcrumb.vue'
+import Tooltip from '../ui/Tooltip.vue'
+import FloatingMenu from '../ui/FloatingMenu.vue'
 import { mdiFolder } from '@mdi/js'
 import { useDebugLog } from '~/composables/useDebugLog.js'
 

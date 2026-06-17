@@ -121,7 +121,7 @@
         <span>No open tabs in this group.</span>
       </div>
 
-      <DropOverlay v-if="bodyRegion" :region="bodyRegion" />
+      <EditorDropOverlay v-if="bodyRegion" :region="bodyRegion" />
     </div>
 
     <FloatingMenu

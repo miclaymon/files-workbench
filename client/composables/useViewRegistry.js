@@ -1,12 +1,12 @@
 import { markRaw } from 'vue'
 import { mdiFileTree, mdiEye, mdiInformation, mdiMessage, mdiBug, mdiFolderMultiple, mdiFileDocumentMultiple, mdiNotificationClearAll, mdiRefresh } from '@mdi/js'
 
-import ExplorerPanel   from '../components/workbench/ExplorerPanel.vue'
-import OpenEditorsView from '../components/workbench/OpenEditorsView.vue'
-import PreviewPanel    from '../components/workbench/PreviewPanel.vue'
-import DetailsPanel    from '../components/workbench/DetailsPanel.vue'
-import DebugPanel      from '../components/workbench/DebugPanel.vue'
-import ChatPanel       from '../components/workbench/ChatPanel.vue'
+import ExplorerPanel   from '../components/workbench/explorer/ExplorerPanel.vue'
+import OpenEditorsView from '../components/workbench/explorer/OpenEditorsView.vue'
+import PreviewPanel    from '../components/workbench/views/PreviewPanel.vue'
+import DetailsPanel    from '../components/workbench/views/DetailsPanel.vue'
+import DebugPanel      from '../components/workbench/views/DebugPanel.vue'
+import ChatPanel       from '../components/workbench/views/ChatPanel.vue'
 
 // ── View / section content registry ────────────────────────────────────────────
 //

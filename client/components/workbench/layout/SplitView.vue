@@ -37,7 +37,7 @@ import { computed } from 'vue'
 import { mdiChevronRight, mdiChevronDown } from '@mdi/js'
 import SplitSectionArea from './SplitSectionArea.vue'
 import ViewActions from './ViewActions.vue'
-import { resolveViewActions } from '../../composables/useViewRegistry.js'
+import { resolveViewActions } from '../../../composables/useViewRegistry.js'
 
 // A whole View context (Explorer, Debug, Preview…) inside a SplitViewArea. Its
 // heading — lighter than a section heading, to read as a context boundary — is

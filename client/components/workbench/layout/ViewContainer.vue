@@ -92,9 +92,9 @@ import { ref, computed } from 'vue'
 import { mdiDotsHorizontal } from '@mdi/js'
 import SplitViewArea from './SplitViewArea.vue'
 import ViewActions from './ViewActions.vue'
-import FloatingMenu from './FloatingMenu.vue'
-import { useViewDrag, DRAG_MIME } from '../../composables/useViewDrag.js'
-import { resolveViewActions } from '../../composables/useViewRegistry.js'
+import FloatingMenu from '../ui/FloatingMenu.vue'
+import { useViewDrag, DRAG_MIME } from '../../../composables/useViewDrag.js'
+import { resolveViewActions } from '../../../composables/useViewRegistry.js'
 
 const { activeDrag } = useViewDrag()
 

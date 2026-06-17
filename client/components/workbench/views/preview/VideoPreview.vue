@@ -8,7 +8,7 @@
 </template>
 
 <script setup>
-import VideoPlayer from '../VideoPlayer.vue'
+import VideoPlayer from '../../directory/VideoPlayer.vue'
 
 defineProps({
   src: { type: String, required: true },

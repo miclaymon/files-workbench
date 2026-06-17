@@ -11,7 +11,7 @@
 
 <script setup>
 import { computed, inject } from 'vue'
-import { getViewEntry } from '../../composables/useViewRegistry.js'
+import { getViewEntry } from '../../../composables/useViewRegistry.js'
 
 // Renders the content for a view/section id by looking it up in the registry and
 // binding the props/events it declares against the shared `viewCtx` provided by

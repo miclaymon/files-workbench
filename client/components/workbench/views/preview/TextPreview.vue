@@ -5,7 +5,7 @@
 </template>
 
 <script setup>
-import MonacoEditor from '../MonacoEditor.vue'
+import MonacoEditor from '../../editor/MonacoEditor.vue'
 
 defineProps({
   text: { type: String, default: '' },

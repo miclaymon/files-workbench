@@ -26,6 +26,21 @@ In development, Nuxt's Vite dev server proxies `/_api/v2/*` to the data server o
 
 ## Frontend component model
 
+### Component folder structure
+
+All workbench components live under `client/components/workbench/` and are grouped into six subfolders (Nuxt's `pathPrefix: false` keeps auto-import names flat, so component names are unaffected by depth):
+
+| Folder | Contents |
+|---|---|
+| `layout/` | `ViewContainer`, `SplitViewArea`, `SplitView`, `SplitSectionArea`, `SplitSection`, `ViewContentHost`, `ViewActions`, `ViewDropOverlay`, `Sash` |
+| `editor/` | `GridView`, `EditorGroup`, `EditorDropOverlay`, `DirectoryTab`, `HomePage`, `MonacoEditor` |
+| `directory/` | `DirectoryPanel`, `DirectoryLayout`, all `Directory*Layout` variants, `DirectoryBreadcrumb`, `DirectoryHoverPreview`, `AudioPlayer`, `VideoPlayer` |
+| `explorer/` | `ExplorerPanel`, `ExplorerTree`, `TreeList`, `TreeItem`, `OpenEditorsView` |
+| `views/` | `PreviewPanel`, `DetailsPanel`, `ChatPanel`, `DebugPanel`; `preview/` subfolder for preview sub-components |
+| `ui/` | `FloatingMenu`, `ContextMenu`, `Tooltip`, `CommandPalette`, `SettingsModal`, `KeyboardShortcutsModal` |
+
+`Workbench.vue` lives at the root of `components/workbench/`.
+
 ### Workbench shell
 
 `Workbench.vue` is the root component. It owns:
