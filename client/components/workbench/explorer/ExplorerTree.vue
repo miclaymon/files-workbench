@@ -18,7 +18,7 @@
 import { computed, ref, watch } from 'vue'
 import TreeList from './TreeList.vue'
 import { explorerList } from '~/lib/explorer-api.js'
-import { useTreeDrag } from '~/composables/useTreeDrag.js'
+import { useTreeDrag } from '~/composables/interaction/useTreeDrag.js'
 
 // Falls back to legacy localStorage key when no explorerState prop is supplied
 const LEGACY_KEY = 'workbench-explorer-tree'

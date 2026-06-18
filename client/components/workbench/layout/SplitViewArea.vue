@@ -38,8 +38,8 @@ import { ref } from 'vue'
 import Sash from './Sash.vue'
 import SplitView from './SplitView.vue'
 import ViewDropOverlay from './ViewDropOverlay.vue'
-import { useStackResize } from '../../../composables/useStackResize.js'
-import { useViewDrag, DRAG_MIME } from '../../../composables/useViewDrag.js'
+import { useStackResize } from '../../../composables/interaction/useStackResize.js'
+import { useViewDrag, DRAG_MIME } from '../../../composables/interaction/useViewDrag.js'
 import { getViewEntry } from '../../../composables/useViewRegistry.js'
 
 // Stacks the SplitViews of one tab slot (a "SplitViewArea"). View headings

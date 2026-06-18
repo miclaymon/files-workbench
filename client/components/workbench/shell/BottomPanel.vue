@@ -34,7 +34,7 @@
 import { ref } from 'vue'
 import { mdiClose, mdiArrowExpand, mdiArrowCollapse } from '@mdi/js'
 import ViewContainer from '../layout/ViewContainer.vue'
-import { useSideBar } from '../../composables/useSideBar.js'
+import { useSideBar } from '../../composables/interaction/useSideBar.js'
 
 // The bottom panel. Functionally the same movable/droppable container as the
 // secondary side bar, differing only in placement: it resizes by height from a

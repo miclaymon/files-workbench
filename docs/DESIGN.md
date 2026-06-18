@@ -42,19 +42,41 @@ All workbench components live under `client/components/workbench/` and are group
 
 `Workbench.vue` lives at the root of `components/workbench/`.
 
+### Composable folder structure
+
+Composables live in `client/composables/` and are split into three layers (Nuxt auto-imports scan recursively, so subfolder depth is transparent):
+
+| Folder | Contents |
+|---|---|
+| `composables/*.js` | Foundational services and utilities: `useWorkspaces`, `usePreferences`, `useFileOpsQueue`, `useActionHistory`, `useDebugLog`, `useLayoutGrid`, `useViewRegistry`, `useIconPack`, `useCustomIcon`, `useRpc` |
+| `composables/interaction/` | UI-behavior primitives consumed by individual components: drag systems (`useDrag`, `useRightClickDrag`, `useTreeDrag`, `useEditorDnd`, `useViewDrag`), `useClickDebounce`, `useHoverPreview`, `useSideBar`, `useStackResize` |
+| `composables/workbench/` | Workbench assembly-root slices — see Workbench shell section: `useStatusBar`, `useArchive`, `useEditorGrid`, `useViewLayout`, `useSelection`, `useFileOperations`, `useFileContextMenus`, `useAppMenus`, `useWorkbenchKeyboard` |
+
 ### Workbench shell
 
-`Workbench.vue` is the root component. It owns the global app state (tabs, selected/focused items, clipboard, context menu), all the business logic (file operations, menu item definitions, the editor controller, selection/navigation handlers), and the persisted workspace model. It composes the visible chrome from `shell/` components, keeping all state and logic centralized — the chrome pieces are presentational (props in, events out):
+`Workbench.vue` is the root component, structured as a thin **assembly root**: its business logic and state are decomposed into composable "slices" (hand-rolled store slices, à la Pinia), which it instantiates, wires together by passing each slice's return into its dependents (dependency injection by parameter — no hidden globals, no circular deps), and `provide`s the few that deep descendants need. The leaf slices are instantiated first; the order respects the dependency graph below. The slices:
+
+- `useStatusBar` — server-ping lifecycle, the transient status line (+ `flashStatus`), and directory stats *(leaf)*
+- `useArchive` — archive-file detection (`isArchiveItem`) + host capabilities *(leaf)*
+- `useEditorGrid` — the editor split-grid model, every structural mutation, and the provided `editorController`; deliberately selection-free so the selection dependency stays one-directional
+- `useViewLayout` — the panel/sidebar layout engine: per-container view lists, merge groups, per-view section state, every drag-driven layout mutation (transfer / merge / unmerge / section adoption), and the provided `workbenchChrome`
+- `useSelection` — current selection + explorer/directory/open/navigate handlers (consumes the editor grid)
+- `useFileOperations` — create/rename/trash/delete/compress/extract/paste/move/undo + clipboard, elevation dialog, and the install prompt
+- `useFileContextMenus` — the cursor-positioned ContextMenu item lists (editor tab / background / right-drag / item)
+- `useAppMenus` — the File/Edit/View + Settings menus, command-palette command list, and modal open-state
+- `useWorkbenchKeyboard` — window-level keyboard shortcuts (self-manages its listener)
+
+`useWorkspaces` is the single persistence instance; Workbench keeps it and passes it to `useViewLayout` (and pulls `getInitialEditor`/`saveEditor`/`explorerContext` for the editor + viewCtx). Workbench still owns the small local appearance/maximize toggles and the `viewCtx` bag. It composes the visible chrome from `shell/` components, which stay presentational (props in, events out):
 
 - `TitleBar` (`shell/`) — brand + `MenuBar` (File/Edit/View, each `{ key, label, items }`; the items arrays stay computed in `Workbench`), `AppHistory` (global back/forward — a placeholder, distinct from a tab's navigation history and from undo/redo), `CommandCenter` (the omnibar → command palette), and Electron window controls. `MenuBar` and `ActivityBar` own their own dropdown open/position state locally.
 - `ActivityBar` (`shell/`) — explorer/search/storage switcher + the Settings gear (which owns its own menu, fed `settingsMenuItems`); emits `toggle-view`.
 - `PrimarySideBar` (`shell/`) — the left pane: a non-droppable `ViewContainer` whose Explorer view hosts the Open Editors + Places sections, plus a Search placeholder; switches on the active primary view
-- `Editor` (`editor/`) — the recursive split grid of editor groups; receives `viewRoot`/`activeGroupId`/`maximizedGroupId`/`prefs` and a `registerGroup` ref-callback prop (so `Workbench` keeps owning the EditorGroup instance registry it uses for imperative refresh/rename), and re-emits every EditorGroup event up unchanged
+- `Editor` (`editor/`) — the recursive split grid of editor groups; receives `viewRoot`/`activeGroupId`/`maximizedGroupId`/`prefs` and a `registerGroup` ref-callback prop (the `useEditorGrid` slice owns the EditorGroup instance registry it uses for imperative refresh/rename), and re-emits every EditorGroup event up unchanged
 - `SecondarySideBar` + `BottomPanel` (`shell/`) — the two movable, droppable panes, each wrapping a tabbed `ViewContainer` (see ViewContainer panel system) plus its maximize/hide actions
 - All floating UI (context menus, right-drag drop menus, command palette, settings modal, keyboard shortcuts modal)
 - `StatusBar` (`shell/`) — directory item count/size, selection count/size, clipboard pill (mode + count + size), and the server-connection indicator
 
-The three panes share `useSideBar.js`, which (1) runs the mousedown drag-resize loop, reporting new sizes back via `v-model:width`/`v-model:height` so persistence stays in `Workbench`, and (2) attaches a `ResizeObserver` that derives each pane's split direction (`dropDirection`) from its measured shape — tall → `col`, wide → `row` — instead of hard-coding it. So a side bar stacks merged views vertically and the (wide) bottom panel stacks them horizontally automatically, and the direction adapts if a pane is ever repositioned. Cross-container coordination (`handleViewTransfer`/`Merge`/`Unmerge`/`handleSectionMove`, which move views and sections *between* panes) stays centralized in `Workbench`; the pane components just forward `ViewContainer`'s events.
+The three panes share `useSideBar.js`, which (1) runs the mousedown drag-resize loop, reporting new sizes back via `v-model:width`/`v-model:height` so persistence stays in `Workbench`, and (2) attaches a `ResizeObserver` that derives each pane's split direction (`dropDirection`) from its measured shape — tall → `col`, wide → `row` — instead of hard-coding it. So a side bar stacks merged views vertically and the (wide) bottom panel stacks them horizontally automatically, and the direction adapts if a pane is ever repositioned. Cross-container coordination (`handleViewTransfer`/`Merge`/`Unmerge`/`handleSectionMove`, which move views and sections *between* panes) lives in the `useViewLayout` slice instantiated by `Workbench`; the pane components just forward `ViewContainer`'s events.
 
 The View menu exposes two submenus: **Appearance** (toggle sidebar/panel/status bar visibility, zen mode, centered layout) and **Views** (toggle individual views such as Preview, Details, Chat, and Debug on or off). Toggling a view off marks it as intentionally hidden in the workspace; startup recovery (`recoverMissingViews`) skips hidden views so they stay off across reloads.
 

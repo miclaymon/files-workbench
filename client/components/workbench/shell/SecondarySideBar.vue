@@ -34,7 +34,7 @@
 import { ref } from 'vue'
 import { mdiClose, mdiArrowExpand, mdiArrowCollapse } from '@mdi/js'
 import ViewContainer from '../layout/ViewContainer.vue'
-import { useSideBar } from '../../composables/useSideBar.js'
+import { useSideBar } from '../../composables/interaction/useSideBar.js'
 
 // The secondary side bar (right). A movable, droppable panel: views can merge,
 // transfer in/out, and adopt sections. Split direction adapts to the pane shape

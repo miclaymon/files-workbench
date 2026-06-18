@@ -147,7 +147,7 @@
 <script setup>
 import { computed, inject, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { mdiFolder, mdiClose, mdiPin, mdiChevronDown, mdiLock, mdiDotsHorizontal } from '@mdi/js'
-import { useEditorDnd, dropRegion, regionToSide } from '~/composables/useEditorDnd.js'
+import { useEditorDnd, dropRegion, regionToSide } from '~/composables/interaction/useEditorDnd.js'
 
 const props = defineProps({
   group:       { type: Object,  required: true },

@@ -3,35 +3,19 @@
 
     <!-- Header: view tab strip + action slots + ellipsis menu -->
     <div class="vc-header" @contextmenu.prevent="openHeaderMenu($event)">
-      <div
-        class="vc-view-tab-bar"
-        role="tablist"
-        @dragover="onBarDragOver"
-        @dragleave="onBarDragLeave"
-        @drop="onBarDrop"
-      >
-        <template v-for="(view, i) in views" :key="view.id">
-          <span v-if="dropBeforeIdx === i" class="vc-drop-indicator" />
-          <button
-            class="vc-view-tab"
-            :class="{ active: modelValue === view.id, 'is-dragging': draggedId === view.id }"
-            role="tab"
-            :aria-selected="modelValue === view.id"
-            :title="view.label"
-            draggable="true"
-            @click="onViewTabClick(view)"
-            @contextmenu.prevent.stop="openTabMenu(view, $event)"
-            @dragstart="onTabDragStart(view, i, $event)"
-            @dragend="onTabDragEnd"
-          >
-            <svg v-if="showTabIcons && view.icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" class="vc-view-tab-icon">
-              <path :d="view.icon" />
-            </svg>
-            <span class="vc-view-tab-label">{{ view.label }}</span>
-          </button>
-        </template>
-        <span v-if="dropBeforeIdx === views.length" class="vc-drop-indicator" />
-      </div>
+      <ViewTabStrip
+        ref="tabStripRef"
+        :views="views"
+        :modelValue="modelValue"
+        :containerId="containerId"
+        :droppable="droppable"
+        :showTabIcons="showTabIcons"
+        @select="emit('update:modelValue', $event)"
+        @tab-contextmenu="openTabMenu($event.view, $event.event)"
+        @transfer="emit('transfer', $event)"
+        @unmerge="emit('unmerge', $event)"
+        @section-to-tab="emit('section-to-tab', $event)"
+      />
 
       <!-- Action buttons that have no heading to live in: while the active view is
            standalone (no SplitViewHeading) its bubbled section actions + view
@@ -104,9 +88,10 @@
 import { ref, computed, inject } from 'vue'
 import { mdiDotsHorizontal } from '@mdi/js'
 import SplitViewArea from './SplitViewArea.vue'
+import ViewTabStrip from './ViewTabStrip.vue'
 import ViewActions from './ViewActions.vue'
 import FloatingMenu from '../ui/FloatingMenu.vue'
-import { useViewDrag, DRAG_MIME, SECTION_DRAG_MIME } from '../../../composables/useViewDrag.js'
+import { useViewDrag } from '../../../composables/interaction/useViewDrag.js'
 import { getViewEntry, viewActions, bubbledSectionActions } from '../../../composables/useViewRegistry.js'
 import { uuidv4 } from '../../../composables/useWorkspaces.js'
 
@@ -197,115 +182,16 @@ function onContentDrop(targetViewId, { zone }) {
   clearDragState()
 }
 
-// ── Tab drag-to-reorder / cross-container drag ────────────────────────────────
+// ── Content-area drop cleanup ─────────────────────────────────────────────────
+// A merge / re-absorb drop can remove the dragged tab before `dragend` fires, so
+// the content-drop handler clears drag state explicitly: module-level refs here,
+// plus the tab strip's own visual state via its exposed reset().
+const tabStripRef = ref(null)
 
-const draggedId     = ref(null)
-const dropBeforeIdx = ref(-1)
-
-function onTabDragStart(view, index, event) {
-  draggedId.value = view.id
-  activeDrag.value = { viewId: view.id, fromContainerId: props.containerId }
-  event.dataTransfer.setData(DRAG_MIME, JSON.stringify({ viewId: view.id, fromContainerId: props.containerId }))
-  event.dataTransfer.effectAllowed = 'move'
-}
-
-// Reset all drag state. `dragend` normally clears the module-level refs, but a
-// drop that removes the dragged element (merge / re-absorb / transfer) can stop
-// `dragend` from firing, so drop handlers call this explicitly — otherwise a
-// stale activeDrag keeps the drop overlay mounted and blocks interaction.
 function clearDragState() {
-  draggedId.value         = null
-  dropBeforeIdx.value     = -1
   activeDrag.value        = null
   activeSectionDrag.value = null
-}
-
-function onTabDragEnd() {
-  clearDragState()
-}
-
-// A section can be dropped on the tab strip to spawn its biological parent as a
-// new tab — but only where dropping is allowed and the section may leave its home.
-function _sectionDroppableOnBar() {
-  const d = activeSectionDrag.value
-  return props.droppable && !!d && !d.locked && d.dockable !== false
-}
-
-function onBarDragOver(event) {
-  const types = event.dataTransfer.types
-  const accepts = types.includes(DRAG_MIME) || (types.includes(SECTION_DRAG_MIME) && _sectionDroppableOnBar())
-  if (!accepts) return   // no preventDefault — drop event won't fire; browser shows not-allowed cursor
-  event.preventDefault()
-  event.dataTransfer.dropEffect = 'move'
-  const tabs = [...event.currentTarget.querySelectorAll('.vc-view-tab')]
-  let insertIdx = tabs.length
-  for (let i = 0; i < tabs.length; i++) {
-    const rect = tabs[i].getBoundingClientRect()
-    if (event.clientX < rect.left + rect.width / 2) { insertIdx = i; break }
-  }
-  dropBeforeIdx.value = insertIdx
-}
-
-function onBarDragLeave(event) {
-  if (!event.currentTarget.contains(event.relatedTarget)) dropBeforeIdx.value = -1
-}
-
-function onBarDrop(event) {
-  // Section dropped on the tab strip → spawn its biological parent as a new tab.
-  const secRaw = props.droppable ? event.dataTransfer.getData(SECTION_DRAG_MIME) : ''
-  if (secRaw) {
-    event.preventDefault()
-    try {
-      const p = JSON.parse(secRaw)
-      if (!p.locked && p.dockable !== false) {
-        const toIndex = dropBeforeIdx.value < 0 ? props.views.length : dropBeforeIdx.value
-        emit('section-to-tab', {
-          sectionId:       p.sectionId,
-          fromViewId:      p.fromViewId,
-          fromContainerId: p.fromContainerId,
-          homeViewId:      p.homeViewId,
-          toContainerId:   props.containerId,
-          toIndex,
-        })
-      }
-    } catch {}
-    clearDragState()
-    return
-  }
-
-  const raw = event.dataTransfer.getData(DRAG_MIME)
-  if (!raw) return
-  event.preventDefault()
-  try {
-    const { viewId, fromContainerId, fromMergedViewId } = JSON.parse(raw)
-    const toIndex = dropBeforeIdx.value < 0 ? props.views.length : dropBeforeIdx.value
-
-    if (fromMergedViewId) {
-      // SplitView heading dragged back to the tab bar → extract from merge group
-      emit('unmerge', {
-        fromViewId:    fromMergedViewId,
-        fromContainerId,
-        extractViewId: viewId,
-        toContainerId: props.containerId,
-        toIndex,
-      })
-    } else {
-      // Normal tab reorder / cross-container transfer
-      if (fromContainerId === props.containerId) {
-        const fromIdx = props.views.findIndex(v => v.id === viewId)
-        if (fromIdx < 0) return
-        if (toIndex === fromIdx || toIndex === fromIdx + 1) return
-      }
-      emit('transfer', { fromContainerId, toContainerId: props.containerId, viewId, toIndex })
-    }
-  } catch {}
-  clearDragState()
-}
-
-// ── Section / tab interaction ─────────────────────────────────────────────────
-
-function onViewTabClick(view) {
-  emit('update:modelValue', view.id)
+  tabStripRef.value?.reset()
 }
 
 // ── Section presence menu (shared: "More actions…" dropdown + section menu) ────
@@ -464,54 +350,6 @@ function openSectionMenu({ viewId, sectionId, instanceId, locked, x, y }) {
   height: 35px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
-}
-
-.vc-view-tab-bar {
-  display: flex;
-  flex-flow: row nowrap;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  padding-inline: 8px;
-  gap: 8px;
-}
-
-.vc-view-tab {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 4px;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--text);
-  opacity: 0.45;
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.025ch;
-  white-space: nowrap;
-  flex-shrink: 0;
-  user-select: none;
-  transition: opacity 0.12s, border-color 0.12s;
-  height: 100%;
-}
-.vc-view-tab:hover  { opacity: 0.8; }
-.vc-view-tab.active { opacity: 1; border-bottom-color: var(--accent); }
-.vc-view-tab.is-dragging { opacity: 0.25; }
-
-.vc-view-tab-icon { flex-shrink: 0; }
-
-.vc-drop-indicator {
-  display: inline-block;
-  width: 2px;
-  height: 16px;
-  background: var(--accent);
-  border-radius: 1px;
-  flex-shrink: 0;
-  align-self: center;
 }
 
 .vc-menu-btn {
