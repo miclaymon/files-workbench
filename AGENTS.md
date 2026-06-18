@@ -196,6 +196,14 @@ When a custom drag ends, a `click` event fires after `mouseup`. `wasDragging` in
 - No comments unless the WHY is non-obvious. No trailing summary comments.
 - All theme colors are CSS custom properties defined in `client/assets/css/workbench.css`. Theme JSON files in `config/themes/` map variable names to hex values.
 
+### CSS conventions
+
+- **Native nesting**: use `&` child blocks instead of repeating selectors. Nest state variants (`:hover`, `.--modifier`) and child elements inside their semantic parent.
+- **Container queries over media queries**: panels are embedded in resizable panes, so `@media` (viewport-relative) is useless for layout adaptation. Declare `container-type: inline-size; container-name: <name>;` on the relevant wrapper and use `@container <name> (max-width: Xpx)` at the bottom of the `<style scoped>` block.
+- **`@layer` belongs in `workbench.css`**: scoped component styles do not use `@layer`. Cascade layers for utility classes and global resets go in `client/assets/css/workbench.css` only.
+- **Layout variants via `data-layout`**: `DirectoryLayout.vue` controls all view modes through a `data-layout` attribute on `.dl`. Nest each variant inside `.dl { &[data-layout="x"] { … } }`. Shared behavior across multiple layouts uses `:is()` — e.g., `&:is([data-layout="list"], [data-layout="details"]) { … }`.
+- **No `background` double-declarations**: when a layout variant sets `background: transparent` on `.dl-thumb`, don't also set a non-transparent default above it. Keep the single correct value.
+
 ## Configuration files
 
 User configuration lives in `config/` at the repo root.

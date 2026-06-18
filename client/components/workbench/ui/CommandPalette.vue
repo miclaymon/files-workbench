@@ -203,8 +203,9 @@ function run(cmd) {
   font-family: inherit;
   padding: 0;
   min-width: 0;
+
+  &::placeholder { color: var(--text-muted, #666); }
 }
-.cp-input::placeholder { color: var(--text-muted, #666); }
 
 .cp-hint {
   font-size: 11px;
@@ -214,6 +215,7 @@ function run(cmd) {
 }
 
 /* ── Results list ──────────────────────────────────────────────────────────── */
+
 .cp-results {
   overflow-y: auto;
   max-height: 380px;
@@ -229,40 +231,41 @@ function run(cmd) {
   height: 30px;
   cursor: pointer;
   user-select: none;
-}
-.cp-item--active { background: var(--accent, #094771); }
 
-.cp-item-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex: 1;
-}
+  &.cp-item--active { background: var(--accent, #094771); }
 
-.cp-item-check {
-  width: 14px;
-  height: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: var(--text, #ccc);
-}
+  .cp-item-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 1;
+  }
 
-.cp-item-text {
-  font-size: 13px;
-  color: var(--text, #ccc);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+  .cp-item-check {
+    width: 14px;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--text, #ccc);
+  }
 
-.cp-item-category {
-  font-size: 11px;
-  color: var(--text-muted, #8c8c8c);
-  white-space: nowrap;
-  flex-shrink: 0;
+  .cp-item-text {
+    font-size: 13px;
+    color: var(--text, #ccc);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cp-item-category {
+    font-size: 11px;
+    color: var(--text-muted, #8c8c8c);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
 }
 
 .cp-empty {
@@ -272,7 +275,10 @@ function run(cmd) {
 }
 
 /* ── Transition ────────────────────────────────────────────────────────────── */
-.cp-enter-active, .cp-leave-active { transition: opacity 0.1s, transform 0.1s; }
-.cp-enter-from, .cp-leave-to { opacity: 0; transform: translateY(-6px); }
-.cp-enter-to, .cp-leave-from { opacity: 1; transform: translateY(0); }
+.cp-enter-active,
+.cp-leave-active { transition: opacity 0.1s, transform 0.1s; }
+.cp-enter-from,
+.cp-leave-to { opacity: 0; transform: translateY(-6px); }
+.cp-enter-to,
+.cp-leave-from { opacity: 1; transform: translateY(0); }
 </style>

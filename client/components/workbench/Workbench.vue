@@ -439,33 +439,29 @@ function onGroupStats({ groupId, stats }) {
    live inside the PrimarySideBar / SecondarySideBar / BottomPanel child
    components, so :deep() reaches them from the maximize classes Workbench
    toggles on .workbench-content / .editor-column. */
-.workbench-content.right-maximized .editor-column,
-.workbench-content.right-maximized :deep(.sidebar),
-.workbench-content.right-maximized :deep(.resize-handle) { display: none !important; }
-.workbench-content.right-maximized :deep(.rightpane) {
-  flex: 1 !important;
-  min-width: 0 !important;
-  border-left: none !important;
+
+.workbench-content {
+  &.right-maximized {
+    .editor-column           { display: none !important; }
+    :deep(.sidebar),
+    :deep(.resize-handle)    { display: none !important; }
+    :deep(.rightpane)        { flex: 1 !important; min-width: 0 !important; border-left: none !important; }
+  }
+  &.left-maximized {
+    .editor-column           { display: none !important; }
+    :deep(.rightpane),
+    :deep(.resize-handle)    { display: none !important; }
+    :deep(.sidebar)          { display: flex !important; flex: 1 !important; min-width: 0 !important; width: auto !important; }
+  }
 }
 
-.workbench-content.left-maximized .editor-column,
-.workbench-content.left-maximized :deep(.rightpane),
-.workbench-content.left-maximized :deep(.resize-handle) { display: none !important; }
-.workbench-content.left-maximized :deep(.sidebar) {
-  display: flex !important;
-  flex: 1 !important;
-  min-width: 0 !important;
-  width: auto !important;
+.editor-column {
+  &.bottom-maximized {
+    .editor-area             { display: none !important; }
+    :deep(.resize-handle)    { display: none !important; }
+    :deep(.bottompane)       { flex: 1 !important; min-height: 0 !important; height: auto !important; }
+  }
 }
-
-.editor-column.bottom-maximized .editor-area,
-.editor-column.bottom-maximized :deep(.resize-handle) { display: none !important; }
-.editor-column.bottom-maximized :deep(.bottompane) {
-  flex: 1 !important;
-  min-height: 0 !important;
-  height: auto !important;
-}
-
 
 /* Toast */
 .toast {
@@ -492,6 +488,7 @@ function onGroupStats({ groupId, stats }) {
   justify-content: center;
   z-index: 2000;
 }
+
 .modal-dialog {
   background: var(--panel-2, #252526);
   border: 1px solid var(--border, #454545);
@@ -503,12 +500,14 @@ function onGroupStats({ groupId, stats }) {
   flex-direction: column;
   overflow: hidden;
 }
+
 .modal-title {
   font-size: 13px;
   font-weight: 600;
   padding: 14px 16px 10px;
   border-bottom: 1px solid var(--border, #454545);
 }
+
 .modal-body {
   padding: 14px 16px;
   font-size: 12px;
@@ -516,8 +515,10 @@ function onGroupStats({ groupId, stats }) {
   display: flex;
   flex-direction: column;
   gap: 10px;
+
+  p { margin: 0; line-height: 1.5; }
 }
-.modal-body p { margin: 0; line-height: 1.5; }
+
 .modal-paths {
   background: var(--bg, #1e1e1e);
   border: 1px solid var(--border, #454545);
@@ -530,7 +531,9 @@ function onGroupStats({ groupId, stats }) {
   overflow-y: auto;
   color: var(--text-muted, #888);
 }
+
 .modal-label { font-size: 11px; color: var(--text-muted, #888); margin-bottom: -4px; }
+
 .modal-input {
   background: var(--bg, #1e1e1e);
   border: 1px solid var(--border, #454545);
@@ -541,10 +544,13 @@ function onGroupStats({ groupId, stats }) {
   outline: none;
   width: 100%;
   box-sizing: border-box;
+
+  &:focus { border-color: var(--accent, #0078d4); }
 }
-.modal-input:focus { border-color: var(--accent, #0078d4); }
-.modal-hint { color: var(--text-muted, #888); font-size: 12px; }
+
+.modal-hint  { color: var(--text-muted, #888); font-size: 12px; }
 .modal-error { color: #f48771; font-size: 12px; }
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -552,6 +558,7 @@ function onGroupStats({ groupId, stats }) {
   padding: 10px 16px 14px;
   border-top: 1px solid var(--border, #454545);
 }
+
 .modal-btn {
   background: var(--surface, #3c3c3c);
   border: 1px solid var(--border, #454545);
@@ -560,17 +567,19 @@ function onGroupStats({ groupId, stats }) {
   padding: 5px 14px;
   font-size: 12px;
   cursor: pointer;
+
+  &:hover { background: var(--surface-hover, #4c4c4c); }
+  &.modal-btn--primary {
+    background: var(--accent, #0078d4);
+    border-color: var(--accent, #0078d4);
+    color: #fff;
+    &:hover { background: var(--accent-hover, #1c8be4); border-color: var(--accent-hover, #1c8be4); }
+  }
 }
-.modal-btn:hover { background: var(--surface-hover, #4c4c4c); }
-.modal-btn--primary {
-  background: var(--accent, #0078d4);
-  border-color: var(--accent, #0078d4);
-  color: #fff;
-}
-.modal-btn--primary:hover { background: var(--accent-hover, #1c8be4); border-color: var(--accent-hover, #1c8be4); }
 
 /* Install prompt */
 .install-cmds { display: flex; flex-direction: column; gap: 6px; }
+
 .install-cmd {
   display: flex;
   align-items: center;
@@ -579,18 +588,20 @@ function onGroupStats({ groupId, stats }) {
   border: 1px solid var(--border, #454545);
   border-radius: 4px;
   padding: 5px 8px;
-}
-.install-cmd-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-muted, #888);
-  min-width: 44px;
-  text-transform: uppercase;
-}
-.install-cmd code {
-  font-family: monospace;
-  font-size: 11px;
-  color: var(--text, #ccc);
-  user-select: text;
+
+  .install-cmd-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted, #888);
+    min-width: 44px;
+    text-transform: uppercase;
+  }
+
+  code {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--text, #ccc);
+    user-select: text;
+  }
 }
 </style>

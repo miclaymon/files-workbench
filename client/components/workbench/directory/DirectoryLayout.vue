@@ -980,7 +980,7 @@ function onKeyDown(event) {
 </script>
 
 <style scoped>
-/* ── Outer wrapper — owns tabindex/focus ring, holds header + scroll area ── */
+/* ── Wrapper ──────────────────────────────────────────────────────────────── */
 
 .dl-wrap {
   display: flex;
@@ -988,82 +988,71 @@ function onKeyDown(event) {
   height: 100%;
   min-height: 0;
   outline: none;
-}
-.dl-wrap:focus { box-shadow: inset 0 0 0 1px var(--accent); }
+  container-type: inline-size;
+  container-name: dl;
 
-/* ── Container — default: grid ────────────────────────────────────────── */
-
-.dl {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--min-cell, 120px), 1fr));
-  gap: 12px;
-  padding: 16px;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  align-content: start;
-  outline: none;
+  &:focus { box-shadow: inset 0 0 0 1px var(--accent); }
 }
 
-.dl-header { display: none; }
+/* ── Non-columnar header (Grid / Gallery / Mosaic / Feed) ─────────────────── */
 
-/* list / details / nested */
-.dl[data-layout="list"],
-.dl[data-layout="details"] {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 0;
-}
-
-/* details: horizontal scroll support */
-.dl[data-layout="details"] {
-  overflow-x: auto;
-}
-
-/* Shared header styles for columnar layouts */
-.dl[data-layout="details"] .dl-header,
-.dl[data-layout="list"] .dl-header {
+.dl-nc-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--border);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  padding: 4px 10px;
   background: var(--surface-alt);
-  position: sticky;
-  top: 0;
-  z-index: 20;
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   user-select: none;
 }
-.dl[data-layout="details"] .dl-header { min-width: 420px; }
 
-.dl-hdr-check-wrap {
+.dl-nc-sort-btn {
   display: flex;
   align-items: center;
-  flex-shrink: 0;
+  gap: 5px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
   cursor: pointer;
-  line-height: 0;
+  padding: 2px 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+
+  &:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+  &.dl-nc-sort-btn--active { color: var(--accent); border-color: rgba(0,122,204,0.3); }
 }
-.dl-hdr-check-wrap input { width: 14px; height: 14px; cursor: pointer; }
 
-/* gap between check and thumb in header — matches item gap between check and thumb */
-.dl-hdr-thumb-gap { width: 18px; flex-shrink: 0; }
+.dl-nc-zoom {
+  width: 80px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: auto;
+}
 
-/* spacer = check-width + gap + thumb-width for non-details header (list etc.) */
-.dl-hdr-spacer { width: calc(14px + 8px + 18px); flex-shrink: 0; }
-.dl[data-layout="nested"] .dl-hdr-spacer { width: calc(20px + 18px + var(--nested-thumb, 30px) + 6px); }
+/* ── Shared header primitives ─────────────────────────────────────────────── */
 
-.dl-col-name { flex: 1; min-width: 0; }
-.dl-col-size { width: 80px; text-align: right; padding-right: 16px; flex-shrink: 0; }
-.dl-col-date { width: 130px; flex-shrink: 0; }
+.dl-hdr-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
 
-/* Sortable column header buttons */
+  &:hover { background: var(--hover-background, rgba(255,255,255,0.07)); color: var(--text); border-color: var(--border); }
+  &.dl-hdr-icon-btn--active { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+}
+
 .dl-hdr-col-btn {
   background: transparent;
   border: none;
@@ -1080,64 +1069,47 @@ function onKeyDown(event) {
   align-items: center;
   gap: 2px;
   white-space: nowrap;
+
+  &:hover { color: var(--text); background: rgba(255,255,255,0.06); }
 }
-.dl-hdr-col-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+
 .dl-sort-arrow { color: var(--accent); font-size: 10px; }
 
-/* Non-columnar header (Grid / Gallery / Mosaic / Feed) */
-.dl-nc-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
-  background: var(--surface-alt);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  user-select: none;
-}
-.dl-nc-sort-btn {
-  display: flex;
-  align-items: center;
-  gap: 5px;
+.dl-hdr-menu-btn {
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: var(--text-muted);
-  font-size: 12px;
-  cursor: pointer;
-  padding: 2px 6px;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.dl-nc-sort-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
-.dl-nc-sort-btn--active { color: var(--accent); border-color: rgba(0,122,204,0.3); }
-.dl-nc-zoom {
-  width: 80px;
-  accent-color: var(--accent);
-  cursor: pointer;
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
-/* Icon button used in both columnar and non-columnar headers (filter, etc.) */
-.dl-hdr-icon-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
+  border: none;
   color: var(--text-muted);
   cursor: pointer;
+  padding: 0 4px;
+  font-size: 16px;
+  line-height: 1;
   flex-shrink: 0;
-  transition: all 0.15s;
-}
-.dl-hdr-icon-btn:hover { background: var(--hover-background, rgba(255,255,255,0.07)); color: var(--text); border-color: var(--border); }
-.dl-hdr-icon-btn--active { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+  border-radius: 3px;
 
-/* Sort dropdown for non-columnar views */
+  &:hover { color: var(--text); background: var(--hover-background); }
+}
+
+.dl-hdr-check-wrap {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  line-height: 0;
+
+  input { width: 14px; height: 14px; cursor: pointer; }
+}
+
+/* gap between check and thumb in header */
+.dl-hdr-thumb-gap { width: 18px; flex-shrink: 0; }
+/* spacer = check-width + gap + thumb-width */
+.dl-hdr-spacer    { width: calc(14px + 8px + 18px); flex-shrink: 0; }
+
+.dl-col-name { flex: 1; min-width: 0; }
+.dl-col-size { width: 80px; text-align: right; padding-right: 16px; flex-shrink: 0; }
+.dl-col-date { width: 130px; flex-shrink: 0; }
+
+/* ── Sort dropdown (non-columnar views) ───────────────────────────────────── */
+
 .dl-sort-dropdown {
   background: var(--surface-alt, #2d2d30);
   border: 1px solid var(--border);
@@ -1146,6 +1118,7 @@ function onKeyDown(event) {
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
   min-width: 140px;
 }
+
 .dl-sort-dd-item {
   display: flex;
   align-items: center;
@@ -1160,29 +1133,16 @@ function onKeyDown(event) {
   border: none;
   color: var(--text);
   text-align: left;
+
+  &:hover { background: rgba(255,255,255,0.06); }
+  &.dl-sort-dd-item--active { color: var(--accent); }
 }
-.dl-sort-dd-item:hover { background: rgba(255,255,255,0.06); }
-.dl-sort-dd-item--active { color: var(--accent); }
+
 .dl-sort-dd-arrow { font-size: 11px; color: var(--accent); }
-.dl-sort-dd-sep { border-top: 1px solid var(--border); margin: 4px 0; }
+.dl-sort-dd-sep   { border-top: 1px solid var(--border); margin: 4px 0; }
 
-.dl-hdr-menu-btn {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 0 4px;
-  font-size: 16px;
-  line-height: 1;
-  flex-shrink: 0;
-  border-radius: 3px;
-}
-.dl-hdr-menu-btn:hover { color: var(--text); background: var(--hover-background); }
+/* ── Column picker dropdown ───────────────────────────────────────────────── */
 
-/* In columnar headers the filter icon button pushes itself right */
-.dl-header .dl-hdr-icon-btn { margin-left: auto; }
-
-/* ── Column picker dropdown ───────────────────────────────────────────── */
 .dl-col-picker {
   background: var(--surface-alt, #2d2d30);
   border: 1px solid var(--border);
@@ -1191,6 +1151,7 @@ function onKeyDown(event) {
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
   min-width: 140px;
 }
+
 .dl-col-option {
   display: flex;
   align-items: center;
@@ -1200,40 +1161,291 @@ function onKeyDown(event) {
   cursor: pointer;
   border-radius: 3px;
   user-select: none;
-}
-.dl-col-option:hover { background: rgba(255,255,255,0.06); }
-.dl-col-option input { width: 14px; height: 14px; cursor: pointer; }
 
-/* gallery-grid */
-.dl[data-layout="gallery-grid"] {
+  &:hover { background: rgba(255,255,255,0.06); }
+  input { width: 14px; height: 14px; cursor: pointer; }
+}
+
+/* ── Main scroll container + layout variants ──────────────────────────────── */
+
+.dl {
+  /* default: grid */
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--gallery-cell, 180px), 1fr));
-  grid-auto-rows: var(--gallery-cell, 180px);
-  gap: 4px;
-  padding: 8px;
-  align-content: start;
-}
-
-/* gallery-mosaic — horizontal flow, wraps to new lines */
-.dl[data-layout="gallery-mosaic"] {
-  display: flex;
-  flex-wrap: wrap;
-  align-content: start;
-  gap: 6px;
-  padding: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(var(--min-cell, 120px), 1fr));
+  gap: 12px;
+  padding: 16px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-}
-
-/* feed */
-.dl[data-layout="feed"] {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--feed-min-card, 280px), 1fr));
-  gap: 8px;
-  padding: 12px;
   align-content: start;
+  outline: none;
+
+  .dl-header { display: none; }
+
+  /* Columnar layouts share flex-column base */
+  &:is([data-layout="list"], [data-layout="details"], [data-layout="nested"]) {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+  }
+
+  /* Shared column header for list + details */
+  &:is([data-layout="list"], [data-layout="details"]) {
+    .dl-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      background: var(--surface-alt);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      flex-shrink: 0;
+      user-select: none;
+
+      .dl-hdr-icon-btn { margin-left: auto; }
+    }
+  }
+
+  /* ── Gallery-grid ─────────────────────────────────────────────────────── */
+
+  &[data-layout="gallery-grid"] {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--gallery-cell, 180px), 1fr));
+    grid-auto-rows: var(--gallery-cell, 180px);
+    gap: 4px;
+    padding: 8px;
+    align-content: start;
+
+    .dl-item {
+      display: block;
+      padding: 0;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 2px solid transparent;
+
+      &.dl-item--selected { border-color: var(--accent); }
+
+      .dl-check { top: 6px; left: 6px; }
+      /* Thumb and image fill the square item absolutely */
+      .dl-thumb {
+        position: absolute;
+        inset: 0;
+        height: 100%;
+        width: 100%;
+        border-radius: 0;
+        background: transparent;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .dl-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .dl-body    { display: none; }
+      .dl-overlay { display: none; }
+    }
+  }
+
+  /* ── Gallery-mosaic ───────────────────────────────────────────────────── */
+
+  &[data-layout="gallery-mosaic"] {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: start;
+    gap: 6px;
+    padding: 8px;
+    overflow-y: auto;
+
+    .dl-item {
+      display: flex;
+      flex-direction: column;
+      width: var(--mosaic-width, 180px);
+      flex-shrink: 0;
+      align-items: stretch;
+      padding: 0;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 2px solid transparent;
+      background: var(--surface);
+
+      .dl-thumb    { height: auto; width: 100%; min-height: 80px; background: transparent; flex-shrink: 0; }
+      .dl-img      { width: 100%; height: auto; object-fit: initial; }
+      .dl-icon     { width: 32px; height: 32px; margin: 20px auto; }
+      .dl-pack-icon{ width: 32px; height: 32px; margin: 20px auto; }
+      .dl-skeleton { display: none; }
+      .dl-body     { padding: 3px 6px 5px; margin-top: 0; }
+      .dl-name     { font-size: 11px; color: var(--text-muted); text-align: left; -webkit-line-clamp: 1; }
+    }
+  }
+
+  /* ── Feed ─────────────────────────────────────────────────────────────── */
+
+  &[data-layout="feed"] {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--feed-min-card, 280px), 1fr));
+    gap: 8px;
+    padding: 12px;
+    align-content: start;
+
+    .dl-item {
+      flex-direction: column;
+      align-items: stretch;
+      padding: 0;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+
+      &:hover             { border-color: rgba(255,255,255,0.2); }
+      &.dl-item--selected { border-color: var(--accent); }
+
+      .dl-check { top: 6px; left: 6px; }
+      /* padding-bottom trick: height:0 + padding-bottom:56.25% = 16:9 aspect ratio */
+      .dl-thumb {
+        display: block;
+        position: relative;
+        width: 100%;
+        height: 0;
+        padding-bottom: 56.25%;
+        background: transparent;
+        overflow: hidden;
+        flex-shrink: 0;
+        border-radius: 0;
+      }
+      .dl-img      { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .dl-skeleton { position: absolute; inset: 0; }
+      .dl-icon     { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 40px; height: 40px; }
+      .dl-pack-icon{ position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 40px; height: 40px; }
+      .dl-body     { padding: 8px 10px 10px; margin-top: 0; }
+      .dl-name     { font-size: 13px; font-weight: 500; text-align: left; -webkit-line-clamp: 2; }
+      .dl-meta     { display: flex; gap: 8px; margin-top: 4px; }
+      .dl-size,
+      .dl-date     { font-size: 11px; color: var(--text-muted); }
+    }
+  }
+
+  /* ── Details ──────────────────────────────────────────────────────────── */
+
+  &[data-layout="details"] {
+    overflow-x: auto;
+
+    .dl-header { min-width: 420px; }
+
+    .dl-item {
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+      padding: 3px 8px;
+      border-radius: 0;
+      border: none;
+      border-bottom: 1px solid rgba(128,128,128,0.07);
+      height: var(--row-height, 30px);
+      min-width: 420px;
+
+      .dl-check    { position: static; display: flex; align-items: center; flex-shrink: 0; }
+      .dl-thumb    { width: 18px; height: 18px; background: transparent; }
+      .dl-img      { object-fit: contain; }
+      .dl-icon     { width: 16px; height: 16px; }
+      .dl-pack-icon{ width: 16px; height: 16px; }
+      .dl-skeleton { display: none; }
+      .dl-body     { display: flex; align-items: center; flex: 1; margin-top: 0; min-width: 0; }
+      .dl-name     { flex: 1; font-size: 13px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; -webkit-line-clamp: unset; }
+      .dl-meta     { display: flex; flex-shrink: 0; margin-left: 0; }
+      .dl-size     { width: 80px; text-align: right; padding-right: 16px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+      .dl-date     { width: 130px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+    }
+  }
+
+  /* ── List ─────────────────────────────────────────────────────────────── */
+
+  &[data-layout="list"] {
+    .dl-item {
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+      padding: 3px 8px;
+      border-radius: 3px;
+      border: 1px solid transparent;
+      border-bottom-color: rgba(128,128,128,0.07);
+      height: var(--row-height, 30px);
+
+      &:hover             { border-color: transparent; border-bottom-color: rgba(128,128,128,0.07); }
+      &.dl-item--selected { border-bottom-color: rgba(128,128,128,0.07); }
+
+      .dl-check    { position: static; display: flex; align-items: center; flex-shrink: 0; }
+      .dl-thumb    { width: 18px; height: 18px; background: transparent; }
+      .dl-img      { object-fit: contain; }
+      .dl-icon     { width: 16px; height: 16px; }
+      .dl-pack-icon{ width: 16px; height: 16px; }
+      .dl-skeleton { display: none; }
+      .dl-body     { display: flex; align-items: center; flex: 1; margin-top: 0; }
+      .dl-name     { flex: 1; font-size: 13px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; -webkit-line-clamp: unset; }
+      .dl-meta     { display: flex; gap: 16px; flex-shrink: 0; margin-left: 8px; }
+      .dl-size     { font-size: 12px; color: var(--text-muted); min-width: 60px; text-align: right; white-space: nowrap; }
+      .dl-date     { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+    }
+  }
+
+  /* ── Nested ───────────────────────────────────────────────────────────── */
+
+  &[data-layout="nested"] {
+    overflow-x: auto;
+    position: relative; /* JS-driven sticky overlay is absolutely positioned inside */
+
+    .dl-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 8px;
+      height: var(--nested-row, 38px);
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      z-index: 60;
+      background: var(--surface-alt);
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      user-select: none;
+    }
+
+    .dl-hdr-spacer { width: calc(20px + 18px + var(--nested-thumb, 30px) + 6px); }
+
+    .dl-item {
+      flex-direction: row;
+      align-items: center;
+      padding: 0 8px;
+      border-radius: 0;
+      border: none;
+      border-bottom: 1px solid rgba(128,128,128,0.07);
+      height: var(--nested-row, 38px);
+      gap: 3px;
+
+      .dl-check    { position: static; display: flex; align-items: center; flex-shrink: 0; margin: 0 2px; }
+      .dl-thumb    { width: var(--nested-thumb, 30px); height: var(--nested-thumb, 30px); background: transparent; flex-shrink: 0; border-radius: 3px; margin-right: 6px; }
+      .dl-img      { object-fit: cover; border-radius: 3px; }
+      .dl-icon     { width: 20px; height: 20px; }
+      .dl-pack-icon{ width: 20px; height: 20px; }
+      .dl-skeleton { display: block; border-radius: 3px; }
+      .dl-body     { display: flex; align-items: center; flex: 1; margin-top: 0; min-width: 0; }
+      .dl-name     { flex: 1; font-size: 13px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; -webkit-line-clamp: unset; }
+      .dl-meta     { display: flex; flex-shrink: 0; margin-left: 0; }
+      .dl-size     { width: 80px; text-align: right; padding-right: 16px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+      .dl-date     { width: 130px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+      .dl-overlay  { display: none; }
+    }
+  }
 }
 
-/* ── Item base (grid) ─────────────────────────────────────────────────── */
+/* ── Item base (grid layout) ──────────────────────────────────────────────── */
 
 .dl-item {
   position: relative;
@@ -1248,378 +1460,166 @@ function onKeyDown(event) {
   user-select: none;
   transition: background 0.1s, border-color 0.1s;
   min-width: 0;
-}
-.dl-item:hover { background: rgba(255,255,255,0.05); border-color: var(--accent); }
-.dl-item.dl-item--selected { background: rgba(0,122,204,0.1); border-color: var(--accent); }
-.dl-item.dl-item--focused { box-shadow: 0 0 0 2px var(--accent); }
-.dl-item.dl-item--dragging { opacity: 0.4; }
-.dl-item.dl-item--hidden { opacity: 0.45; }
 
-/* Checkbox — absolute in grid/gallery, static in row layouts */
-.dl-check {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  z-index: 10;
-  line-height: 0;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s;
-}
-.dl-check.dl-check--on,
-.dl-item:hover .dl-check { opacity: 1; }
-.dl-check input { width: 14px; height: 14px; cursor: pointer; }
+  &:hover             { background: rgba(255,255,255,0.05); border-color: var(--accent); }
+  &.dl-item--selected { background: rgba(0,122,204,0.1); border-color: var(--accent); }
+  &.dl-item--focused  { box-shadow: 0 0 0 2px var(--accent); }
+  &.dl-item--dragging { opacity: 0.4; }
+  &.dl-item--hidden   { opacity: 0.45; }
 
-/* Thumbnail */
-.dl-thumb {
-  position: relative;
-  width: 100%;
-  height: var(--icon-size, 64px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 2px;
-  overflow: hidden;
-  background: var(--surface-alt);
-  background: transparent;
-  flex-shrink: 0;
+  /* Checkbox — absolute in grid/gallery, overridden to static in row layouts */
+  .dl-check {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    z-index: 10;
+    line-height: 0;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s;
+
+    &.dl-check--on { opacity: 1; }
+    input { width: 14px; height: 14px; cursor: pointer; }
+  }
+  &:hover .dl-check { opacity: 1; }
+
+  .dl-thumb {
+    position: relative;
+    width: 100%;
+    height: var(--icon-size, 64px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+    overflow: hidden;
+    background: transparent;
+    flex-shrink: 0;
+  }
+
+  .dl-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    transition: opacity 0.2s;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  .dl-icon      { color: #9e9e9e; width: 48px; height: 48px; }
+  .dl-pack-icon { width: 48px; height: 48px; object-fit: contain; }
+
+  .dl-video-badge {
+    position: absolute;
+    width: auto;
+    height: clamp(12px, 50%, 48px);
+    color: white;
+    opacity: 0.5;
+    transition: opacity 0.1s;
+    filter: drop-shadow(0 1px 3px rgba(0,0,0,0.65));
+    pointer-events: none;
+  }
+  &:hover .dl-video-badge { opacity: 0.75; }
+
+  .dl-skeleton {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, #333 25%, #444 50%, #333 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  .dl-body { width: 100%; margin-top: 6px; min-width: 0; }
+
+  .dl-name {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 12px;
+    text-align: center;
+    word-break: break-word;
+    width: 100%;
+    user-select: none;
+
+    &.dl-name--editing {
+      display: block;
+      overflow: visible;
+      white-space: normal;
+      -webkit-line-clamp: unset;
+    }
+
+    &[contenteditable]:focus-within {
+      background: rgba(255,255,255,0.1);
+      box-shadow: 0 0 3px 1px var(--accent);
+      border-radius: 2px;
+      user-select: text;
+      outline: none;
+    }
+  }
+
+  .dl-meta      { display: none; }
+  .dl-col--hidden { display: none; }
+  .dl-overlay   { display: none; }
 }
-.dl-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-  transition: opacity 0.2s;
-  user-select: none;
-  -webkit-user-drag: none;
-}
-.dl-icon { color: #9e9e9e; width: 48px; height: 48px; }
-.dl-pack-icon { width: 48px; height: 48px; object-fit: contain; }
-.dl-video-badge {
-  position: absolute;
-  width: auto;
-  height: clamp(12px, 50%, 48px);
-  color: white;
-  opacity: 0.5;
-  transition: opacity 0.1s;
-  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.65));
-  pointer-events: none;
-}
-.dl-item:hover .dl-video-badge {
-  opacity: 0.75;
-}
-.dl-skeleton {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, #333 25%, #444 50%, #333 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-}
+
 @keyframes shimmer {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
 
-/* Body */
-.dl-body { width: 100%; margin-top: 6px; min-width: 0; }
+/* ── Nested sticky ancestor overlay ──────────────────────────────────────── */
 
-.dl-name {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  font-size: 12px;
-  text-align: center;
-  word-break: break-word;
-  width: 100%;
-  user-select: none;
-}
-.dl-name--editing {
-  display: block;
-  overflow: visible;
-  white-space: normal;
-  -webkit-line-clamp: unset;
-}
-span[contenteditable]:focus-within {
-  background: rgba(255,255,255,0.1);
-  box-shadow: 0 0 3px 1px var(--accent);
-  border-radius: 2px;
-  user-select: text;
-  outline: none;
-}
-
-/* Meta hidden in grid */
-.dl-meta { display: none; }
-.dl-col--hidden { display: none; }
-
-/* Gallery overlay hidden by default */
-.dl-overlay { display: none; }
-
-/* ── List ─────────────────────────────────────────────────────────────── */
-
-.dl[data-layout="list"] .dl-item {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 8px;
-  border-radius: 3px;
-  border: 1px solid transparent;
-  border-bottom-color: rgba(128,128,128,0.07);
-  height: var(--row-height, 30px);
-}
-.dl[data-layout="list"] .dl-item:hover { border-color: transparent; border-bottom-color: rgba(128,128,128,0.07); }
-.dl[data-layout="list"] .dl-item.dl-item--selected { border-bottom-color: rgba(128,128,128,0.07); }
-
-.dl[data-layout="list"] .dl-check { position: static; display: flex; align-items: center; flex-shrink: 0; }
-.dl[data-layout="list"] .dl-thumb { width: 18px; height: 18px; background: transparent; }
-.dl[data-layout="list"] .dl-img { object-fit: contain; }
-.dl[data-layout="list"] .dl-icon { width: 16px; height: 16px; }
-.dl[data-layout="list"] .dl-pack-icon { width: 16px; height: 16px; }
-.dl[data-layout="list"] .dl-skeleton { display: none; }
-.dl[data-layout="list"] .dl-body { display: flex; align-items: center; flex: 1; margin-top: 0; }
-.dl[data-layout="list"] .dl-name {
-  flex: 1; font-size: 13px; text-align: left;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  display: block; -webkit-line-clamp: unset;
-}
-.dl[data-layout="list"] .dl-meta { display: flex; gap: 16px; flex-shrink: 0; margin-left: 8px; }
-.dl[data-layout="list"] .dl-size { font-size: 12px; color: var(--text-muted); min-width: 60px; text-align: right; white-space: nowrap; }
-.dl[data-layout="list"] .dl-date { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
-
-/* ── Details ──────────────────────────────────────────────────────────── */
-
-.dl[data-layout="details"] .dl-item {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 8px;
-  border-radius: 0;
-  border: none;
-  border-bottom: 1px solid rgba(128,128,128,0.07);
-  height: var(--row-height, 30px);
-  min-width: 420px;
-}
-
-.dl[data-layout="details"] .dl-check { position: static; display: flex; align-items: center; flex-shrink: 0; }
-.dl[data-layout="details"] .dl-thumb { width: 18px; height: 18px; background: transparent; }
-.dl[data-layout="details"] .dl-img { object-fit: contain; }
-.dl[data-layout="details"] .dl-icon { width: 16px; height: 16px; }
-.dl[data-layout="details"] .dl-pack-icon { width: 16px; height: 16px; }
-.dl[data-layout="details"] .dl-skeleton { display: none; }
-.dl[data-layout="details"] .dl-body { display: flex; align-items: center; flex: 1; margin-top: 0; min-width: 0; }
-.dl[data-layout="details"] .dl-name {
-  flex: 1; font-size: 13px; text-align: left;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  display: block; -webkit-line-clamp: unset;
-}
-.dl[data-layout="details"] .dl-meta { display: flex; flex-shrink: 0; margin-left: 0; }
-.dl[data-layout="details"] .dl-size { width: 80px; text-align: right; padding-right: 16px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
-.dl[data-layout="details"] .dl-date { width: 130px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
-
-/* ── Gallery-grid ─────────────────────────────────────────────────────── */
-
-.dl[data-layout="gallery-grid"] .dl-item {
-  display: block;
-  padding: 0;
-  border-radius: 4px;
-  overflow: hidden;
-  border: 2px solid transparent;
-}
-.dl[data-layout="gallery-grid"] .dl-item.dl-item--selected { border-color: var(--accent); }
-
-.dl[data-layout="gallery-grid"] .dl-check { top: 6px; left: 6px; }
-/* Thumb and image fill the square item absolutely */
-.dl[data-layout="gallery-grid"] .dl-thumb {
-  position: absolute;
-  inset: 0;
-  height: 100%;
-  width: 100%;
-  border-radius: 0;
-  background: var(--surface-alt);
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.dl[data-layout="gallery-grid"] .dl-img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.dl[data-layout="gallery-grid"] .dl-body {
-  display: none;
-}
-.dl[data-layout="gallery-grid"] .dl-overlay {
-  display: none;
-}
-
-/* ── Gallery-mosaic ───────────────────────────────────────────────────── */
-
-.dl[data-layout="gallery-mosaic"] .dl-item {
-  display: flex;
-  flex-direction: column;
-  width: var(--mosaic-width, 180px);
-  flex-shrink: 0;
-  align-items: stretch;
-  padding: 0;
-  border-radius: 4px;
-  overflow: hidden;
-  border: 2px solid transparent;
-  background: var(--surface);
-}
-
-.dl[data-layout="gallery-mosaic"] .dl-thumb {
-  height: auto;
-  width: 100%;
-  min-height: 80px;
-  background: var(--surface-alt);
-  background: transparent;
-  flex-shrink: 0;
-}
-.dl[data-layout="gallery-mosaic"] .dl-img {
-  width: 100%;
-  height: auto;
-  object-fit: initial;
-}
-.dl[data-layout="gallery-mosaic"] .dl-icon { width: 32px; height: 32px; margin: 20px auto; }
-.dl[data-layout="gallery-mosaic"] .dl-pack-icon { width: 32px; height: 32px; margin: 20px auto; }
-.dl[data-layout="gallery-mosaic"] .dl-skeleton { display: none; }
-
-.dl[data-layout="gallery-mosaic"] .dl-body { padding: 3px 6px 5px; margin-top: 0; }
-.dl[data-layout="gallery-mosaic"] .dl-name {
-  font-size: 11px; color: var(--text-muted);
-  text-align: left; -webkit-line-clamp: 1;
-}
-
-/* ── Feed ─────────────────────────────────────────────────────────────── */
-
-.dl[data-layout="feed"] .dl-item {
-  flex-direction: column;
-  align-items: stretch;
-  padding: 0;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-}
-.dl[data-layout="feed"] .dl-item:hover { border-color: rgba(255,255,255,0.2); }
-.dl[data-layout="feed"] .dl-item.dl-item--selected { border-color: var(--accent); }
-
-.dl[data-layout="feed"] .dl-check { top: 6px; left: 6px; }
-/* Use padding-bottom trick: thumb is a block with height:0 + padding-bottom:56.25% = 16:9.
-   The .dl-item is display:flex but we make the thumb a positioned block so its children can fill it. */
-.dl[data-layout="feed"] .dl-thumb {
-  display: block;
-  position: relative;
-  width: 100%;
-  height: 0;
-  padding-bottom: 56.25%;
-  background: var(--surface-alt);
-  background: transparent;
-  overflow: hidden;
-  flex-shrink: 0;
-  border-radius: 0;
-}
-.dl[data-layout="feed"] .dl-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.dl[data-layout="feed"] .dl-skeleton { position: absolute; inset: 0; }
-.dl[data-layout="feed"] .dl-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 40px; height: 40px; }
-.dl[data-layout="feed"] .dl-pack-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 40px; height: 40px; }
-
-.dl[data-layout="feed"] .dl-body { padding: 8px 10px 10px; margin-top: 0; }
-.dl[data-layout="feed"] .dl-name {
-  font-size: 13px; font-weight: 500;
-  text-align: left; -webkit-line-clamp: 2;
-}
-.dl[data-layout="feed"] .dl-meta { display: flex; gap: 8px; margin-top: 4px; }
-.dl[data-layout="feed"] .dl-size,
-.dl[data-layout="feed"] .dl-date { font-size: 11px; color: var(--text-muted); }
-
-/* ── Nested ───────────────────────────────────────────────────────────── */
-
-.dl[data-layout="nested"] {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 0;
-  overflow-x: auto;
-}
-
-.dl[data-layout="nested"] .dl-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px;
-  height: var(--nested-row, 38px);
-  flex-shrink: 0;
-  position: sticky;
-  top: 0;
-  z-index: 60;
-  background: var(--surface-alt);
-  border-bottom: 1px solid var(--border);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  user-select: none;
-}
-
-.dl[data-layout="nested"] .dl-item {
-  flex-direction: row;
-  align-items: center;
-  padding: 0 8px 0 8px;
-  border-radius: 0;
-  border: none;
-  border-bottom: 1px solid rgba(128,128,128,0.07);
-  height: var(--nested-row, 38px);
-  gap: 3px;
-}
-/* JS-driven sticky ancestor overlay — positioned via scrollTop binding, not CSS sticky */
-.dl[data-layout="nested"] { position: relative; }
+/* JS-driven; positioned via scrollTop, not CSS sticky — never change top */
 .dl-nest-sticky-ctx {
   position: absolute;
   left: 0;
   right: 0;
-  top: 0; /* transform handles the actual position — never change top */
+  top: 0;
   z-index: 55;
   will-change: transform;
 }
+
 .dl-item--ctx {
   background: var(--surface);
   border-bottom-color: rgba(128,128,128,0.18);
   cursor: pointer;
-}
-.dl-item--ctx:hover { background: rgba(255,255,255,0.05); }
 
-/* One guide span per depth level — each draws a vertical hairline via ::before */
+  &:hover { background: rgba(255,255,255,0.05); }
+}
+
+/* ── Nested guide lines ───────────────────────────────────────────────────── */
+
+/* One guide span per depth level — draws a vertical hairline via ::before */
 .dl-nest-guide {
   width: 16px;
   flex-shrink: 0;
   align-self: stretch;
   position: relative;
-}
-.dl-nest-guide::before {
-  content: '';
-  position: absolute;
-  left: 7px;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: rgba(128, 128, 128, 0.22);
-}
-.dl-nest-guide--corner::before { bottom: 50%; } /* L-shape: line stops at mid-point */
-.dl-nest-guide--last::after {
-  content: '';
-  position: absolute;
-  left: 7px;
-  top: 50%;
-  width: 27px; /* spans rest of guide (9px) + toggle/leaf (18px) */
-  height: 1px;
-  background: rgba(128, 128, 128, 0.22);
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 7px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(128, 128, 128, 0.22);
+  }
+
+  &.dl-nest-guide--corner::before { bottom: 50%; } /* L-shape: line stops at mid-point */
+
+  &.dl-nest-guide--last::after {
+    content: '';
+    position: absolute;
+    left: 7px;
+    top: 50%;
+    width: 27px; /* spans rest of guide (9px) + toggle/leaf (18px) */
+    height: 1px;
+    background: rgba(128, 128, 128, 0.22);
+  }
 }
 
-/* Expand/collapse toggle */
 .dl-nest-toggle {
   width: 18px;
   height: 18px;
@@ -1633,39 +1633,15 @@ span[contenteditable]:focus-within {
   padding: 0;
   flex-shrink: 0;
   border-radius: 3px;
-}
-.dl-nest-toggle:hover:not(:disabled) { color: var(--text); background: rgba(255,255,255,0.08); }
-.dl-nest-toggle:disabled { opacity: 0.5; cursor: default; }
 
-/* Leaf spacer — aligns files with expandable dirs */
+  &:hover:not(:disabled) { color: var(--text); background: rgba(255,255,255,0.08); }
+  &:disabled { opacity: 0.5; cursor: default; }
+}
+
+/* Aligns files with expandable dirs */
 .dl-nest-leaf { width: 18px; flex-shrink: 0; display: inline-block; }
 
-.dl[data-layout="nested"] .dl-check { position: static; display: flex; align-items: center; flex-shrink: 0; margin: 0 2px; }
-.dl[data-layout="nested"] .dl-thumb {
-  width: var(--nested-thumb, 30px);
-  height: var(--nested-thumb, 30px);
-  background: var(--surface-alt);
-  background: transparent;
-  flex-shrink: 0;
-  border-radius: 3px;
-  margin-right: 6px;
-}
-.dl[data-layout="nested"] .dl-img { object-fit: cover; border-radius: 3px; }
-.dl[data-layout="nested"] .dl-icon { width: 20px; height: 20px; }
-.dl[data-layout="nested"] .dl-pack-icon { width: 20px; height: 20px; }
-.dl[data-layout="nested"] .dl-skeleton { display: block; border-radius: 3px; }
-.dl[data-layout="nested"] .dl-body { display: flex; align-items: center; flex: 1; margin-top: 0; min-width: 0; }
-.dl[data-layout="nested"] .dl-name {
-  flex: 1; font-size: 13px; text-align: left;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  display: block; -webkit-line-clamp: unset;
-}
-.dl[data-layout="nested"] .dl-meta { display: flex; flex-shrink: 0; margin-left: 0; }
-.dl[data-layout="nested"] .dl-size { width: 80px; text-align: right; padding-right: 16px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
-.dl[data-layout="nested"] .dl-date { width: 130px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
-.dl[data-layout="nested"] .dl-overlay { display: none; }
-
-/* ── Hover preview ────────────────────────────────────────────────────── */
+/* ── Hover preview ────────────────────────────────────────────────────────── */
 
 .dl-hp-overlay {
   position: fixed;
@@ -1680,6 +1656,7 @@ span[contenteditable]:focus-within {
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65), 0 2px 10px rgba(0, 0, 0, 0.4);
   background: #111;
 }
+
 .dl-hp-media {
   display: block;
   width: auto;
@@ -1693,4 +1670,23 @@ span[contenteditable]:focus-within {
 .hp-expand-leave-active { transition: transform 0.1s ease, opacity 0.08s ease; }
 .hp-expand-enter-from,
 .hp-expand-leave-to { transform: translate(-50%, -50%) scale(0.1); opacity: 0; }
+
+/* ── Container queries ────────────────────────────────────────────────────── */
+
+/* Hide the date column when the panel is too narrow to show it comfortably */
+@container dl (max-width: 480px) {
+  .dl:is([data-layout="list"], [data-layout="details"], [data-layout="nested"]) {
+    .dl-date     { display: none; }
+    .dl-col-date { display: none; }
+  }
+}
+
+/* Hide size column and zoom slider in very narrow panels */
+@container dl (max-width: 300px) {
+  .dl:is([data-layout="list"], [data-layout="details"], [data-layout="nested"]) {
+    .dl-size     { display: none; }
+    .dl-col-size { display: none; }
+  }
+  .dl-nc-zoom { display: none; }
+}
 </style>

@@ -282,6 +282,7 @@ onUnmounted(() => {
 
 <style scoped>
 /* ── Menu panel ──────────────────────────────────────────────────────────── */
+
 .cm {
   position: fixed;
   z-index: 99999;
@@ -295,14 +296,12 @@ onUnmounted(() => {
   font-size: 13px;
   color: var(--text, #cccccc);
   user-select: none;
-}
 
-.cm--sub {
-  z-index: 100000;
-  min-width: 176px;
+  &.cm--sub { z-index: 100000; min-width: 176px; }
 }
 
 /* ── Quick action row ────────────────────────────────────────────────────── */
+
 .cm-quick {
   display: flex;
   align-items: center;
@@ -325,18 +324,15 @@ onUnmounted(() => {
   cursor: pointer;
   padding: 0;
   flex-shrink: 0;
+
+  &:hover:not(.cm-quick-btn--disabled) { background: var(--hover-background, rgba(255,255,255,0.08)); color: var(--text, #cccccc); }
+  &.cm-quick-btn--disabled { color: var(--text-disabled, #555); cursor: not-allowed; }
 }
-.cm-quick-btn:hover:not(.cm-quick-btn--disabled) {
-  background: var(--hover-background, rgba(255,255,255,0.08));
-  color: var(--text, #cccccc);
-}
-.cm-quick-btn--disabled {
-  color: var(--text-disabled, #555);
-  cursor: not-allowed;
-}
+
 .cm-quick-fallback { font-size: 15px; line-height: 1; }
 
 /* ── Separator ───────────────────────────────────────────────────────────── */
+
 .cm-sep {
   height: 1px;
   background: var(--border, #3c3c3c);
@@ -345,6 +341,7 @@ onUnmounted(() => {
 }
 
 /* ── Menu item ───────────────────────────────────────────────────────────── */
+
 .cm-body { display: flex; flex-direction: column; }
 
 .cm-item {
@@ -356,57 +353,58 @@ onUnmounted(() => {
   cursor: pointer;
   white-space: nowrap;
   position: relative;
-}
-.cm-item:hover:not(.cm-item--disabled),
-.cm-item--sub-open:not(.cm-item--disabled) {
-  background: var(--hover-background, rgba(255,255,255,0.07));
-}
-.cm-item--disabled { color: var(--text-disabled, #555); cursor: not-allowed; }
-.cm-item--disabled .cm-item-label { cursor: not-allowed; }
 
-.cm-item-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  flex-shrink: 0;
-  color: var(--text-muted, #9d9d9d);
-}
+  &:hover:not(.cm-item--disabled),
+  &.cm-item--sub-open:not(.cm-item--disabled) { background: var(--hover-background, rgba(255,255,255,0.07)); }
 
-.cm-item-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  padding: 4px 4px 4px 0;
-  line-height: 1.4;
-}
+  &.cm-item--disabled {
+    color: var(--text-disabled, #555);
+    cursor: not-allowed;
+    .cm-item-label { cursor: not-allowed; }
+  }
 
-.cm-item-shortcut {
-  margin-left: 12px;
-  color: var(--text-disabled, #666);
-  font-size: 11px;
-  flex-shrink: 0;
-}
+  .cm-item-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    flex-shrink: 0;
+    color: var(--text-muted, #9d9d9d);
+  }
 
-/* Submenu chevron button — separate click target from the label */
-.cm-item-sub-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  background: transparent;
-  border: none;
-  color: var(--text-disabled, #666);
-  cursor: pointer;
-  flex-shrink: 0;
-  padding: 0;
-  margin-right: 2px;
-}
-.cm-item-sub-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text, #ccc);
+  .cm-item-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 4px 4px 4px 0;
+    line-height: 1.4;
+  }
+
+  .cm-item-shortcut {
+    margin-left: 12px;
+    color: var(--text-disabled, #666);
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+
+  /* Submenu chevron button — separate click target from the label */
+  .cm-item-sub-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    background: transparent;
+    border: none;
+    color: var(--text-disabled, #666);
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 0;
+    margin-right: 2px;
+
+    &:hover { background: rgba(255, 255, 255, 0.1); color: var(--text, #ccc); }
+  }
 }
 </style>

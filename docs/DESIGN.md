@@ -237,6 +237,67 @@ Double-clicking a filename in the tree or directory view opens an inline `conten
 
 All colors are CSS custom properties defined in `client/assets/css/workbench.css`. The theme JSON files in `config/themes/` are the source of truth for each built-in theme; at startup the app applies them by setting CSS variables on `:root`. The user's accent color overrides `--accent` independently of the theme.
 
+## CSS architecture
+
+### Scoped component styles
+
+All component styles use Vue `<style scoped>`. Each component's stylesheet is its own module; selectors get a `[data-v-xxxx]` attribute injected by Vite at build time. Scoped styles are compatible with native CSS nesting — the injected attribute suffix is applied to the final compound selector after nesting is resolved.
+
+**Native CSS nesting** (`&` selector, nested at-rules) is used throughout rather than BEM-style flat selector lists. Children are nested directly inside their parent block:
+
+```css
+.dl-item {
+  /* base */
+  &:hover { background: rgba(255,255,255,0.05); }
+  &.dl-item--selected { border-color: var(--accent); }
+  .dl-name { font-size: 13px; }
+}
+```
+
+**Layout variants via nested `&[data-layout="x"]` blocks** — `DirectoryLayout.vue` uses a single `.dl` block containing one nested block per layout variant. Shared behavior (e.g., all columnar layouts) is factored into `:is()` selectors inside `.dl`:
+
+```css
+.dl {
+  /* grid default */
+  &:is([data-layout="list"], [data-layout="details"]) { display: flex; }
+  &[data-layout="details"] { .dl-item { min-width: 420px; } }
+}
+```
+
+### Container queries
+
+Components that need size-responsive behavior declare a CSS containment context on their wrapper element and use `@container` queries — **not** `@media` queries, which are viewport-relative and not useful for panel-sized UI:
+
+```css
+.dl-wrap {
+  container-type: inline-size;
+  container-name: dl;
+}
+
+@container dl (max-width: 480px) {
+  .dl:is([data-layout="list"], ...) { .dl-date { display: none; } }
+}
+```
+
+Container queries are placed at the bottom of the `<style scoped>` block after all regular selectors.
+
+### Global CSS (`workbench.css`)
+
+`client/assets/css/workbench.css` owns:
+- `:root` custom property definitions (all theme color variables, spacing tokens)
+- Base resets (`*, box-sizing: border-box`, body defaults)
+- Scrollbar styles
+- Utility classes used across multiple components
+
+`@layer` declarations belong here (not in scoped component styles) when cascade ordering across utility classes is needed. Scoped component blocks do not use `@layer`.
+
+### Rules of thumb
+
+- Prefer nesting over flat selector repetition when selectors share a semantic parent.
+- Use `container-type: inline-size` on the element whose width the content responds to, not on a distant ancestor.
+- `@container` queries are for layout adaptation (hide columns at narrow widths); `@media` queries are reserved for system-level behavior (e.g., `prefers-reduced-motion`).
+- `:deep()` is only for targeting child component internals from a parent — use it sparingly.
+
 ## File operations
 
 `Workbench.vue` handles all mutating file operations (rename, move, copy, trash, delete, compress, decompress, create folder). Every op is enqueued as a serialisable descriptor via `useFileOpsQueue.enqueue({ label, kind, params })` — there are no inline fetch calls for writes. The queue resolves to a Promise that `Workbench` awaits to handle success, errors, and special responses:
