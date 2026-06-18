@@ -93,7 +93,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -118,9 +118,25 @@ const submenuPosition = ref({ x: 0, y: 0 })
 let hideTimer = null
 let submenuHideTimer = null
 
+const clampedPos = ref({ x: props.x, y: props.y })
+
+watch(() => [props.x, props.y, props.visible], async ([x, y, vis]) => {
+  if (!vis) return
+  const baseX = props.relativeToCursor ? x + 10 : x
+  const baseY = props.relativeToCursor ? y + 10 : y
+  clampedPos.value = { x: baseX, y: baseY }
+  await nextTick()
+  if (!menuRef.value) return
+  const rect = menuRef.value.getBoundingClientRect()
+  clampedPos.value = {
+    x: Math.max(4, Math.min(baseX, window.innerWidth  - rect.width  - 4)),
+    y: Math.max(4, Math.min(baseY, window.innerHeight - rect.height - 4)),
+  }
+}, { immediate: true })
+
 const menuStyle = computed(() => ({
-  left: props.relativeToCursor ? `${props.x + 10}px` : `${props.x}px`,
-  top: props.relativeToCursor ? `${props.y + 10}px` : `${props.y}px`,
+  left: `${clampedPos.value.x}px`,
+  top: `${clampedPos.value.y}px`,
   maxWidth: `${props.maxWidth}px`
 }))
 

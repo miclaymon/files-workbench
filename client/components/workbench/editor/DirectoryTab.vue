@@ -122,6 +122,7 @@ async function fetchItems(path) {
 }
 
 watch(() => props.path, (newPath) => { fetchItems(newPath) })
+watch(() => props.prefs?.showHiddenFiles, () => { fetchItems(props.path) })
 
 const IMAGE_EXTS = new Set(['png','jpg','jpeg','webp','gif','bmp','ico','avif'])
 const VIDEO_EXTS = new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts'])
