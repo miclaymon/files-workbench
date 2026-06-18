@@ -90,8 +90,8 @@
 <script setup>
 import { computed, ref, nextTick } from 'vue'
 import { mdiFile, mdiFolder, mdiFolderOpen, mdiHarddisk, mdiLinkVariant } from '@mdi/js'
-import { useClickDebounce } from '~/composables/useClickDebounce.js'
-import { useTreeDrag } from '~/composables/useTreeDrag.js'
+import { useClickDebounce } from '~/composables/interaction/useClickDebounce.js'
+import { useTreeDrag } from '~/composables/interaction/useTreeDrag.js'
 import { useIconPack } from '~/composables/useIconPack.js'
 import { resolveCustomIcon } from '~/composables/useCustomIcon.js'
 

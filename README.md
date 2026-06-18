@@ -80,7 +80,10 @@ files-workbench2/
 ├── client/                   Nuxt 3 SPA + Electron shell
 │   ├── assets/css/           Global CSS variables and base styles
 │   ├── components/workbench/ All UI components
-│   ├── composables/          Shared Vue composables (useFileOpsQueue, useActionHistory, …)
+│   ├── composables/          Vue composables in three layers:
+│   │   ├── interaction/      UI-behavior primitives (drag systems, click, hover, resize)
+│   │   ├── workbench/        Workbench assembly-root slices (editor grid, view layout, file ops, …)
+│   │   └── *.js              Foundational services (workspaces, preferences, queues, registries, …)
 │   ├── electron/             Electron main process
 │   ├── lib/                  API client helpers (fs-api.js, sw-queue.js, …)
 │   ├── pages/                Nuxt pages (single page: index)
