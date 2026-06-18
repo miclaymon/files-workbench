@@ -8,7 +8,7 @@
         'drag-over': isDragOverTarget,
         dragging: isDraggingThis,
       }"
-      :style="{ paddingLeft: (6 + level * 14 * indentScale) + 'px' }"
+      :style="{ paddingLeft: (6 + level * 16 * indentScale) + 'px' }"
       :title="node.customization?.comment || undefined"
       @mousedown="(e) => onMouseDown(e, node)"
       @mouseenter="onNodeMouseEnter(node)"
@@ -19,7 +19,7 @@
         v-for="n in level"
         :key="n"
         class="ig"
-        :style="{ left: (12 + (n - 1) * 14 * indentScale) + 'px' }"
+        :style="{ left: (12 + (n - 1) * 16 * indentScale) + 'px' }"
       />
 
       <span
@@ -28,7 +28,7 @@
         :class="{ expanded: isExpanded }"
         @click.stop.prevent="onToggle"
       >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
           <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
         </svg>
       </span>
@@ -218,7 +218,7 @@ function onToggle() { emit('toggleExpand', { expandKey: props.node._expandKey, p
 <style scoped>
 .tree-node { list-style: none; padding: 0; margin: 0; }
 .tree-node--root { margin-block-start: 12px; }
-.tree-node--root:first-child { margin-block-start: 4px; }
+.tree-node--root:first-child { margin-block-start: 0; }
 
 .tree-item {
   position: relative;
@@ -279,12 +279,12 @@ span[contenteditable]:focus-within {
 
 .expand-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer; opacity: 0.6; flex-shrink: 0; width: 12px;
+  cursor: pointer; opacity: 0.6; flex-shrink: 0; width: 16px;
   transform: rotate(0deg); transition: transform 0.15s ease, opacity 0.15s;
 }
 .expand-icon.expanded { transform: rotate(90deg); }
 .expand-icon:hover { opacity: 1; }
-.expand-spacer { width: 12px; flex-shrink: 0; }
+.expand-spacer { width: 16px; flex-shrink: 0; }
 
 .folder-icon { display: inline-flex; align-items: center; color: #9e9e9e; flex-shrink: 0; }
 .pack-icon { display: block; object-fit: contain; }

@@ -7,7 +7,7 @@
     @dragleave="onAreaDragLeave"
     @drop="onAreaDrop"
   >
-    <template v-for="(section, i) in sections" :key="section.id">
+    <template v-for="(section, i) in sections" :key="section.instanceId ?? section.id">
       <div v-if="dropBeforeIdx === i" class="ssa-drop-indicator" />
       <Sash
         v-if="needsSash(sections, i)"
@@ -19,10 +19,14 @@
         <SplitSection
           :title="titleFor(section)"
           :collapsed="direction === 'row' ? false : section.collapsed"
-          :showHeading="sections.length > 1"
+          :showHeading="sectionHeadingShown(sections, section)"
           :draggable="isDraggable(section)"
+          :hasDivider="i > 0 && !needsSash(sections, i)"
+          :instanceId="section.instanceId"
+          :sectionDataId="sectionDataId(section.id, section.homeViewId ?? viewId)"
           @toggle="onToggle(i, $event)"
           @header-drag-start="onSectionDragStart(section, $event)"
+          @heading-contextmenu="onSectionContextMenu(section, $event)"
         >
           <template v-if="section.id !== viewId && getViewEntry(section.id)?.actions?.length" #actions>
             <ViewActions :actions="getViewEntry(section.id)?.actions ?? []" />
@@ -43,7 +47,7 @@ import ViewContentHost from './ViewContentHost.vue'
 import ViewActions from './ViewActions.vue'
 import { useStackResize } from '../../../composables/useStackResize.js'
 import { useViewDrag } from '../../../composables/useViewDrag.js'
-import { getViewEntry, viewAcceptsSections } from '../../../composables/useViewRegistry.js'
+import { getViewEntry, viewAcceptsSections, sectionHeadingShown, viewAllowsDuplicateSections, sectionDataId } from '../../../composables/useViewRegistry.js'
 
 // Stacks the SplitSections of a single View. Section headings appear only when
 // the View owns more than one section. Sections can be reordered within the area
@@ -54,7 +58,7 @@ const props = defineProps({
   viewId:      { type: String, default: '' },      // the View that owns these sections
   containerId: { type: String, default: '' },
 })
-const emit = defineEmits(['commit', 'section-move'])
+const emit = defineEmits(['commit', 'section-move', 'section-contextmenu'])
 
 const areaRef = ref(null)
 const { activeSash, prevExpandedIdx, needsSash, wrapStyle, startResize } = useStackResize()
@@ -72,13 +76,13 @@ function titleFor(section) {
   return base
 }
 
-// A View's own self-section (id === viewId) is anchored: it can't be dragged out.
-// Locked sections (Places) and sections flagged `dockable: false` also stay put.
+// A section can be picked up whenever the View has more than one, except its own
+// self-section (id === viewId), which is the View's native content. Locked
+// (Places) and `dockable: false` sections ARE draggable so they can be
+// reordered in place — they're only barred from *leaving* their biological
+// parent, which is enforced on the drop side (see acceptsDrop).
 function isDraggable(section) {
-  return props.sections.length > 1
-    && !section.locked
-    && section.id !== props.viewId
-    && section.dockable !== false
+  return props.sections.length > 1 && section.id !== props.viewId
 }
 
 function onToggle(i, collapsed) {
@@ -99,24 +103,57 @@ function onSash(i, event) {
   })
 }
 
+// Right-click a section heading → bubble identity + cursor up to the
+// ViewContainer, which owns viewSections and renders the section context menu.
+function onSectionContextMenu(section, event) {
+  event.preventDefault()
+  emit('section-contextmenu', {
+    viewId:     props.viewId,
+    sectionId:  section.id,
+    instanceId: section.instanceId ?? section.id,
+    locked:     !!section.locked,
+    x: event.clientX,
+    y: event.clientY,
+  })
+}
+
 // ── Section reorder (within this area) ────────────────────────────────────────
 
 const dropBeforeIdx = ref(-1)
 
 function onSectionDragStart(section, event) {
-  const payload = { sectionId: section.id, fromViewId: props.viewId, fromContainerId: props.containerId }
+  const payload = {
+    sectionId:       section.id,
+    fromViewId:      props.viewId,
+    fromContainerId: props.containerId,
+    homeViewId:      section.homeViewId ?? props.viewId,
+    locked:          !!section.locked,
+    dockable:        section.dockable !== false,
+  }
   activeSectionDrag.value = payload
   event.dataTransfer.setData(SECTION_DRAG_MIME, JSON.stringify(payload))
   event.dataTransfer.effectAllowed = 'move'
 }
 
-// Same-area drags always reorder; a cross-area drag is only accepted if this
-// View opts in to docked sections (Preview/Chat refuse).
+// Same-area drags always reorder. A cross-area drag is rejected for sections
+// that can't leave their biological parent (locked, e.g. Places, or
+// `dockable: false`), and otherwise only accepted if this View opts in to
+// docked sections (Preview/Chat refuse).
 function acceptsDrop() {
   const d = activeSectionDrag.value
   if (!d) return false
   const sameArea = d.fromViewId === props.viewId && d.fromContainerId === props.containerId
-  return sameArea || viewAcceptsSections(props.viewId)
+  if (sameArea) return true
+  if (d.locked || d.dockable === false) return false
+  if (!viewAcceptsSections(props.viewId)) return false
+  // Block a same-view duplicate: when this area's View is the section's biological
+  // parent and already holds that section, refuse (unless the View opts into
+  // duplicates) — shows the not-allowed cursor. The cross-view path is also
+  // guarded authoritatively upstream in handleSectionMove.
+  if (props.viewId === d.homeViewId
+      && !viewAllowsDuplicateSections(props.viewId)
+      && props.sections.some(s => s.id === d.sectionId)) return false
+  return true
 }
 
 function onAreaDragOver(event) {
@@ -146,7 +183,7 @@ function onAreaDrop(event) {
   event.preventDefault()
   const toIndex = dropBeforeIdx.value < 0 ? props.sections.length : dropBeforeIdx.value
   try {
-    const { sectionId, fromViewId, fromContainerId } = JSON.parse(raw)
+    const { sectionId, fromViewId, fromContainerId, homeViewId } = JSON.parse(raw)
     if (fromViewId === props.viewId && fromContainerId === props.containerId) {
       // Same area → reorder in place.
       const fromIdx = props.sections.findIndex(s => s.id === sectionId)
@@ -156,17 +193,17 @@ function onAreaDrop(event) {
         if (to !== fromIdx) {
           const [moved] = props.sections.splice(fromIdx, 1)
           props.sections.splice(to, 0, moved)
-          // Keep locked sections (e.g. Places) pinned to the front.
-          props.sections.sort((a, b) => (b.locked ? 1 : 0) - (a.locked ? 1 : 0))
           emit('commit')
         }
       }
     } else {
-      // Different area → adopt the section here (cross-container handled upstream).
+      // Different area → adopt the section here (its biological parent surfaces as
+      // a SplitView; cross-container handled upstream).
       emit('section-move', {
         sectionId,
         fromViewId,
         fromContainerId,
+        homeViewId,
         toViewId:      props.viewId,
         toContainerId: props.containerId,
         toIndex,
@@ -174,6 +211,9 @@ function onAreaDrop(event) {
     }
   } catch {}
   dropBeforeIdx.value = -1
+  // A cross-area move can remove this area from the DOM before `dragend` fires;
+  // clear the shared section-drag state so nothing lingers.
+  activeSectionDrag.value = null
 }
 </script>
 

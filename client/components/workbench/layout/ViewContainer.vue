@@ -2,11 +2,11 @@
   <div class="view-container">
 
     <!-- Header: view tab strip + action slots + ellipsis menu -->
-    <div class="vc-header">
+    <div class="vc-header" @contextmenu.prevent="openHeaderMenu($event)">
       <div
         class="vc-view-tab-bar"
         role="tablist"
-        @dragover.prevent="onBarDragOver"
+        @dragover="onBarDragOver"
         @dragleave="onBarDragLeave"
         @drop="onBarDrop"
       >
@@ -20,10 +20,11 @@
             :title="view.label"
             draggable="true"
             @click="onViewTabClick(view)"
+            @contextmenu.prevent.stop="openTabMenu(view, $event)"
             @dragstart="onTabDragStart(view, i, $event)"
             @dragend="onTabDragEnd"
           >
-            <svg v-if="view.icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" class="vc-view-tab-icon">
+            <svg v-if="showTabIcons && view.icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" class="vc-view-tab-icon">
               <path :d="view.icon" />
             </svg>
             <span class="vc-view-tab-label">{{ view.label }}</span>
@@ -32,11 +33,12 @@
         <span v-if="dropBeforeIdx === views.length" class="vc-drop-indicator" />
       </div>
 
-      <!-- Per-view (context) action buttons: shown in the tab strip only while the
-           active view is standalone. When it's merged, they move into its
-           SplitViewHeading instead. -->
-      <div v-if="!activeIsMerged && tablistActions.length" class="vc-header-actions">
-        <ViewActions :actions="tablistActions" />
+      <!-- Action buttons that have no heading to live in: while the active view is
+           standalone (no SplitViewHeading) its bubbled section actions + view
+           actions surface here, grouped. When merged, each SplitViewHeading hosts
+           its own, so the strip shows none. -->
+      <div v-if="!activeIsMerged && tablistHasActions" class="vc-header-actions">
+        <ViewActions :groups="tablistGroups" />
       </div>
 
       <!-- Panel-level action buttons (always visible, right-most group) -->
@@ -67,10 +69,11 @@
           :direction="dropDirection"
           :containerId="containerId"
           :slotKey="view.id"
-          :showOverlay="droppable && overlayFor(view.id)"
+          :showOverlay="overlayFor(view.id)"
           @commit-views="emit('update:mergedSlots', { ...mergedSlots })"
           @commit-sections="emit('update:viewSections', { ...viewSections })"
           @section-move="emit('section-move', $event)"
+          @section-contextmenu="openSectionMenu($event)"
           @content-drop="onContentDrop(view.id, $event)"
         />
       </div>
@@ -84,19 +87,38 @@
       :y="menuPos.y"
       @close="menuOpen = false"
     />
+
+    <!-- Cursor-positioned context menu (tab / header / section heading) -->
+    <FloatingMenu
+      :visible="ctxOpen"
+      type="menu"
+      :items="ctxItems"
+      :x="ctxPos.x"
+      :y="ctxPos.y"
+      @close="ctxOpen = false"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, inject } from 'vue'
 import { mdiDotsHorizontal } from '@mdi/js'
 import SplitViewArea from './SplitViewArea.vue'
 import ViewActions from './ViewActions.vue'
 import FloatingMenu from '../ui/FloatingMenu.vue'
-import { useViewDrag, DRAG_MIME } from '../../../composables/useViewDrag.js'
-import { resolveViewActions } from '../../../composables/useViewRegistry.js'
+import { useViewDrag, DRAG_MIME, SECTION_DRAG_MIME } from '../../../composables/useViewDrag.js'
+import { getViewEntry, viewActions, bubbledSectionActions } from '../../../composables/useViewRegistry.js'
+import { uuidv4 } from '../../../composables/useWorkspaces.js'
 
-const { activeDrag } = useViewDrag()
+const { activeDrag, activeSectionDrag } = useViewDrag()
+
+// Workbench-level chrome actions (hide/show/move views, tab-icon + badge toggles)
+// provided once by Workbench so the container wrappers don't thread them through.
+const chrome = inject('workbenchChrome', null)
+const showTabIcons = computed(() => chrome?.showTabIcons?.value !== false)
+// This container hosts movable tabs (tab/header context menus apply); the primary
+// sidebar (Explorer only) doesn't.
+const isMovable = computed(() => props.containerId === 'secondarySidebar' || props.containerId === 'panel')
 
 // ── Props / emits ─────────────────────────────────────────────────────────────
 
@@ -110,7 +132,7 @@ const props = defineProps({
   menuItems:      { type: Array,  default: () => [] },
   dropDirection:  { type: String, default: 'col' },         // 'col' = top/bottom split, 'row' = left/right split
 })
-const emit = defineEmits(['update:modelValue', 'update:viewSections', 'update:mergedSlots', 'transfer', 'merge', 'unmerge', 'section-move'])
+const emit = defineEmits(['update:modelValue', 'update:viewSections', 'update:mergedSlots', 'transfer', 'merge', 'unmerge', 'section-move', 'section-to-tab', 'view-reabsorb'])
 
 // ── Body adapters: shape the existing props into the SplitViewArea model ──────
 // References (not copies) are passed through so in-place size/collapse mutations
@@ -131,8 +153,16 @@ function slotViews(viewId) {
 // The active tab's slot holds more than one View (so each shows a SplitViewHeading
 // that hosts its own context actions — the tab strip should not duplicate them).
 const activeIsMerged = computed(() => (props.mergedSlots[props.modelValue]?.length ?? 0) > 1)
-// The active standalone view's actions, with its lone-section actions promoted in.
-const tablistActions = computed(() => resolveViewActions(props.modelValue, props.viewSections[props.modelValue]))
+// The active standalone view's buttons, grouped by hierarchy (bubbled section
+// actions, then the view's own) since there's no SplitViewHeading to hold them.
+const tablistGroups = computed(() => {
+  const sections = props.viewSections[props.modelValue]
+  return [
+    bubbledSectionActions(props.modelValue, sections),
+    viewActions(props.modelValue),
+  ]
+})
+const tablistHasActions = computed(() => tablistGroups.value.some(g => g.length))
 
 // ── Content-area drop (merge into this tab slot) + overlay visibility ─────────
 
@@ -142,14 +172,29 @@ function isMergedSection(primaryId, sectionId) {
 
 function overlayFor(viewId) {
   const ad = activeDrag.value
-  return !!ad && ad.viewId !== viewId && !isMergedSection(viewId, ad.viewId)
+  if (!ad) return false
+  // Re-absorb: the *same* View dragged in from elsewhere folds its sections back
+  // into this one (e.g. a floated "Explorer" tab/heading dropped on the primary
+  // sidebar's Explorer). Works even where view stacking is disabled (droppable false).
+  if (ad.viewId === viewId) return ad.fromContainerId !== props.containerId
+  // Normal merge: a different view dropped into a droppable slot it isn't already in.
+  return props.droppable && !isMergedSection(viewId, ad.viewId)
 }
 
 function onContentDrop(targetViewId, { zone }) {
   if (!activeDrag.value) return
   const { viewId, fromContainerId } = activeDrag.value
-  if (viewId === targetViewId && fromContainerId === props.containerId) return
-  emit('merge', { toContainerId: props.containerId, toViewId: targetViewId, fromContainerId, viewId, zone })
+  if (viewId === targetViewId) {
+    if (fromContainerId !== props.containerId) {
+      emit('view-reabsorb', { fromContainerId, toContainerId: props.containerId, viewId })
+    }
+  } else {
+    emit('merge', { toContainerId: props.containerId, toViewId: targetViewId, fromContainerId, viewId, zone })
+  }
+  // The drop may remove the dragged tab/view from the DOM (merge, re-absorb), in
+  // which case `dragend` never fires — clear drag state here so the drop overlay
+  // doesn't linger and block interaction.
+  clearDragState()
 }
 
 // ── Tab drag-to-reorder / cross-container drag ────────────────────────────────
@@ -164,14 +209,32 @@ function onTabDragStart(view, index, event) {
   event.dataTransfer.effectAllowed = 'move'
 }
 
+// Reset all drag state. `dragend` normally clears the module-level refs, but a
+// drop that removes the dragged element (merge / re-absorb / transfer) can stop
+// `dragend` from firing, so drop handlers call this explicitly — otherwise a
+// stale activeDrag keeps the drop overlay mounted and blocks interaction.
+function clearDragState() {
+  draggedId.value         = null
+  dropBeforeIdx.value     = -1
+  activeDrag.value        = null
+  activeSectionDrag.value = null
+}
+
 function onTabDragEnd() {
-  draggedId.value     = null
-  dropBeforeIdx.value = -1
-  // activeDrag cleared by the global dragend listener in useViewDrag
+  clearDragState()
+}
+
+// A section can be dropped on the tab strip to spawn its biological parent as a
+// new tab — but only where dropping is allowed and the section may leave its home.
+function _sectionDroppableOnBar() {
+  const d = activeSectionDrag.value
+  return props.droppable && !!d && !d.locked && d.dockable !== false
 }
 
 function onBarDragOver(event) {
-  if (!event.dataTransfer.types.includes(DRAG_MIME)) return
+  const types = event.dataTransfer.types
+  const accepts = types.includes(DRAG_MIME) || (types.includes(SECTION_DRAG_MIME) && _sectionDroppableOnBar())
+  if (!accepts) return   // no preventDefault — drop event won't fire; browser shows not-allowed cursor
   event.preventDefault()
   event.dataTransfer.dropEffect = 'move'
   const tabs = [...event.currentTarget.querySelectorAll('.vc-view-tab')]
@@ -188,6 +251,28 @@ function onBarDragLeave(event) {
 }
 
 function onBarDrop(event) {
+  // Section dropped on the tab strip → spawn its biological parent as a new tab.
+  const secRaw = props.droppable ? event.dataTransfer.getData(SECTION_DRAG_MIME) : ''
+  if (secRaw) {
+    event.preventDefault()
+    try {
+      const p = JSON.parse(secRaw)
+      if (!p.locked && p.dockable !== false) {
+        const toIndex = dropBeforeIdx.value < 0 ? props.views.length : dropBeforeIdx.value
+        emit('section-to-tab', {
+          sectionId:       p.sectionId,
+          fromViewId:      p.fromViewId,
+          fromContainerId: p.fromContainerId,
+          homeViewId:      p.homeViewId,
+          toContainerId:   props.containerId,
+          toIndex,
+        })
+      }
+    } catch {}
+    clearDragState()
+    return
+  }
+
   const raw = event.dataTransfer.getData(DRAG_MIME)
   if (!raw) return
   event.preventDefault()
@@ -214,8 +299,7 @@ function onBarDrop(event) {
       emit('transfer', { fromContainerId, toContainerId: props.containerId, viewId, toIndex })
     }
   } catch {}
-  draggedId.value     = null
-  dropBeforeIdx.value = -1
+  clearDragState()
 }
 
 // ── Section / tab interaction ─────────────────────────────────────────────────
@@ -224,38 +308,60 @@ function onViewTabClick(view) {
   emit('update:modelValue', view.id)
 }
 
-// ── Ellipsis menu ─────────────────────────────────────────────────────────────
+// ── Section presence menu (shared: "More actions…" dropdown + section menu) ────
+// One line per *present* section instance, in view order, followed by a "ghost"
+// line for each declared true-child section with no present instance. Toggling a
+// present instance removes that specific instance; toggling a ghost adds a fresh
+// one. So declared sections stay available forever (hidden true children can be
+// re-added), while adopted/foreign sections vanish once removed. Duplicates of a
+// section therefore each get their own line.
+function sectionMenuItems(viewId) {
+  const present  = props.viewSections[viewId] ?? []
+  const declared = getViewEntry(viewId)?.sections ?? []
+  const items = present.map(sec => ({
+    key:      `inst:${sec.instanceId ?? sec.id}`,
+    label:    getViewEntry(sec.id)?.label ?? sec.id,
+    type:     'toggle',
+    disabled: !!sec.locked,             // locked (Places) can't be removed
+    checked:  () => true,
+    action:   () => removeSectionInstance(viewId, sec),
+  }))
+  for (const sid of declared) {
+    if (present.some(s => s.id === sid)) continue
+    items.push({
+      key:     `ghost:${sid}`,
+      label:   getViewEntry(sid)?.label ?? sid,
+      type:    'toggle',
+      checked: () => false,
+      action:  () => addSectionInstance(viewId, sid),
+    })
+  }
+  return items
+}
+
+function removeSectionInstance(viewId, sec) {
+  if (sec.locked) return
+  const map = props.viewSections
+  const key = sec.instanceId ?? sec.id
+  const list = (map[viewId] ?? []).filter(s => (s.instanceId ?? s.id) !== key)
+  emit('update:viewSections', { ...map, [viewId]: list })
+}
+
+function addSectionInstance(viewId, sid) {
+  const map  = props.viewSections
+  const list = [...(map[viewId] ?? [])]
+  // Re-add a fresh instance under its biological parent.
+  list.push({ id: sid, homeViewId: getViewEntry(sid)?.homeView ?? viewId, collapsed: false, size: 1, instanceId: uuidv4() })
+  emit('update:viewSections', { ...map, [viewId]: list })
+}
+
+// ── Ellipsis ("More actions…") dropdown ───────────────────────────────────────
 
 const menuBtnRef = ref(null)
 const menuOpen   = ref(false)
 const menuPos    = ref({ x: 0, y: 0 })
 
-const allMenuItems = computed(() => {
-  // Section show/hide toggles for the active view's own sections (when it has
-  // more than one). Sources from the unified per-view section map.
-  const active = props.viewSections[props.modelValue]
-  const sectionItems = (Array.isArray(active) && active.length > 1)
-    ? active.map(s => ({
-        key:      s.id,
-        label:    s.title ?? s.id,
-        type:     'toggle',
-        // Locked sections (e.g. Places) are essential to the View and can't be
-        // hidden from the menu: always checked, click disabled.
-        disabled: !!s.locked,
-        checked:  () => s.locked ? true : !s.collapsed,
-        action:   () => {
-          if (s.locked) return
-          const list = props.viewSections[props.modelValue]
-          const i = list?.findIndex(sec => sec.id === s.id) ?? -1
-          if (i >= 0) {
-            list[i].collapsed = !list[i].collapsed
-            emit('update:viewSections', { ...props.viewSections })
-          }
-        },
-      }))
-    : []
-  return [...sectionItems, ...props.menuItems]
-})
+const allMenuItems = computed(() => [...sectionMenuItems(props.modelValue), ...props.menuItems])
 
 function openMenu() {
   const el = menuBtnRef.value
@@ -263,6 +369,83 @@ function openMenu() {
   const rect = el.getBoundingClientRect()
   menuPos.value = { x: rect.left, y: rect.bottom + 2 }
   menuOpen.value = true
+}
+
+// ── Context menus (tab / header / section heading) ────────────────────────────
+// A single cursor-positioned FloatingMenu, shared by all three since only one is
+// open at a time.
+const ctxOpen  = ref(false)
+const ctxItems = ref([])
+const ctxPos   = ref({ x: 0, y: 0 })
+// Per-instance badge visibility placeholder (no badges are rendered yet).
+const hiddenSectionBadges = ref(new Set())
+
+function showCtxMenu(items, x, y) {
+  ctxItems.value = items
+  ctxPos.value   = { x, y }
+  ctxOpen.value  = true
+}
+
+// Right-click a view tab.
+function openTabMenu(view, event) {
+  if (!isMovable.value || !chrome) return
+  const id = view.id
+  const moveTargets = chrome.moveTargetsFor(props.containerId) ?? []
+  showCtxMenu([
+    { key: 'hide', label: `Hide '${view.label}'`, action: () => chrome.hideView(id, props.containerId) },
+    { key: 'hide-badge', label: 'Hide Badge', type: 'toggle',
+      checked: () => chrome.isTabBadgeHidden(id), action: () => chrome.toggleTabBadge(id) },
+    { separator: true },
+    { key: 'move', label: 'Move to', submenu: moveTargets.map(t => ({
+        key: `move-${t.id}`, label: t.label,
+        action: () => chrome.moveViewToContainer(id, props.containerId, t.id),
+      })) },
+  ], event.clientX, event.clientY)
+}
+
+// Right-click the header (tab strip / chrome) but not a tab.
+function openHeaderMenu(event) {
+  if (!isMovable.value || !chrome) return
+  const cid = props.containerId
+  const viewItems = (chrome.viewsForContainer(cid) ?? []).map(v => ({
+    key:      `view-${v.id}`,
+    label:    v.label,
+    shortcut: v.shortcut,
+    type:     'toggle',
+    checked:  () => chrome.isViewVisible(v.id),
+    action:   () => chrome.toggleViewVisibility(v.id, cid),
+  }))
+  const tail = [
+    { key: 'tab-icons', label: 'Show Tab Icons', type: 'toggle',
+      checked: () => showTabIcons.value, action: () => chrome.toggleTabIcons() },
+  ]
+  if (cid === 'secondarySidebar') {
+    tail.push({ key: 'ssb-left', label: 'Move Secondary Side Bar Left', disabled: true })
+    tail.push({ key: 'hide-ssb', label: 'Hide Secondary Side Bar', action: () => chrome.hideContainer(cid) })
+  } else if (cid === 'panel') {
+    tail.push({ key: 'hide-panel', label: 'Hide Panel', action: () => chrome.hideContainer(cid) })
+  }
+  const items = viewItems.length ? [...viewItems, { separator: true }, ...tail] : tail
+  showCtxMenu(items, event.clientX, event.clientY)
+}
+
+// Right-click a section heading (bubbled up from the SplitSectionArea).
+function openSectionMenu({ viewId, sectionId, instanceId, locked, x, y }) {
+  const sec   = (props.viewSections[viewId] ?? []).find(s => (s.instanceId ?? s.id) === instanceId)
+                ?? { id: sectionId, instanceId, locked }
+  const label = getViewEntry(sectionId)?.label ?? sectionId
+  showCtxMenu([
+    { key: 'hide', label: `Hide '${label}'`, disabled: !!locked, action: () => removeSectionInstance(viewId, sec) },
+    { key: 'hide-badge', label: 'Hide Badge', type: 'toggle',
+      checked: () => hiddenSectionBadges.value.has(instanceId),
+      action:  () => {
+        const s = new Set(hiddenSectionBadges.value)
+        if (s.has(instanceId)) s.delete(instanceId); else s.add(instanceId)
+        hiddenSectionBadges.value = s
+      } },
+    { separator: true },
+    ...sectionMenuItems(viewId),
+  ], x, y)
 }
 </script>
 

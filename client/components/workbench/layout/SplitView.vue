@@ -1,5 +1,5 @@
 <template>
-  <div class="split-view" :class="{ 'is-collapsed': showHeading && isCollapsed }">
+  <div class="split-view" :class="{ 'is-collapsed': showHeading && isCollapsed }" :data-view-id="viewDataId(view.id)">
     <div
       v-if="showHeading"
       class="split-view-heading"
@@ -14,9 +14,9 @@
       <svg v-if="icon" class="sv-icon" viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
         <path :d="icon" />
       </svg>
-      <span class="sv-title">{{ label }}</span>
-      <div v-if="actions.length" class="sv-actions" @click.stop>
-        <ViewActions :actions="actions" />
+      <span class="sv-title">{{ headingLabel }}</span>
+      <div v-if="hasActions" class="sv-actions" @click.stop>
+        <ViewActions :groups="actionGroups" />
       </div>
     </div>
     <div v-if="!isCollapsed" class="sv-body">
@@ -27,6 +27,7 @@
         :containerId="containerId"
         @commit="$emit('commit-sections')"
         @section-move="$emit('section-move', $event)"
+        @section-contextmenu="$emit('section-contextmenu', $event)"
       />
     </div>
   </div>
@@ -37,7 +38,7 @@ import { computed } from 'vue'
 import { mdiChevronRight, mdiChevronDown } from '@mdi/js'
 import SplitSectionArea from './SplitSectionArea.vue'
 import ViewActions from './ViewActions.vue'
-import { resolveViewActions } from '../../../composables/useViewRegistry.js'
+import { getViewEntry, viewActions, bubbledSectionActions, viewDataId } from '../../../composables/useViewRegistry.js'
 
 // A whole View context (Explorer, Debug, Preview…) inside a SplitViewArea. Its
 // heading — lighter than a section heading, to read as a context boundary — is
@@ -53,14 +54,33 @@ const props = defineProps({
   direction:   { type: String,  default: 'col' },
   containerId: { type: String,  default: '' },
 })
-const emit = defineEmits(['toggle', 'commit-sections', 'section-move', 'heading-drag-start', 'heading-drag-end'])
+const emit = defineEmits(['toggle', 'commit-sections', 'section-move', 'section-contextmenu', 'heading-drag-start', 'heading-drag-end'])
+
+// Heading text. When this View is down to a single *named* sub-section (its
+// section heading is therefore hidden), fold the section name into the View
+// heading — e.g. an Explorer SplitView holding only Open Editors reads
+// "Explorer: Open Editors". Otherwise just the View label.
+const headingLabel = computed(() => {
+  const secs = props.sections
+  // Only fold the section name in when its own heading is hidden; a section that
+  // keeps its heading (alwaysShowHeading) shows its name there instead.
+  if (secs.length === 1 && secs[0].id !== props.view.id && !secs[0].alwaysShowHeading) {
+    const secLabel = getViewEntry(secs[0].id)?.label ?? secs[0].id
+    return `${props.label}: ${secLabel}`
+  }
+  return props.label
+})
+
+// View-heading buttons, grouped by hierarchy: section actions that bubbled up
+// (their section heading is hidden) then the View's own actions.
+const actionGroups = computed(() => [
+  bubbledSectionActions(props.view.id, props.sections),
+  viewActions(props.view.id),
+])
+const hasActions = computed(() => actionGroups.value.some(g => g.length))
 
 // Row layout (bottom panel) never collapses a SplitView.
 const isCollapsed = computed(() => props.direction !== 'row' && !!props.view.collapsed)
-
-// View-level actions for the SplitViewHeading: the View's own, plus a lone
-// headerless section's actions promoted up.
-const actions = computed(() => resolveViewActions(props.view.id, props.sections))
 
 function onHeadingClick() {
   if (props.direction === 'row') return

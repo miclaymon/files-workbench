@@ -4,6 +4,9 @@ import { API_BASE, CONTROL_BASE, API_V } from '~/lib/api-config.js'
 const DEFAULTS = {
   developerMode: false,
   theme: 'dark',
+  workbench: {
+    showTabIcons: true,
+  },
   explorer: {
     showFiles: false,
     showIcons: true,

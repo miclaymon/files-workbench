@@ -37,7 +37,7 @@ export { uuidv4 }
 
 const DEFAULT_SECTIONS = {
   explorer: [
-    { id: 'places',      title: 'Places',       homeViewId: 'explorer', collapsed: false, size: 4, locked: true },
+    { id: 'places',      title: 'Places',       homeViewId: 'explorer', collapsed: false, size: 4, locked: true, alwaysShowHeading: true },
     { id: 'openEditors', title: 'Open Editors', homeViewId: 'explorer', collapsed: true,  size: 1 },
   ],
 }
@@ -64,7 +64,7 @@ function createDefaultWorkspace({ name = 'Default' } = {}) {
         // Per-view section lists (the SplitSectionArea level). Keyed by view id;
         // each section carries its home ("biological") View.
         viewSections: {
-          explorer: DEFAULT_SECTIONS.explorer.map(s => ({ ...s })),
+          explorer: DEFAULT_SECTIONS.explorer.map(s => ({ ...s, instanceId: uuidv4() })),
         },
         views: [
           {
@@ -201,7 +201,7 @@ function migrateWorkspace(ws) {
       width:  left.width  ?? 240,
       activeViewContainerId: left.activeActivityId ?? 'explorer',
       sectionState: {
-        explorer: { sections: DEFAULT_SECTIONS.explorer.map(s => ({ ...s })) },
+        explorer: { sections: DEFAULT_SECTIONS.explorer.map(s => ({ ...s, instanceId: uuidv4() })) },
       },
       views: left.views ?? left.activities ?? [
         { id: 'explorer', name: 'Explorer', context: { childrenByPath: {}, expandedNodes: [], selectedNodes: [] } },
@@ -258,7 +258,7 @@ function migrateWorkspace(ws) {
     if (ps && !ps.viewSections) {
       const stored = ps.sectionState?.explorer?.sections
       ps.viewSections = {
-        explorer: (Array.isArray(stored) && stored.length ? stored : DEFAULT_SECTIONS.explorer).map(s => ({ ...s })),
+        explorer: (Array.isArray(stored) && stored.length ? stored : DEFAULT_SECTIONS.explorer).map(s => ({ ...s, instanceId: s.instanceId || uuidv4() })),
       }
       delete ps.sectionState
     }
@@ -282,7 +282,7 @@ function migrateWorkspace(ws) {
   for (const cid of ['primarySidebar', 'secondarySidebar', 'panel']) {
     if (ws.layout[cid] && !ws.layout[cid].viewSections) {
       ws.layout[cid].viewSections = cid === 'primarySidebar'
-        ? { explorer: DEFAULT_SECTIONS.explorer.map(s => ({ ...s })) }
+        ? { explorer: DEFAULT_SECTIONS.explorer.map(s => ({ ...s, instanceId: uuidv4() })) }
         : {}
     }
   }
@@ -516,14 +516,17 @@ export function useWorkspaces() {
         ? { ...s, id: 'places', title: s.title === 'Folders' ? 'Places' : s.title }
         : { ...s }
       r.homeViewId = _homeOf(viewId, r)
+      if (!r.instanceId) r.instanceId = uuidv4()
       return r
     })
-    // Explorer invariants: Places leads and stays locked.
+    // Explorer invariant: Places stays locked (essential — can't be hidden or
+    // pulled out of Explorer). Its position is no longer forced; the user may
+    // reorder it within the Explorer section area, and that order persists.
     if (viewId === 'explorer') {
-      const pi = out.findIndex(s => s.id === 'places')
-      if (pi > 0) out.unshift(out.splice(pi, 1)[0])
       for (const s of out) {
-        if (DEFAULT_SECTIONS.explorer.find(d => d.id === s.id)?.locked) s.locked = true
+        const def = DEFAULT_SECTIONS.explorer.find(d => d.id === s.id)
+        if (def?.locked) s.locked = true
+        if (def?.alwaysShowHeading) s.alwaysShowHeading = true
       }
     }
     return out

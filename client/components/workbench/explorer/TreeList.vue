@@ -32,5 +32,5 @@ defineEmits(['select', 'toggleExpand', 'dblclick', 'rename'])
 </script>
 
 <style scoped>
-.tree { list-style: none; padding: 6px 0; margin: 0; }
+.tree { list-style: none; padding: 4px 0; margin: 0; }
 </style>

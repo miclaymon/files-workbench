@@ -122,16 +122,68 @@ export function viewAcceptsSections(viewId) {
   return getViewEntry(viewId)?.acceptsSections !== false
 }
 
-// The action buttons shown at a View's level (tab strip / SplitViewHeading): the
-// View's own actions, plus — when the View is down to a single *named* section
-// whose header is therefore hidden — that section's actions, promoted up so they
-// stay reachable. A self-section (id === viewId) adds nothing extra.
-export function resolveViewActions(viewId, sections) {
-  const acts = [...(getViewEntry(viewId)?.actions ?? [])]
-  if (Array.isArray(sections) && sections.length === 1 && sections[0].id !== viewId) {
-    acts.push(...(getViewEntry(sections[0].id)?.actions ?? []))
+// Whether a View may hold the same section id more than once (default false). When
+// false, dropping a section a View already has is blocked; when true, the section
+// can appear twice. (Rendering true duplicates correctly needs per-instance keys —
+// not yet wired — so this stays opt-in and unset.)
+export function viewAllowsDuplicateSections(viewId) {
+  return getViewEntry(viewId)?.allowDuplicateSections === true
+}
+
+// ── Action buttons & heading visibility ────────────────────────────────────────
+// Buttons cascade by hierarchy: a section's buttons live in its section heading
+// when shown, else bubble to the view heading, else to the tab strip; a view's
+// buttons live in its view heading when shown, else the tab strip. Each level
+// renders the groups it holds inline, separated, with panel actions last.
+
+// A View's own action buttons (e.g. Debug's Clear).
+export function viewActions(viewId) {
+  return getViewEntry(viewId)?.actions ?? []
+}
+
+// A named section's own action buttons (e.g. Places' Refresh).
+export function sectionActions(sectionId) {
+  return getViewEntry(sectionId)?.actions ?? []
+}
+
+// Whether a section's heading is rendered: when its View has more than one
+// section, or the section opts in via `alwaysShowHeading` (e.g. Places, so its
+// heading — and Refresh button — stay put even when it's Explorer's only section).
+export function sectionHeadingShown(sections, section) {
+  return (Array.isArray(sections) && sections.length > 1) || !!section?.alwaysShowHeading
+}
+
+// Section actions that must bubble up because their own heading is hidden. A
+// self-section (id === viewId) contributes nothing — it's the View's own content,
+// represented by viewActions. Named sections whose heading shows keep their
+// buttons there.
+export function bubbledSectionActions(viewId, sections) {
+  const out = []
+  for (const s of (sections ?? [])) {
+    if (s.id === viewId) continue
+    if (sectionHeadingShown(sections, s)) continue
+    out.push(...sectionActions(s.id))
   }
-  return acts
+  return out
+}
+
+// ── Semantic DOM ID helpers ────────────────────────────────────────────────────
+// Used to stamp data-view-id / data-section-id / data-section-instance-uuid
+// attributes onto rendered elements for automation and DevTools inspection.
+
+function _cap(str) { return str.charAt(0).toUpperCase() + str.slice(1) }
+
+// e.g. 'explorer' → 'Workbench:Explorer'
+export function viewDataId(viewId) {
+  return `Workbench:${_cap(viewId)}`
+}
+
+// e.g. ('openEditors', 'explorer') → 'Workbench:Explorer.OpenEditors'
+//      ('debug', 'debug')          → 'Workbench:Debug'  (self-section)
+export function sectionDataId(sectionId, homeViewId) {
+  const home = homeViewId ?? sectionId
+  if (sectionId === home) return `Workbench:${_cap(sectionId)}`
+  return `Workbench:${_cap(home)}.${_cap(sectionId)}`
 }
 
 export function useViewRegistry() {

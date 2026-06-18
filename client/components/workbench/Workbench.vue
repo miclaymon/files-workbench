@@ -2,182 +2,109 @@
   <div class="vscode-shell">
 
     <!-- Titlebar -->
-    <div class="titlebar">
-      <div class="left">
-        <strong style="font-size: 13px;">Files</strong>
-        <button ref="fileMenuButton" class="no-drag titlebar-menu-btn" @click.stop="showMenuDelayed('file')">File</button>
-        <button ref="editMenuButton" class="no-drag titlebar-menu-btn" @click.stop="showMenuDelayed('edit')">Edit</button>
-        <button ref="viewMenuButton" class="no-drag titlebar-menu-btn" @click.stop="showMenuDelayed('view')">View</button>
-
-        <FloatingMenu :visible="fileMenuOpen" type="menu" :items="fileMenuItems" :x="fileMenuPos.x" :y="fileMenuPos.y" @close="fileMenuOpen = false" />
-        <FloatingMenu :visible="editMenuOpen" type="menu" :items="editMenuItems" :x="editMenuPos.x" :y="editMenuPos.y" @close="editMenuOpen = false" />
-        <FloatingMenu :visible="viewMenuOpen" type="menu" :items="viewMenuItems" :x="viewMenuPos.x" :y="viewMenuPos.y" @close="viewMenuOpen = false" />
-      </div>
-
-      <div class="center">
-        <div class="omnibar no-drag" @click="openCommandPalette">Search files, commands…</div>
-      </div>
-
-      <div class="right">
-        <template v-if="isElectron">
-          <button class="no-drag winbtn" title="Minimize" @click="windowMinimize">—</button>
-          <button class="no-drag winbtn" title="Maximize" @click="windowToggleMaximize">□</button>
-          <button class="no-drag winbtn close" title="Close" @click="windowClose">×</button>
-        </template>
-      </div>
-    </div>
+    <TitleBar :menus="titleMenus" @open-command-palette="openCommandPalette" />
 
     <!-- Main area -->
     <div class="main">
 
       <!-- Activity Bar -->
-      <div class="activitybar">
-        <div class="activitybar-top">
-          <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activePrimaryView === 'explorer' }" title="Explorer" @click="togglePrimaryView('explorer')">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiFileTree" /></svg>
-          </a>
-          <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activePrimaryView === 'search' }" title="Search" @click="togglePrimaryView('search')">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiMagnify" /></svg>
-          </a>
-          <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activePrimaryView === 'storage' }" title="Storage" @click="togglePrimaryView('storage')">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiHarddisk" /></svg>
-          </a>
-        </div>
-        <div class="activitybar-bottom">
-          <a ref="settingsButton" href="javascript:void(0)" class="activitybar-icon" title="Settings" @click.stop="showMenuDelayed('settings')">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiCog" /></svg>
-          </a>
-        </div>
-        <FloatingMenu :visible="settingsMenuOpen" type="menu" :items="settingsMenuItems" :x="settingsMenuPos.x" :y="settingsMenuPos.y" @close="settingsMenuOpen = false" />
-      </div>
+      <ActivityBar
+        :activePrimaryView="activePrimaryView"
+        :settingsMenuItems="settingsMenuItems"
+        @toggle-view="togglePrimaryView"
+      />
 
       <!-- Sidebar + Editor split -->
       <div class="workbench-content" :class="{ 'left-maximized': leftPaneMaximized, 'right-maximized': rightPaneMaximized }">
 
-        <!-- Sidebar -->
-        <div v-if="sidebarVisible" class="sidebar" :style="{ width: sidebarWidth + 'px' }">
-          <ViewContainer
-            v-if="activePrimaryView === 'explorer'"
-            containerId="primarySidebar"
-            :views="primarySidebarViews"
-            v-model="activePrimaryView"
-            :viewSections="primaryViewSections"
-            :droppable="false"
-            @update:viewSections="m => { primaryViewSections = m }"
-            @transfer="handleViewTransfer"
-            @section-move="handleSectionMove"
-          />
-          <!-- view/section content is rendered via the registry (ViewContentHost) -->
-          <div v-else-if="activePrimaryView === 'search'" class="sidebar-placeholder">
-            Search panel coming soon…
-          </div>
-        </div>
-        <div v-if="sidebarVisible" class="resize-handle resize-handle--col" @mousedown="onResizeSidebar" />
+        <!-- Primary side bar (Explorer / Search) -->
+        <PrimarySideBar
+          :visible="sidebarVisible"
+          v-model:width="sidebarWidth"
+          :views="primarySidebarViews"
+          v-model:activeView="activePrimaryView"
+          v-model:viewSections="primaryViewSections"
+          @transfer="handleViewTransfer"
+          @section-move="handleSectionMove"
+          @view-reabsorb="handleViewReabsorb"
+        />
 
         <!-- Editor column (editor + bottom panel) -->
         <div class="editor-column" :class="{ 'bottom-maximized': bottomPaneMaximized }">
 
           <!-- Editor area: recursive grid of editor groups -->
           <div class="editor-area">
-            <GridView :node="viewRoot">
-              <template #leaf="{ node }">
-                <EditorGroup
-                  :ref="el => registerGroup(node.id, el)"
-                  :group="node"
-                  :isActive="node.id === activeGroupId"
-                  :isMaximized="node.id === maximizedGroupId"
-                  :prefs="prefs"
-                  :excludedCategories="prefs.excludedCategories"
-                  @select="handleSelectFromDirectory"
-                  @open="handleOpenFromTab"
-                  @navigate="navigateInCurrentTab"
-                  @contextmenu="showItemContextMenu"
-                  @background-contextmenu="showBackgroundContextMenu"
-                  @right-drag-drop="showRightDragDropMenu"
-                  @rename="handleRename"
-                  @stats="onGroupStats"
-                  @update:layout="handleLayoutChange"
-                  @tab-contextmenu="handleTabContextMenu"
-                />
-              </template>
-            </GridView>
+            <Editor
+              :viewRoot="viewRoot"
+              :activeGroupId="activeGroupId"
+              :maximizedGroupId="maximizedGroupId"
+              :prefs="prefs"
+              :registerGroup="registerGroup"
+              @select="handleSelectFromDirectory"
+              @open="handleOpenFromTab"
+              @navigate="navigateInCurrentTab"
+              @contextmenu="showItemContextMenu"
+              @background-contextmenu="showBackgroundContextMenu"
+              @right-drag-drop="showRightDragDropMenu"
+              @rename="handleRename"
+              @stats="onGroupStats"
+              @update:layout="handleLayoutChange"
+              @tab-contextmenu="handleTabContextMenu"
+            />
           </div>
 
-          <!-- Bottom panel resize handle + panel -->
-          <div v-show="bottompaneVisible" class="resize-handle resize-handle--row" @mousedown="onResizeBottompane" />
-          <div v-show="bottompaneVisible" class="bottompane" :style="{ height: bottompaneHeight + 'px' }">
-            <ViewContainer
-              containerId="panel"
-              :views="bottomPanelViews"
-              v-model="bottomPanel"
-              :mergedSlots="bottomPanelMerges"
-              :viewSections="panelViewSections"
-              dropDirection="row"
-              @update:mergedSlots="slots => { bottomPanelMerges = slots }"
-              @update:viewSections="m => { panelViewSections = m }"
-              @transfer="handleViewTransfer"
-              @merge="handleViewMerge"
-              @unmerge="handleViewUnmerge"
-              @section-move="handleSectionMove"
-            >
-              <template #panel-actions>
-                <button class="panel-action-btn" :title="bottomPaneMaximized ? 'Restore Panel' : 'Maximize Panel'" @click="toggleBottomPaneMaximize">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path :d="bottomPaneMaximized ? mdiArrowCollapse : mdiArrowExpand" /></svg>
-                </button>
-                <button class="panel-action-btn" title="Hide Panel" @click="bottompaneVisible = false">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiClose" /></svg>
-                </button>
-              </template>
-            </ViewContainer>
-          </div>
-
-        </div>
-
-        <!-- Right pane -->
-        <div v-show="rightpaneVisible" class="resize-handle resize-handle--col" @mousedown="onResizeRightpane" />
-        <div v-show="rightpaneVisible" class="rightpane" :style="{ width: rightpaneWidth + 'px' }">
-          <ViewContainer
-            containerId="secondarySidebar"
-            :views="rightPanelViews"
-            v-model="rightPanel"
-            :mergedSlots="rightPanelMerges"
-            :viewSections="secondaryViewSections"
-            @update:mergedSlots="slots => { rightPanelMerges = slots }"
-            @update:viewSections="m => { secondaryViewSections = m }"
+          <!-- Bottom panel -->
+          <BottomPanel
+            v-model:visible="bottompaneVisible"
+            v-model:height="bottompaneHeight"
+            :views="bottomPanelViews"
+            v-model="bottomPanel"
+            v-model:mergedSlots="bottomPanelMerges"
+            v-model:viewSections="panelViewSections"
+            :maximized="bottomPaneMaximized"
             @transfer="handleViewTransfer"
             @merge="handleViewMerge"
             @unmerge="handleViewUnmerge"
             @section-move="handleSectionMove"
-          >
-            <template #panel-actions>
-              <button class="panel-action-btn" :title="rightPaneMaximized ? 'Restore Secondary Side Bar' : 'Maximize Secondary Side Bar'" @click="toggleRightPaneMaximize">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path :d="rightPaneMaximized ? mdiArrowCollapse : mdiArrowExpand" /></svg>
-              </button>
-              <button class="panel-action-btn" title="Hide Secondary Side Bar" @click="rightpaneVisible = false">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiClose" /></svg>
-              </button>
-            </template>
-          </ViewContainer>
+            @section-to-tab="handleSectionToTab"
+            @view-reabsorb="handleViewReabsorb"
+            @toggle-maximize="toggleBottomPaneMaximize"
+          />
+
         </div>
+
+        <!-- Secondary side bar (right) -->
+        <SecondarySideBar
+          v-model:visible="rightpaneVisible"
+          v-model:width="rightpaneWidth"
+          :views="rightPanelViews"
+          v-model="rightPanel"
+          v-model:mergedSlots="rightPanelMerges"
+          v-model:viewSections="secondaryViewSections"
+          :maximized="rightPaneMaximized"
+          @transfer="handleViewTransfer"
+          @merge="handleViewMerge"
+          @unmerge="handleViewUnmerge"
+          @section-move="handleSectionMove"
+          @section-to-tab="handleSectionToTab"
+          @view-reabsorb="handleViewReabsorb"
+          @toggle-maximize="toggleRightPaneMaximize"
+        />
 
       </div>
     </div>
 
     <!-- Status bar -->
-    <div v-show="statusbarVisible" class="statusbar">
-      <div class="status-left">
-        <template v-if="activeTab?.kind === 'dir'">
-          <div class="status-bar-item">Directory: {{ formatCount(dirStats.count) }} item{{ dirStats.count === 1 ? '' : 's' }} | {{ formatBytes(dirStats.totalSize) }}</div>
-          <div v-if="selectedItems.length > 0" class="status-bar-item">Selected: {{ formatCount(selectedItems.length) }} item{{ selectedItems.length === 1 ? '' : 's' }} | {{ formatBytes(selectedItems.reduce((s, i) => s + (i.size ?? 0), 0)) }}</div>
-          <div v-if="clipboard.count > 0" class="status-bar-item status-bar-item--clipboard">{{ clipboard.mode }}: {{ formatCount(clipboard.count) }} item{{ clipboard.count === 1 ? '' : 's' }} | {{ formatBytes(clipboard.items.reduce((s, i) => s + (i.size ?? 0), 0)) }}</div>
-        </template>
-        <div v-else-if="status.left" class="status-bar-item">{{ status.left }}</div>
-      </div>
-      <span class="spacer"></span>
-      <span class="status-connection" :class="{ disconnected: !serverConnected }">
-        <span class="connection-dot" />{{ statusRight }}
-      </span>
-    </div>
+    <StatusBar
+      v-show="statusbarVisible"
+      :activeTab="activeTab"
+      :dirStats="dirStats"
+      :selectedItems="selectedItems"
+      :clipboard="clipboard"
+      :statusText="status.left"
+      :serverConnected="serverConnected"
+      :statusRight="statusRight"
+    />
 
     <!-- Context menu -->
     <ContextMenu
@@ -273,15 +200,15 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
-import { mdiHarddisk, mdiSegment, mdiMagnify, mdiMessage, mdiCog, mdiEye, mdiInformation, mdiBug,
+import { mdiMessage, mdiEye, mdiInformation, mdiBug,
          mdiContentCopy, mdiContentCut, mdiPencilOutline, mdiTrashCanOutline, mdiInformationOutline,
-         mdiFileTree, mdiClose, mdiArrowExpand, mdiArrowCollapse } from '@mdi/js'
+         mdiFileTree } from '@mdi/js'
 import { createLeaf, findLeaf, firstLeaf, collectLeaves, leafCount, insertLeafBeside, removeLeaf, applyPreset } from '~/composables/useLayoutGrid.js'
 import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
-import ViewContainer from './layout/ViewContainer.vue'
 import CommandPalette from './ui/CommandPalette.vue'
 import SettingsModal from './ui/SettingsModal.vue'
 import KeyboardShortcutsModal from './ui/KeyboardShortcutsModal.vue'
+import { getViewEntry, viewAllowsDuplicateSections } from '~/composables/useViewRegistry.js'
 import { usePreferences } from '~/composables/usePreferences.js'
 import { useDebugLog } from '~/composables/useDebugLog.js'
 import { useFileOpsQueue } from '~/composables/useFileOpsQueue.js'
@@ -289,8 +216,6 @@ import { useActionHistory } from '~/composables/useActionHistory.js'
 import { fsStat, fsOpenWithSystem, fsOpenTerminal, fsArchiveCapabilities } from '~/lib/fs-api.js'
 
 function uuid() { return uuidv4() }
-
-const isElectron = computed(() => !!window.electron)
 
 // Status bar
 const serverConnected = ref(true)
@@ -303,10 +228,6 @@ function formatBytes(bytes) {
   let val = bytes
   while (val >= 1024 && i < units.length - 1) { val /= 1024; i++ }
   return `${val < 10 ? val.toFixed(1) : Math.round(val)} ${units[i]}`
-}
-
-function formatCount(n) {
-  return n.toLocaleString()
 }
 
 const statusRight = computed(() => serverConnected.value ? 'Connected' : 'Disconnected')
@@ -405,28 +326,31 @@ function toggleLeftPaneMaximize() {
 function toggleBottomPaneMaximize() { bottomPaneMaximized.value = !bottomPaneMaximized.value }
 
 // Icon registry for well-known panel views
+// `shortcut` strings are display-only hints in the header context menu; the
+// actual keybindings aren't wired yet.
 const PANEL_VIEW_REGISTRY = {
-  preview: { icon: mdiEye,         label: 'Preview' },
-  details: { icon: mdiInformation, label: 'Details' },
-  chat:    { icon: mdiMessage,      label: 'Chat'    },
-  debug:   { icon: mdiBug,          label: 'Debug'   },
+  preview: { icon: mdiEye,         label: 'Preview', shortcut: 'Alt+P'       },
+  details: { icon: mdiInformation, label: 'Details', shortcut: 'Alt+Shift+P' },
+  chat:    { icon: mdiMessage,     label: 'Chat',    shortcut: 'Ctrl+Alt+I'  },
+  debug:   { icon: mdiBug,         label: 'Debug'                            },
+}
+
+// Tab descriptor for a view id. Falls back to the content registry so a view
+// "floated" out of its home container (e.g. an Explorer tab created by docking
+// Open Editors into the panel) still gets its proper icon/label.
+function _viewTab(id) {
+  return {
+    id,
+    icon:  PANEL_VIEW_REGISTRY[id]?.icon  ?? getViewEntry(id)?.icon,
+    label: PANEL_VIEW_REGISTRY[id]?.label ?? getViewEntry(id)?.label ?? id,
+  }
 }
 
 // Bottom panel
-const bottomPanelViews = computed(() =>
-  bottomPanelViewIds.value.map(id => ({
-    id,
-    icon:  PANEL_VIEW_REGISTRY[id]?.icon,
-    label: PANEL_VIEW_REGISTRY[id]?.label ?? id,
-  }))
-)
+const bottomPanelViews = computed(() => bottomPanelViewIds.value.map(_viewTab))
 
 const rightPanelViews = computed({
-  get: () => rightPanelViewIds.value.map(id => ({
-    id,
-    icon:  PANEL_VIEW_REGISTRY[id]?.icon,
-    label: PANEL_VIEW_REGISTRY[id]?.label ?? id,
-  })),
+  get: () => rightPanelViewIds.value.map(_viewTab),
   set: list => { rightPanelViewIds.value = list.map(v => v.id) },
 })
 
@@ -455,11 +379,11 @@ function isViewVisible(id) {
   return inMerges(rightPanelMerges.value) || inMerges(bottomPanelMerges.value)
 }
 
-// Adds a missing view back to its default container and makes it visible.
-function addView(id) {
+// Adds a missing view back to a container (preferred, else its default) and makes it visible.
+function addView(id, preferredCid) {
   if (isViewVisible(id)) return
   hiddenViews.value = hiddenViews.value.filter(h => h !== id)
-  const cid = VIEW_DEFAULT_CONTAINER[id] ?? 'secondarySidebar'
+  const cid = preferredCid ?? VIEW_DEFAULT_CONTAINER[id] ?? 'secondarySidebar'
   if (cid === 'panel') {
     bottomPanelViewIds.value = [...bottomPanelViewIds.value, id]
     bottomPanel.value = id
@@ -542,6 +466,24 @@ function handleViewTransfer({ fromContainerId, toContainerId, viewId, toIndex })
       setContainerMerges(toContainerId, { ...getContainerMerges(toContainerId), [viewId]: group })
     }
 
+    // Move viewSections for the tab and all merged views so content renders correctly in the destination
+    const srcVS = _viewSectionsRef(fromContainerId)
+    const dstVS = _viewSectionsRef(toContainerId)
+    if (srcVS && dstVS) {
+      const allViewIds = [viewId]
+      const movedGroup = getContainerMerges(toContainerId)[viewId]
+      if (movedGroup) allViewIds.push(...movedGroup.map(v => v.id).filter(id => id !== viewId))
+      const srcVSMap = { ...srcVS.value }
+      const migratedSections = {}
+      for (const vid of allViewIds) {
+        if (srcVSMap[vid] !== undefined) { migratedSections[vid] = srcVSMap[vid]; delete srcVSMap[vid] }
+      }
+      if (Object.keys(migratedSections).length) {
+        srcVS.value = srcVSMap
+        dstVS.value = { ...dstVS.value, ...migratedSections }
+      }
+    }
+
     // Update active tabs
     if (getActiveTab(fromContainerId) === viewId) setActiveTab(fromContainerId, srcList[0] ?? '')
     setActiveTab(toContainerId, viewId)
@@ -567,6 +509,19 @@ function handleViewMerge({ toContainerId, toViewId, fromContainerId, viewId, zon
   const newEntry = { id: viewId, title: PANEL_VIEW_REGISTRY[viewId]?.label ?? viewId, collapsed: false, size: 1 }
   const newGroup = zone === 'before' ? [newEntry, ...existing] : [...existing, newEntry]
   setContainerMerges(toContainerId, { ...toMerges, [toViewId]: newGroup })
+
+  // Move viewSections when the merged view crosses containers
+  if (fromContainerId !== toContainerId) {
+    const srcVS = _viewSectionsRef(fromContainerId)
+    const dstVS = _viewSectionsRef(toContainerId)
+    if (srcVS && dstVS && srcVS.value[viewId] !== undefined) {
+      const srcVSMap = { ...srcVS.value }
+      const sections = srcVSMap[viewId]
+      delete srcVSMap[viewId]
+      srcVS.value = srcVSMap
+      dstVS.value = { ...dstVS.value, [viewId]: sections }
+    }
+  }
 
   // Update active tabs
   if (getActiveTab(fromContainerId) === viewId) setActiveTab(fromContainerId, srcList[0] ?? '')
@@ -610,9 +565,29 @@ function handleViewUnmerge({ fromViewId, fromContainerId, extractViewId, toConta
   if (!dstList.includes(extractViewId)) dstList.splice(toIndex, 0, extractViewId)
   setContainerIds(targetCid, dstList)
   setActiveTab(targetCid, extractViewId)
+
+  // Move viewSections if the extracted view lands in a different container
+  if (targetCid !== fromContainerId) {
+    const srcVS = _viewSectionsRef(fromContainerId)
+    const dstVS = _viewSectionsRef(targetCid)
+    if (srcVS && dstVS && srcVS.value[extractViewId] !== undefined) {
+      const srcVSMap = { ...srcVS.value }
+      const sections = srcVSMap[extractViewId]
+      delete srcVSMap[extractViewId]
+      srcVS.value = srcVSMap
+      dstVS.value = { ...dstVS.value, [extractViewId]: sections }
+    }
+  }
 }
 
-// ── Section adoption: a SplitSection dragged into a different View's area ──────
+// ── Section adoption ──────────────────────────────────────────────────────────
+// A SplitSection dragged out of its View travels *with* its biological parent
+// View: the parent materialises as its own SplitView (when dropped on another
+// View's body — like merging a tab) or as a standalone tab (when dropped on the
+// tab strip). A section always lives under a View whose id is its homeViewId, so
+// the parent groups all of one home's relocated sections; once it holds >1 the
+// section headings appear, otherwise the parent SplitView heading reads
+// "Parent: Section".
 
 function _viewSectionsRef(containerId) {
   if (containerId === 'primarySidebar')   return primaryViewSections
@@ -621,66 +596,217 @@ function _viewSectionsRef(containerId) {
   return null
 }
 
-function handleSectionMove({ sectionId, fromViewId, fromContainerId, toViewId, toContainerId, toIndex }) {
-  if (fromContainerId === toContainerId && fromViewId === toViewId) return  // same area → handled locally
+// The tab slot (its key id) currently showing `viewId` in a movable container,
+// whether `viewId` is a standalone tab or a member of a merge group.
+function _findSlotKey(containerId, viewId) {
+  const merges = getContainerMerges(containerId)
+  for (const [key, group] of Object.entries(merges)) {
+    if (group.some(sv => sv.id === viewId)) return key
+  }
+  if (getContainerIds(containerId).includes(viewId)) return viewId
+  return null
+}
+
+// Remove a View from its slot entirely (used when a floated parent loses its last
+// section). Mirrors unmerge bookkeeping but discards the View rather than re-tabbing it.
+function _removeViewFromSlot(containerId, viewId) {
+  const merges = { ...getContainerMerges(containerId) }
+  const ids = [...getContainerIds(containerId)]
+  let touched = false
+
+  for (const [key, group] of Object.entries(merges)) {
+    if (!group.some(sv => sv.id === viewId)) continue
+    const newGroup = group.filter(sv => sv.id !== viewId)
+    if (key === viewId) {
+      // The slot's own primary is leaving → re-key to the next member, or drop the slot.
+      delete merges[key]
+      const slotIdx = ids.indexOf(key)
+      if (newGroup.length >= 1) {
+        const newKey = newGroup[0].id
+        if (newGroup.length > 1) merges[newKey] = newGroup
+        if (slotIdx >= 0) ids[slotIdx] = newKey
+        if (getActiveTab(containerId) === key) setActiveTab(containerId, newKey)
+      } else {
+        if (slotIdx >= 0) ids.splice(slotIdx, 1)
+        if (getActiveTab(containerId) === key) setActiveTab(containerId, ids[0] ?? '')
+      }
+    } else {
+      // A non-primary member leaves → keep the group, or dissolve to a standalone primary.
+      if (newGroup.length > 1) merges[key] = newGroup
+      else delete merges[key]
+    }
+    touched = true
+    break
+  }
+
+  if (!touched) {
+    // Standalone tab (no merge group) → remove the tab.
+    const slotIdx = ids.indexOf(viewId)
+    if (slotIdx >= 0) {
+      ids.splice(slotIdx, 1)
+      if (getActiveTab(containerId) === viewId) setActiveTab(containerId, ids[0] ?? '')
+      touched = true
+    }
+  }
+
+  if (touched) {
+    setContainerMerges(containerId, merges)
+    setContainerIds(containerId, ids)
+  }
+}
+
+// Pull a section's list back into the source map, de-materialising a now-empty
+// floated parent (movable containers only — the primary sidebar's Explorer stays).
+function _removeFromSourceParent(srcMap, containerId, viewId, list) {
+  if (list.length === 0 && MOVABLE_CONTAINERS.has(containerId)) {
+    delete srcMap[viewId]
+    _removeViewFromSlot(containerId, viewId)
+  } else {
+    srcMap[viewId] = list
+  }
+}
+
+// Add `parentId` as a SplitView next to `anchorViewId`'s slot (merging it in),
+// unless it's already shown somewhere in the container.
+function _materializeParentSplitView(containerId, anchorViewId, parentId) {
+  const merges = { ...getContainerMerges(containerId) }
+  if (Object.values(merges).some(g => g.some(sv => sv.id === parentId))) return
+  if (getContainerIds(containerId).includes(parentId)) return
+
+  const slotKey = _findSlotKey(containerId, anchorViewId)
+  if (!slotKey) return
+  const entry = { id: parentId, collapsed: false, size: 1 }
+  merges[slotKey] = merges[slotKey]
+    ? [...merges[slotKey], entry]
+    : [{ id: slotKey, collapsed: false, size: 1 }, entry]
+  setContainerMerges(containerId, merges)
+}
+
+// Alerts and returns true when dropping `sectionId` into `parentId` would create
+// a disallowed same-view duplicate (the parent already holds that section).
+function _blockDuplicateDrop(destList, parentId, sectionId) {
+  if (!Array.isArray(destList) || !destList.some(s => s.id === sectionId)) return false
+  if (viewAllowsDuplicateSections(parentId)) return false
+  const what  = getViewEntry(sectionId)?.label ?? sectionId
+  const where = getViewEntry(parentId)?.label ?? parentId
+  window.alert(`"${what}" is already in "${where}".`)
+  return true
+}
+
+// Drop on a View's body → adopt the section, surfacing its biological parent as a
+// SplitView in that slot.
+function handleSectionMove({ sectionId, fromViewId, fromContainerId, homeViewId, toViewId, toContainerId, toIndex }) {
+  if (fromContainerId === toContainerId && fromViewId === toViewId) return  // same area → reordered locally
   const srcRef = _viewSectionsRef(fromContainerId)
   const dstRef = _viewSectionsRef(toContainerId)
   if (!srcRef || !dstRef) return
 
+  const parentId = homeViewId || fromViewId
+  // Block a disallowed duplicate, unless the section is merely re-positioning
+  // within its own parent's list (same container + same parent = same list).
+  const withinSameParent = fromContainerId === toContainerId && fromViewId === parentId
+  if (!withinSameParent && _blockDuplicateDrop(dstRef.value[parentId], parentId, sectionId)) return
   const sameContainer = fromContainerId === toContainerId
   const srcMap = { ...srcRef.value }
   const dstMap = sameContainer ? srcMap : { ...dstRef.value }
 
-  // Pull the section out of the source View.
+  // Pull the section out of its source parent.
   const srcList = [...(srcMap[fromViewId] ?? [])]
   const idx = srcList.findIndex(s => s.id === sectionId)
   if (idx < 0) return
   const [moved] = srcList.splice(idx, 1)
-  // Drop the source entry entirely if only its own self-section would remain.
-  if (srcList.length <= 1 && srcList.every(s => s.id === fromViewId)) {
-    delete srcMap[fromViewId]
-  } else {
-    srcMap[fromViewId] = srcList
-  }
+  _removeFromSourceParent(srcMap, fromContainerId, fromViewId, srcList)
 
-  // Add it to the target View, materialising the target's own self-section first
-  // (so the View keeps its native content alongside the adopted section).
-  const dstList = [...(dstMap[toViewId] ?? [{ id: toViewId, homeViewId: toViewId, collapsed: false, size: 1 }])]
-  if (!dstList.some(s => s.id === moved.id)) {
-    const at = Math.max(0, Math.min(toIndex, dstList.length))
+  // Add it under its biological parent in the destination.
+  const dstList = [...(dstMap[parentId] ?? [])]
+  if (!dstList.some(s => s.id === moved.id) || viewAllowsDuplicateSections(parentId)) {
+    const at = (toViewId === parentId && toIndex >= 0) ? Math.min(toIndex, dstList.length) : dstList.length
     dstList.splice(at, 0, moved)
   }
-  // Keep locked sections (e.g. Places) pinned to the front of the target.
-  dstList.sort((a, b) => (b.locked ? 1 : 0) - (a.locked ? 1 : 0))
-  dstMap[toViewId] = dstList
+  dstMap[parentId] = dstList
 
   srcRef.value = srcMap
   if (!sameContainer) dstRef.value = dstMap
+
+  // Surface the biological parent as its own SplitView in the target slot.
+  if (MOVABLE_CONTAINERS.has(toContainerId) && parentId !== toViewId) {
+    _materializeParentSplitView(toContainerId, toViewId, parentId)
+  }
 }
 
-function startResize(event, sizeRef, { axis = 'x', sign = 1, min = 60 } = {}) {
-  event.preventDefault()
-  const startPos = axis === 'x' ? event.clientX : event.clientY
-  const startSize = sizeRef.value
-  const onMove = (e) => {
-    sizeRef.value = Math.max(min, startSize + ((axis === 'x' ? e.clientX : e.clientY) - startPos) * sign)
+// Drop on the tab strip → the section's biological parent becomes a standalone tab.
+function handleSectionToTab({ sectionId, fromViewId, fromContainerId, homeViewId, toContainerId, toIndex }) {
+  if (!MOVABLE_CONTAINERS.has(toContainerId)) return
+  const srcRef = _viewSectionsRef(fromContainerId)
+  const dstRef = _viewSectionsRef(toContainerId)
+  if (!srcRef || !dstRef) return
+
+  const parentId = homeViewId || fromViewId
+  const withinSameParent = fromContainerId === toContainerId && fromViewId === parentId
+  if (!withinSameParent && _blockDuplicateDrop(dstRef.value[parentId], parentId, sectionId)) return
+  const sameContainer = fromContainerId === toContainerId
+  const srcMap = { ...srcRef.value }
+  const dstMap = sameContainer ? srcMap : { ...dstRef.value }
+
+  const srcList = [...(srcMap[fromViewId] ?? [])]
+  const idx = srcList.findIndex(s => s.id === sectionId)
+  if (idx < 0) return
+  const [moved] = srcList.splice(idx, 1)
+  _removeFromSourceParent(srcMap, fromContainerId, fromViewId, srcList)
+
+  const dstList = [...(dstMap[parentId] ?? [])]
+  if (!dstList.some(s => s.id === moved.id) || viewAllowsDuplicateSections(parentId)) dstList.push(moved)
+  dstMap[parentId] = dstList
+
+  srcRef.value = srcMap
+  if (!sameContainer) dstRef.value = dstMap
+
+  // Ensure the parent is shown as a tab (create it if it isn't anywhere yet).
+  const existingKey = _findSlotKey(toContainerId, parentId)
+  if (existingKey) {
+    setActiveTab(toContainerId, existingKey)
+  } else {
+    const ids = [...getContainerIds(toContainerId)]
+    const at = (toIndex != null && toIndex >= 0) ? Math.min(toIndex, ids.length) : ids.length
+    ids.splice(at, 0, parentId)
+    setContainerIds(toContainerId, ids)
+    setActiveTab(toContainerId, parentId)
   }
-  const onUp = () => {
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-    document.body.style.removeProperty('cursor')
-    document.body.style.removeProperty('user-select')
-  }
-  document.body.style.cursor = axis === 'x' ? 'col-resize' : 'row-resize'
-  document.body.style.userSelect = 'none'
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
 }
 
-// Named handlers so refs aren't auto-unwrapped when passed through the template
-const onResizeSidebar   = (e) => startResize(e, sidebarWidth,    { axis: 'x', sign:  1, min: 150 })
-const onResizeRightpane = (e) => startResize(e, rightpaneWidth,  { axis: 'x', sign: -1, min: 200 })
-const onResizeBottompane = (e) => startResize(e, bottompaneHeight, { axis: 'y', sign: -1, min:  60 })
+// Drop a *floated* View (a parent surfaced elsewhere, e.g. an "Explorer" tab in
+// the panel) back onto the same View in another container — fold its sections
+// home and discard the floated copy.
+function handleViewReabsorb({ fromContainerId, toContainerId, viewId }) {
+  if (fromContainerId === toContainerId) return
+  const srcRef = _viewSectionsRef(fromContainerId)
+  const dstRef = _viewSectionsRef(toContainerId)
+  if (!srcRef || !dstRef) return
+
+  const moving = [...(srcRef.value[viewId] ?? [])]
+  if (!moving.length) return
+
+  // If every section in the floated view is already in the destination (the user
+  // toggled them back manually), there's nothing to absorb. Leave the floated tab
+  // intact rather than silently discarding it.
+  const dstExisting = dstRef.value[viewId] ?? []
+  const newSections = moving.filter(s => !dstExisting.some(d => d.id === s.id))
+  if (!newSections.length && !viewAllowsDuplicateSections(viewId)) return
+
+  const srcMap = { ...srcRef.value }
+  delete srcMap[viewId]
+  if (MOVABLE_CONTAINERS.has(fromContainerId)) _removeViewFromSlot(fromContainerId, viewId)
+
+  const dstMap = { ...dstRef.value }
+  const dstList = [...(dstMap[viewId] ?? [])]
+  for (const s of moving) {
+    if (!dstList.some(d => d.id === s.id) || viewAllowsDuplicateSections(viewId)) dstList.push(s)
+  }
+  dstMap[viewId] = dstList
+
+  srcRef.value = srcMap
+  dstRef.value = dstMap
+}
 
 function handleLayoutChange(layout) {
   prefs.explorer.layout = layout
@@ -960,25 +1086,122 @@ const viewCtx = {
 }
 provide('viewCtx', viewCtx)
 
+// ── Chrome: tab / header / section context-menu actions ───────────────────────
+// Exposed to every ViewContainer via provide/inject so the three container
+// wrappers don't each need to thread these props/events through. Drives the
+// tab, header, and section context menus plus the "More actions…" dropdown.
+
+// Remembers the area a tab was last shown in, so re-showing a hidden view returns
+// it home. Runtime-only — hiddenViews persists; remembering the exact area is
+// best-effort and falls back to the view's default container.
+const viewLastContainer = ref({})
+// Badge visibility is a placeholder until views/sections carry badges; tracked so
+// the "Hide Badge" toggles check/uncheck correctly within a session.
+const hiddenTabBadges = ref(new Set())
+
+// All view ids currently shown in a container (top-level tabs + merged sub-views).
+function _visibleViewIdsIn(cid) {
+  const out = new Set(getContainerIds(cid))
+  for (const grp of Object.values(getContainerMerges(cid))) for (const sv of grp) out.add(sv.id)
+  return [...out]
+}
+
+// The container a (possibly hidden) view belongs to: remembered area, else default.
+function _homeContainerOf(id) {
+  return viewLastContainer.value[id] ?? VIEW_DEFAULT_CONTAINER[id] ?? 'secondarySidebar'
+}
+
+// Strip a view id from every movable container's tab list + merge groups.
+function _removeViewEverywhere(id) {
+  rightPanelViewIds.value  = rightPanelViewIds.value.filter(v => v !== id)
+  bottomPanelViewIds.value = bottomPanelViewIds.value.filter(v => v !== id)
+  const strip = (merges) => Object.fromEntries(Object.entries(merges).map(([k, arr]) => [k, arr.filter(sv => sv.id !== id)]))
+  rightPanelMerges.value  = strip(rightPanelMerges.value)
+  bottomPanelMerges.value = strip(bottomPanelMerges.value)
+}
+
+// Hide a view: remember its area, remove it from the UI, mark intentionally hidden.
+function hideView(id, fromContainerId) {
+  if (fromContainerId) viewLastContainer.value = { ...viewLastContainer.value, [id]: fromContainerId }
+  _removeViewEverywhere(id)
+  if (rightPanel.value === id) rightPanel.value = rightPanelViewIds.value[0] ?? ''
+  if (bottomPanel.value === id) bottomPanel.value = bottomPanelViewIds.value[0] ?? ''
+  hiddenViews.value = [...hiddenViews.value.filter(h => h !== id), id]
+}
+
+// Show a previously hidden view, returning it to its remembered/default area.
+function showView(id) {
+  addView(id, _homeContainerOf(id))
+}
+
+function toggleViewVisibility(id, fromContainerId) {
+  if (isViewVisible(id)) hideView(id, fromContainerId)
+  else showView(id)
+}
+
+// Move a top-level view tab to another movable container (Secondary Side Bar / Bottom Panel).
+function moveViewToContainer(viewId, fromContainerId, toContainerId) {
+  if (fromContainerId === toContainerId || !MOVABLE_CONTAINERS.has(toContainerId)) return
+  handleViewTransfer({ fromContainerId, toContainerId, viewId, toIndex: getContainerIds(toContainerId).length })
+}
+
+// Views (visible + hidden) that belong to a container, for its header toggle menu.
+function viewsForContainer(cid) {
+  const visible = _visibleViewIdsIn(cid)
+  const hidden  = hiddenViews.value.filter(id => _homeContainerOf(id) === cid && !visible.includes(id))
+  return [...visible, ...hidden].map(id => ({
+    id,
+    label:    _viewTab(id).label,
+    shortcut: PANEL_VIEW_REGISTRY[id]?.shortcut,
+    visible:  visible.includes(id),
+  }))
+}
+
+const CONTAINER_LABELS = {
+  primarySidebar:   'Primary Side Bar',
+  secondarySidebar: 'Secondary Side Bar',
+  panel:            'Bottom Panel',
+}
+// Real move targets (Primary Side Bar deferred — not a movable container yet).
+function moveTargetsFor(cid) {
+  return ['secondarySidebar', 'panel'].filter(c => c !== cid).map(c => ({ id: c, label: CONTAINER_LABELS[c] }))
+}
+
+function hideContainer(cid) {
+  if (cid === 'secondarySidebar') rightpaneVisible.value = false
+  if (cid === 'panel')            bottompaneVisible.value = false
+}
+
+const workbenchChrome = {
+  showTabIcons: computed(() => prefs.workbench?.showTabIcons !== false),
+  toggleTabIcons: () => {
+    if (!prefs.workbench) prefs.workbench = {}
+    prefs.workbench.showTabIcons = !(prefs.workbench.showTabIcons !== false)
+    savePrefs({ workbench: { showTabIcons: prefs.workbench.showTabIcons } })
+  },
+  isViewVisible,
+  toggleViewVisibility,
+  hideView,
+  moveViewToContainer,
+  viewsForContainer,
+  moveTargetsFor,
+  hideContainer,
+  containerLabel: (cid) => CONTAINER_LABELS[cid] ?? cid,
+  // Badge placeholder (no badges are rendered yet).
+  isTabBadgeHidden: (id) => hiddenTabBadges.value.has(id),
+  toggleTabBadge: (id) => {
+    const s = new Set(hiddenTabBadges.value)
+    if (s.has(id)) s.delete(id); else s.add(id)
+    hiddenTabBadges.value = s
+  },
+}
+provide('workbenchChrome', workbenchChrome)
+
 // Clipboard
 const clipboard = ref({ mode: 'Copy', count: 0, items: [] })
 
 // Context menu
 const contextMenu = ref({ visible: false, x: 0, y: 0, items: [], quickActions: [] })
-
-// Menu refs & state
-const fileMenuButton = ref(null)
-const editMenuButton = ref(null)
-const viewMenuButton = ref(null)
-const settingsButton = ref(null)
-const fileMenuOpen = ref(false)
-const editMenuOpen = ref(false)
-const viewMenuOpen = ref(false)
-const settingsMenuOpen = ref(false)
-const fileMenuPos = ref({ x: 0, y: 0 })
-const editMenuPos = ref({ x: 0, y: 0 })
-const viewMenuPos = ref({ x: 0, y: 0 })
-const settingsMenuPos = ref({ x: 0, y: 0 })
 
 // Menu items
 const fileMenuItems = computed(() => [
@@ -1056,23 +1279,7 @@ const viewMenuItems = computed(() => [
       label:   meta.label,
       type:    'toggle',
       checked: () => isViewVisible(id),
-      action:  () => {
-        if (isViewVisible(id)) {
-          // remove from wherever it currently lives and mark as intentionally hidden
-          rightPanelViewIds.value  = rightPanelViewIds.value.filter(v => v !== id)
-          bottomPanelViewIds.value = bottomPanelViewIds.value.filter(v => v !== id)
-          const stripId = (merges) => {
-            const out = {}
-            for (const [k, arr] of Object.entries(merges)) out[k] = arr.filter(sv => sv.id !== id)
-            return out
-          }
-          rightPanelMerges.value  = stripId(rightPanelMerges.value)
-          bottomPanelMerges.value = stripId(bottomPanelMerges.value)
-          hiddenViews.value  = [...hiddenViews.value.filter(h => h !== id), id]
-        } else {
-          addView(id)
-        }
-      },
+      action:  () => { isViewVisible(id) ? hideView(id) : showView(id) },
     }))
   },
 ])
@@ -1082,32 +1289,13 @@ const settingsMenuItems = computed(() => [
   { key: 'keyboard-shortcuts', label: 'Keyboard Shortcuts', action: openKeyboardShortcuts }
 ])
 
-function showMenuDelayed(type) {
-  setTimeout(() => {
-    const map = {
-      file:     [fileMenuButton,     fileMenuPos,     fileMenuOpen],
-      edit:     [editMenuButton,     editMenuPos,     editMenuOpen],
-      view:     [viewMenuButton,     viewMenuPos,     viewMenuOpen],
-      settings: [settingsButton,     settingsMenuPos, settingsMenuOpen]
-    }
-    const [btnRef, posRef, openRef] = map[type]
-    const el = btnRef.value
-    if (el) {
-      const rect = el.getBoundingClientRect()
-      if (type === 'settings') {
-        posRef.value = { x: rect.right + 4, y: rect.top }
-      } else {
-        posRef.value = { x: rect.left, y: rect.bottom + 2 }
-      }
-    }
-    openRef.value = true
-  }, 50)
-}
-
-// Window controls
-function windowMinimize() { window.electron?.window?.minimize?.() }
-function windowToggleMaximize() { window.electron?.window?.toggleMaximize?.() }
-function windowClose() { window.electron?.window?.close?.() }
+// Title-bar menu strip (File / Edit / View). MenuBar owns its own open/position
+// state; the items arrays stay computed here so they react to app state.
+const titleMenus = computed(() => [
+  { key: 'file', label: 'File', items: fileMenuItems.value },
+  { key: 'edit', label: 'Edit', items: editMenuItems.value },
+  { key: 'view', label: 'View', items: viewMenuItems.value },
+])
 
 // ── Command palette ───────────────────────────────────────────────────────────
 
@@ -1904,143 +2092,37 @@ function showItemContextMenu({ event, item }) {
   color: var(--text);
 }
 
-/* Titlebar */
-.titlebar {
-  display: grid;
-  grid-template-columns: 1fr minmax(280px, 600px) 1fr;
-  align-items: center;
-  padding: 0 10px;
-  background: #2a2a2a;
-  border-bottom: 1px solid var(--border);
-  -webkit-app-region: drag;
-}
-.titlebar .left  { display: flex; gap: 8px; align-items: center; min-width: 0; }
-.titlebar .center { justify-self: stretch; display: flex; justify-content: center; }
-.titlebar .right  { justify-self: end; display: flex; }
-
-.titlebar-menu-btn { font-size: 12px; color: var(--text-muted); padding: 2px 6px; border-radius: 3px; }
-.titlebar-menu-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
-
-.omnibar {
-  width: min(600px, 60vw);
-  height: 26px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: #1f1f1f;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 10px;
-  color: var(--text-muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-.omnibar:hover { border-color: var(--accent); }
-
-.no-drag { -webkit-app-region: no-drag; }
-
-.winbtn {
-  width: 46px;
-  height: var(--titlebar-height);
-  display: grid;
-  place-items: center;
-  font-size: 16px;
-  color: var(--text-muted);
-}
-.winbtn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
-.winbtn.close:hover { background: #c42b1c; color: white; }
-
 /* Main area */
 .main { display: flex; min-height: 0; overflow: hidden; }
-
-/* Activity bar */
-.activitybar {
-  width: var(--activitybar-width);
-  flex-shrink: 0;
-  background: #333333;
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 6px 0;
-}
-.activitybar-top, .activitybar-bottom { display: flex; flex-direction: column; }
-.activitybar-icon {
-  width: 100%;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  color: rgba(255,255,255,0.4);
-  text-decoration: none;
-  transition: color 0.1s;
-}
-.activitybar-icon:hover { color: rgba(255,255,255,0.8); }
-.activitybar-icon.active {
-  color: white;
-  border-left: 2px solid var(--accent);
-  background: rgba(255,255,255,0.04);
-}
 
 /* Workbench content: sidebar + editor */
 .workbench-content { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 
-/* Sidebar */
-.sidebar {
-  flex-shrink: 0;
-  min-width: 150px;
-  background: var(--panel);
-  border-right: 1px solid var(--border);
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-}
-.sidebar-placeholder { padding: 20px; color: var(--text-muted); font-size: 13px; }
-
 /* Editor column (editor area + bottom panel) */
 .editor-column { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 
-/* Editor area */
+/* Editor area — hosts the recursive group grid (see Editor / GridView / EditorGroup). */
 .editor-area { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.editor-area > * { flex: 1; min-width: 0; min-height: 0; }
 
-/* Bottom panel */
-.bottompane {
-  flex-shrink: 0;
-  min-height: 60px;
-  background: var(--panel);
-  border-top: 1px solid var(--border);
-  overflow: hidden;
-}
-.bp-action-btn,
-.panel-action-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  background: transparent;
-  border: none;
-  border-radius: 3px;
-  color: var(--text-muted);
-  cursor: pointer;
-  opacity: 0.55;
-}
-.bp-action-btn:hover,
-.panel-action-btn:hover { opacity: 1; background: rgba(255,255,255,0.08); }
-
-/* ── Maximize layout overrides ────────────────────────────────────────────── */
-.workbench-content.right-maximized .sidebar,
+/* ── Maximize layout overrides ────────────────────────────────────────────────
+   The panes (.sidebar / .rightpane / .bottompane) and their resize handles now
+   live inside the PrimarySideBar / SecondarySideBar / BottomPanel child
+   components, so :deep() reaches them from the maximize classes Workbench
+   toggles on .workbench-content / .editor-column. */
 .workbench-content.right-maximized .editor-column,
-.workbench-content.right-maximized .resize-handle { display: none !important; }
-.workbench-content.right-maximized .rightpane {
+.workbench-content.right-maximized :deep(.sidebar),
+.workbench-content.right-maximized :deep(.resize-handle) { display: none !important; }
+.workbench-content.right-maximized :deep(.rightpane) {
   flex: 1 !important;
   min-width: 0 !important;
   border-left: none !important;
 }
 
 .workbench-content.left-maximized .editor-column,
-.workbench-content.left-maximized .rightpane,
-.workbench-content.left-maximized .resize-handle { display: none !important; }
-.workbench-content.left-maximized .sidebar {
+.workbench-content.left-maximized :deep(.rightpane),
+.workbench-content.left-maximized :deep(.resize-handle) { display: none !important; }
+.workbench-content.left-maximized :deep(.sidebar) {
   display: flex !important;
   flex: 1 !important;
   min-width: 0 !important;
@@ -2048,56 +2130,13 @@ function showItemContextMenu({ event, item }) {
 }
 
 .editor-column.bottom-maximized .editor-area,
-.editor-column.bottom-maximized .resize-handle { display: none !important; }
-.editor-column.bottom-maximized .bottompane {
+.editor-column.bottom-maximized :deep(.resize-handle) { display: none !important; }
+.editor-column.bottom-maximized :deep(.bottompane) {
   flex: 1 !important;
   min-height: 0 !important;
   height: auto !important;
 }
 
-/* Resize handles */
-.resize-handle { flex-shrink: 0; background: transparent; transition: background 0.15s; z-index: 10; --resize-handle-size: 2px; }
-.resize-handle:hover, .resize-handle:active { background: var(--accent); opacity: 0.4; }
-.resize-handle--col { width: var(--resize-handle-size); cursor: col-resize; }
-.resize-handle--row { height: var(--resize-handle-size); cursor: row-resize; }
-
-/* Editor area hosts the recursive group grid (see GridView / EditorGroup). */
-.editor-area > * { flex: 1; min-width: 0; min-height: 0; }
-
-.rightpane {
-  flex-shrink: 0;
-  min-width: 200px;
-  border-left: 1px solid var(--border);
-  background: var(--panel-2);
-  overflow: hidden;
-}
-
-
-/* Status bar */
-.statusbar {
-  background: var(--accent);
-  color: white;
-  display: flex;
-  align-items: center;
-  padding: 0 10px;
-  font-size: 12px;
-  gap: 8px;
-}
-.spacer { flex: 1; }
-.status-left { display: flex; align-items: center; gap: 2px; min-width: 0; overflow: hidden; }
-.status-bar-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 6px; border-radius: 3px; }
-.status-bar-item:hover { background: rgba(255,255,255,0.12); }
-.status-bar-item--clipboard { color: color-mix(in srgb, var(--accent, #007acc) 90%, var(--text)); }
-.status-connection { display: flex; align-items: center; gap: 5px; white-space: nowrap; flex-shrink: 0; opacity: 0.85; }
-.status-connection.disconnected { opacity: 1; color: #ffcdd2; }
-.connection-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #a5d6a7;
-  flex-shrink: 0;
-}
-.status-connection.disconnected .connection-dot { background: #ef9a9a; }
 
 /* Toast */
 .toast {

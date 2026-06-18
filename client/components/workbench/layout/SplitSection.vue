@@ -1,10 +1,16 @@
 <template>
-  <div class="split-section" :class="{ 'is-collapsed': showHeading && collapsed }">
+  <div
+    class="split-section"
+    :class="{ 'is-collapsed': showHeading && collapsed, 'has-divider': hasDivider && showHeading }"
+    :data-section-instance-uuid="instanceId || undefined"
+    :data-section-id="sectionDataId || undefined"
+  >
     <div
       v-if="showHeading"
       class="split-section-heading"
       :draggable="draggable"
       @click="$emit('toggle', !collapsed)"
+      @contextmenu="$emit('heading-contextmenu', $event)"
       @dragstart.stop="draggable && $emit('header-drag-start', $event)"
       @dragend.stop="draggable && $emit('header-drag-end', $event)"
     >
@@ -30,12 +36,15 @@ import { mdiChevronRight, mdiChevronDown } from '@mdi/js'
 // View renders as plain content. Distinct from SplitView, which is a whole View
 // context with its own (lighter) heading.
 defineProps({
-  title:       { type: String,  required: true },
-  collapsed:   { type: Boolean, default: false },
-  showHeading: { type: Boolean, default: true },
-  draggable:   { type: Boolean, default: false },   // section reorder / cross-context move
+  title:         { type: String,  required: true },
+  collapsed:     { type: Boolean, default: false },
+  showHeading:   { type: Boolean, default: true },
+  draggable:     { type: Boolean, default: false },   // section reorder / cross-context move
+  hasDivider:    { type: Boolean, default: false },   // top border when there's no sash above
+  instanceId:    { type: String,  default: '' },
+  sectionDataId: { type: String,  default: '' },
 })
-defineEmits(['toggle', 'header-drag-start', 'header-drag-end'])
+defineEmits(['toggle', 'header-drag-start', 'header-drag-end', 'heading-contextmenu'])
 </script>
 
 <style scoped>
@@ -52,11 +61,14 @@ defineEmits(['toggle', 'header-drag-start', 'header-drag-end'])
   min-height: 22px;
   display: flex;
   align-items: center;
-  padding: 0 4px 0 8px;
+  padding: 0 2px;
   cursor: pointer;
   user-select: none;
   color: var(--text);
   flex-shrink: 0;
+}
+.split-section.has-divider > .split-section-heading {
+  border-top: 1px solid var(--border);
 }
 .split-section-heading:hover { background: var(--hover); }
 .split-section-heading[draggable="true"]        { cursor: grab; }

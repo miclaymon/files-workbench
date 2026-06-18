@@ -119,7 +119,14 @@ function onPaste() { emit('paste') }
 </script>
 
 <style scoped>
-.explorer-tree { height: 100%; display: flex; flex-direction: column; }
+.explorer-tree {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  .tree {
+    padding-block-end: 1rem;
+  }
+}
 
 /* Show all indent guides when hovering anywhere in the tree */
 .explorer-tree:hover :deep(.ig) { background: rgba(255,255,255,0.1); }

@@ -19,6 +19,7 @@
           @toggle="onToggle(i, $event)"
           @commit-sections="$emit('commit-sections')"
           @section-move="$emit('section-move', $event)"
+          @section-contextmenu="$emit('section-contextmenu', $event)"
           @heading-drag-start="onHeadingDragStart(view, $event)"
         />
       </div>
@@ -53,7 +54,7 @@ const props = defineProps({
   slotKey:      { type: String,  default: '' },      // the tab slot's primary id (for unmerge)
   showOverlay:  { type: Boolean, default: false },
 })
-const emit = defineEmits(['commit-views', 'commit-sections', 'section-move', 'content-drop'])
+const emit = defineEmits(['commit-views', 'commit-sections', 'section-move', 'section-contextmenu', 'content-drop'])
 
 const areaRef = ref(null)
 const { activeSash, prevExpandedIdx, needsSash, wrapStyle, startResize } = useStackResize()

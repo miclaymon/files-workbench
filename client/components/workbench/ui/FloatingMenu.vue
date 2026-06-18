@@ -35,9 +35,9 @@
                 @click="item.disabled ? null : onItemClick(item)"
                 @mouseenter="item.submenu ? showSubmenu(item, $event) : hideSubmenu()"
               >
-                <span v-if="item.type === 'toggle'" class="menu-item__check">
-                  <svg v-if="item.checked?.()" viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
-                    <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" />
+                <span class="menu-item__check">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
+                    <path v-if="item.type === 'toggle' && item.checked?.()" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" />
                   </svg>
                 </span>
                 <span v-if="item.icon" class="menu-item__icon">
