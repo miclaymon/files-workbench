@@ -17,25 +17,146 @@ Files Workbench 2 is a multi-process desktop application:
               │ HTTP /_api/v2/*
 ┌──────────────────────────────────────┐
 │  Go HTTP server                      │
-│  http://localhost:8000               │
+│  data:    http://localhost:8001      │
+│  control: http://localhost:8002      │
 └──────────────────────────────────────┘
 ```
 
-In development, Nuxt's Vite dev server proxies `/_api/v2/*` to port 8000. In production, Nuxt generates a static bundle that Electron loads directly from disk; the client calls the Go server on `http://localhost:8000` without a proxy.
+In development, Nuxt's Vite dev server proxies `/_api/v2/*` to the data server on port 8001. Write operations contact the control server directly at port 8002. In production, Nuxt generates a static bundle that Electron loads directly from disk; the client calls both servers by their port numbers without a proxy.
 
 ## Frontend component model
 
+### Component folder structure
+
+All workbench components live under `client/components/workbench/` and are grouped into seven subfolders (Nuxt's `pathPrefix: false` keeps auto-import names flat, so component names are unaffected by depth):
+
+| Folder | Contents |
+|---|---|
+| `shell/` | `TitleBar`, `MenuBar`, `CommandCenter`, `AppHistory`, `ActivityBar`, `StatusBar`, `PrimarySideBar`, `SecondarySideBar`, `BottomPanel` — the app chrome and resizable workspace panes |
+| `layout/` | `ViewContainer`, `SplitViewArea`, `SplitView`, `SplitSectionArea`, `SplitSection`, `ViewContentHost`, `ViewActions`, `ViewDropOverlay`, `Sash` |
+| `editor/` | `Editor`, `GridView`, `EditorGroup`, `EditorDropOverlay`, `DirectoryTab`, `HomePage`, `MonacoEditor` |
+| `directory/` | `DirectoryPanel`, `DirectoryLayout`, all `Directory*Layout` variants, `DirectoryBreadcrumb`, `DirectoryHoverPreview`, `AudioPlayer`, `VideoPlayer` |
+| `explorer/` | `ExplorerPanel`, `ExplorerTree`, `TreeList`, `TreeItem`, `OpenEditorsView` |
+| `views/` | `PreviewPanel`, `DetailsPanel`, `ChatPanel`, `DebugPanel`; `preview/` subfolder for preview sub-components |
+| `ui/` | `FloatingMenu`, `ContextMenu`, `Tooltip`, `CommandPalette`, `SettingsModal`, `KeyboardShortcutsModal` |
+
+`Workbench.vue` lives at the root of `components/workbench/`.
+
+### Composable folder structure
+
+Composables live in `client/composables/` and are split into three layers (Nuxt auto-imports scan recursively, so subfolder depth is transparent):
+
+| Folder | Contents |
+|---|---|
+| `composables/*.js` | Foundational services and utilities: `useWorkspaces`, `usePreferences`, `useFileOpsQueue`, `useActionHistory`, `useDebugLog`, `useLayoutGrid`, `useViewRegistry`, `useIconPack`, `useCustomIcon`, `useRpc` |
+| `composables/interaction/` | UI-behavior primitives consumed by individual components: drag systems (`useDrag`, `useRightClickDrag`, `useTreeDrag`, `useEditorDnd`, `useViewDrag`), `useClickDebounce`, `useHoverPreview`, `useSideBar`, `useStackResize` |
+| `composables/workbench/` | Workbench assembly-root slices — see Workbench shell section: `useStatusBar`, `useArchive`, `useEditorGrid`, `useViewLayout`, `useSelection`, `useFileOperations`, `useFileContextMenus`, `useAppMenus`, `useWorkbenchKeyboard` |
+
 ### Workbench shell
 
-`Workbench.vue` is the root component. It owns:
-- Global app state: tabs, selected/focused items, clipboard, context menu
-- Activity bar (explorer, search, settings icons)
-- Sidebar (ExplorerPanel)
-- Tab bar with drag-to-reorder (useDragAndDrop)
-- Main content area (DirectoryTab or PreferencesActivity per tab)
-- Right panel (PreviewPanel, DetailsPanel)
-- All floating UI (context menus, right-drag drop menus)
-- Status bar: directory item count/size, selection count/size, clipboard pill (mode + count + size)
+`Workbench.vue` is the root component, structured as a thin **assembly root**: its business logic and state are decomposed into composable "slices" (hand-rolled store slices, à la Pinia), which it instantiates, wires together by passing each slice's return into its dependents (dependency injection by parameter — no hidden globals, no circular deps), and `provide`s the few that deep descendants need. The leaf slices are instantiated first; the order respects the dependency graph below. The slices:
+
+- `useStatusBar` — server-ping lifecycle, the transient status line (+ `flashStatus`), and directory stats *(leaf)*
+- `useArchive` — archive-file detection (`isArchiveItem`) + host capabilities *(leaf)*
+- `useEditorGrid` — the editor split-grid model, every structural mutation, and the provided `editorController`; deliberately selection-free so the selection dependency stays one-directional
+- `useViewLayout` — the panel/sidebar layout engine: per-container view lists, merge groups, per-view section state, every drag-driven layout mutation (transfer / merge / unmerge / section adoption), and the provided `workbenchChrome`
+- `useSelection` — current selection + explorer/directory/open/navigate handlers (consumes the editor grid)
+- `useFileOperations` — create/rename/trash/delete/compress/extract/paste/move/undo + clipboard, elevation dialog, and the install prompt
+- `useFileContextMenus` — the cursor-positioned ContextMenu item lists (editor tab / background / right-drag / item)
+- `useAppMenus` — the File/Edit/View + Settings menus, command-palette command list, and modal open-state
+- `useWorkbenchKeyboard` — window-level keyboard shortcuts (self-manages its listener)
+
+`useWorkspaces` is the single persistence instance; Workbench keeps it and passes it to `useViewLayout` (and pulls `getInitialEditor`/`saveEditor`/`explorerContext` for the editor + viewCtx). Workbench still owns the small local appearance/maximize toggles and the `viewCtx` bag. It composes the visible chrome from `shell/` components, which stay presentational (props in, events out):
+
+- `TitleBar` (`shell/`) — brand + `MenuBar` (File/Edit/View, each `{ key, label, items }`; the items arrays stay computed in `Workbench`), `AppHistory` (global back/forward — a placeholder, distinct from a tab's navigation history and from undo/redo), `CommandCenter` (the omnibar → command palette), and Electron window controls. `MenuBar` and `ActivityBar` own their own dropdown open/position state locally.
+- `ActivityBar` (`shell/`) — explorer/search/storage switcher + the Settings gear (which owns its own menu, fed `settingsMenuItems`); emits `toggle-view`.
+- `PrimarySideBar` (`shell/`) — the left pane: a non-droppable `ViewContainer` whose Explorer view hosts the Open Editors + Places sections, plus a Search placeholder; switches on the active primary view
+- `Editor` (`editor/`) — the recursive split grid of editor groups; receives `viewRoot`/`activeGroupId`/`maximizedGroupId`/`prefs` and a `registerGroup` ref-callback prop (the `useEditorGrid` slice owns the EditorGroup instance registry it uses for imperative refresh/rename), and re-emits every EditorGroup event up unchanged
+- `SecondarySideBar` + `BottomPanel` (`shell/`) — the two movable, droppable panes, each wrapping a tabbed `ViewContainer` (see ViewContainer panel system) plus its maximize/hide actions
+- All floating UI (context menus, right-drag drop menus, command palette, settings modal, keyboard shortcuts modal)
+- `StatusBar` (`shell/`) — directory item count/size, selection count/size, clipboard pill (mode + count + size), and the server-connection indicator
+
+The three panes share `useSideBar.js`, which (1) runs the mousedown drag-resize loop, reporting new sizes back via `v-model:width`/`v-model:height` so persistence stays in `Workbench`, and (2) attaches a `ResizeObserver` that derives each pane's split direction (`dropDirection`) from its measured shape — tall → `col`, wide → `row` — instead of hard-coding it. So a side bar stacks merged views vertically and the (wide) bottom panel stacks them horizontally automatically, and the direction adapts if a pane is ever repositioned. Cross-container coordination (`handleViewTransfer`/`Merge`/`Unmerge`/`handleSectionMove`, which move views and sections *between* panes) lives in the `useViewLayout` slice instantiated by `Workbench`; the pane components just forward `ViewContainer`'s events.
+
+The View menu exposes two submenus: **Appearance** (toggle sidebar/panel/status bar visibility, zen mode, centered layout) and **Views** (toggle individual views such as Preview, Details, Chat, and Debug on or off). Toggling a view off marks it as intentionally hidden in the workspace; startup recovery (`recoverMissingViews`) skips hidden views so they stay off across reloads.
+
+### Editor groups (split grid)
+
+The editor area is a recursive split-view tree (VS Code's "grid") defined in `useLayoutGrid.js`. A node is either a **branch** (`direction: 'row' | 'column'`, `children[]`, and `sizes[]` of flex-grow weights) or a **leaf** = an **editor group** holding `tabs[]` + `activeTabId`. `GridView.vue` renders the tree recursively, placing a `Sash.vue` resize handle between siblings; leaves are emitted through a scoped slot so the engine stays generic (it will later host side-bar/panel views too).
+
+`Workbench.vue` holds the reactive tree (`editorRoot`), the focused group (`activeGroupId`), and the maximized group (`maximizedGroupId`). When `maximizedGroupId` is set, `viewRoot` collapses to just that leaf so `GridView` renders only the maximized group. `Workbench` `provide`s an `editorController` (inject key `editorController`) to the groups with the structural ops: `activateTab`, `promoteTab`, `togglePin`, `closeTab`, `dropTab`, `splitActiveGroup`, `applyLayoutPreset`, `closeAllTabs`, `toggleTabPreviews`, `maximizeGroup`, `toggleLockGroup`. New tabs open in the active group; `activeTab` (the active group's active tab) drives the right panel, status bar, and selection. Each `EditorGroup.vue` re-emits its content events (select/open/navigate/…) up to `Workbench`, preserving the centralized-logic pattern. The grid is persisted per workspace (see State management).
+
+Each leaf carries two per-group flags: `tabPreviews` (default `true`) — when `false`, single-click explorer navigation opens a permanent tab instead of the italic preview slot; `locked` — when `true`, the group rejects incoming tab additions and drops from other groups. `EditorGroup` shows a fixed-right actions section outside the scrollable tab strip: a lock icon (when locked, click to unlock) and a `⋯` button that opens a menu with Close All, Enable Tab Previews (toggle), Maximize/Restore Group, and Lock/Unlock Group.
+
+Tabs support preview mode (`mode: 'peek'`, italic, one reused slot per group; promoted to `'normal'` on double-click or navigation), sticky pinning (`pinned`, grouped to the front with a pin affordance), horizontal-scroll overflow with a dropdown, and region-aware drag (see Drag and drop). View ▸ Editor Layout offers split up/down/left/right and presets (Single, Two Columns, Two Rows, Three Columns, Grid 2×2). Keyboard: `Ctrl+\` split right, `Ctrl+1..9` focus group, `Ctrl+W` close tab (Electron only — browser intercepts), `Ctrl+,` open Settings, `Ctrl+Shift+P` open Command Palette.
+
+### Settings modal
+
+`SettingsModal.vue` is a full-screen modal overlay (teleported to `<body>`) styled after VS Code's Settings editor. Layout: a search bar spanning the top, a fixed-width left sidebar listing sections, and a scrollable main area with sticky section headings.
+
+Sections are derived at runtime from `preferences.schema.json` (imported via the `#preferences-schema` alias). Top-level scalar properties form a **General** section; top-level `type: object` properties each become their own named section (Explorer, Preview Panel, Cache, …). Properties marked `x-devOnly` are hidden unless Developer Mode is on.
+
+Every control change updates a local `localPrefs` deep copy immediately (instant UI feedback) and schedules an auto-save via a 300 ms debounce that calls `savePrefs` from `usePreferences`. There is no manual Save button. Settings that differ from their schema default show a small blue dot. A brief `✓ Saved` confirmation appears in the bottom-right corner after each successful write.
+
+`SettingsModal` opens via `Ctrl+,` (checked before the input-focus guard so it works from any context) or Settings ▸ Preferences.
+
+### Keyboard shortcuts modal
+
+`KeyboardShortcutsModal.vue` is a read-only reference modal styled after VS Code's Keyboard Shortcuts editor. It shows all current shortcuts in a grouped table with **Command / Keybinding / When / Source** columns. `<kbd>` elements render each key token with a depressed-border style. The search bar filters across command name, key text, and when-context. Opens via Settings ▸ Keyboard Shortcuts.
+
+### Command palette
+
+`CommandPalette.vue` is a floating modal overlay (teleported to `<body>`) that provides fuzzy command search across all menu items. It opens via `Ctrl+Shift+P` or clicking the omnibar in the title bar.
+
+Commands are sourced by flattening the four menu item arrays (`fileMenuItems`, `editMenuItems`, `viewMenuItems`, `settingsMenuItems`) at open time via `flattenMenuItems()`, which recurses through submenus and emits only leaf items with an `action`, skipping separators and currently-disabled items. Each command carries a `category` string built from the submenu path (e.g. `"View > Editor Layout"`) shown right-aligned in the result row. Toggle items (`type: 'toggle'`) show a checkmark when their `checked()` callback returns true.
+
+Fuzzy scoring ranks results: exact label match → prefix match → substring match → sequential character match → no match (excluded). Results are capped at 50 and re-ranked on every keystroke. Arrow keys navigate, Enter executes (action deferred one frame so the palette closes first), Escape dismisses. The `Ctrl+Shift+P` handler is checked before the early-return guard that skips shortcuts when an input is focused, so the palette can be opened from any context.
+
+### ViewContainer panel system
+
+`ViewContainer.vue` is the unified panel container used for the primary sidebar, secondary sidebar, and bottom panel. It renders a tab strip at the top and, for the active tab, delegates its body to a recursive **SplitView / SplitSection** hierarchy:
+
+```
+ViewContainer (tab strip + ⋯ menu + merge/transfer orchestration)
+└─ SplitViewArea     stacks SplitViews for one tab slot; heading shown only when >1
+   └─ SplitView      a whole View context; lighter "context" heading; drag-out = unmerge
+      └─ SplitSectionArea   stacks the View's SplitSections; heading shown only when >1
+         └─ SplitSection     a UI group within a View; renders ViewContentHost(:id)
+```
+
+Two orthogonal axes drive it. `mergedSlots` (`{ [primaryId]: [{ id, collapsed, size }] }`) tracks **which Views stack in a slot** (the SplitViewArea level). `viewSections` (`{ [viewId]: Section[] }`, `Section = { id, homeViewId, collapsed, size, instanceId, locked? }`) tracks **each View's own sections** (the SplitSectionArea level). `instanceId` is a uuidv4 generated at section creation and backfilled by `_normalizeSections` for legacy data; it is used as the `v-for` key so Vue can track two sections with the same `id` as distinct DOM nodes (needed for duplicate sections). A heading appears only when its level has more than one sibling — so a standalone View with one implicit self-section renders as plain content, exactly as before. The primary sidebar is just a non-droppable (`:droppable="false"`) single-View container whose Explorer view owns the `places` + `openEditors` sections; there is no longer a separate "sections mode".
+
+**Content registry**: view/section content is rendered by id through `ViewContentHost.vue`, which looks the id up in `useViewRegistry.js` (`{ label, icon, component, props(ctx), on(ctx), homeView, sections, actions, expose }`) and binds it against a shared `viewCtx` provided by `Workbench.vue`. Rendering by id (rather than container-scoped named slots) lets any view or section render in any container — the prerequisite for cross-context section drag.
+
+**Tab drag**: each tab is HTML5-draggable. Dropping a tab onto another container's tab strip reorders or transfers it (secondary sidebar ↔ bottom panel). Shared drag state lives in `useViewDrag.js` (`activeDrag` + `DRAG_MIME`).
+
+**Drag-to-merge**: while a tab drag is active, each visible slot shows a `ViewDropOverlay`; dropping stacks the dragged view as another `SplitView` in the target slot. The `dropDirection` prop controls whether SplitViews stack top/bottom (`col`) or left/right (`row`); it is supplied by the owning pane and derived from the pane's measured shape (see `useSideBar.js` in the Workbench shell section), so side bars stack vertically and the bottom panel horizontally. Dragging a SplitViewHeading back to the tab bar extracts it (via the `fromMergedViewId` field on `DRAG_MIME`, distinguished in `onBarDrop`).
+
+**Section reorder & cross-context adoption**: SplitSection headings are draggable (their own `SECTION_DRAG_MIME`, separate from tab/view drags), carrying `{ sectionId, fromViewId, fromContainerId, homeViewId, locked, dockable }`.
+
+- **Reorder** — dropping within the same area reorders in place (no forced ordering; even a locked section like Places can be reordered within Explorer).
+- **Adoption (drop on another View's body)** — a section travels *with* its biological parent View. Rather than being inserted into the target View's own section list, the section's `homeViewId` View **materialises as its own SplitView** in the target slot (exactly like merging a tab), and the section is filed under `viewSections[homeViewId]` in that container. `section-move` → `handleSectionMove` removes it from the source parent (de-materialising a now-empty floated parent) and `_materializeParentSplitView` adds the parent next to the drop target. A View *always* holds a given home's sections under that home's id, so a floated parent groups all of one home's relocated sections: with one section its `SplitView` heading folds in the section name (`Explorer: Open Editors`); with two or more it reads just `Explorer` and the section headings reappear.
+- **New tab (drop on the tab strip)** — `ViewContainer`'s tab bar accepts section drops too; `section-to-tab` → `handleSectionToTab` surfaces the biological parent as a standalone tab (labelled by the parent, e.g. `Explorer`) holding the section. Tab labels/icons fall back to the content registry so a floated parent tab renders correctly.
+- **Section menus** — `ViewContainer`'s ⋯ ("More actions…") menu lists one line per *present instance* in view order, followed by a ghost line for each declared true-child section with no present instance. Toggling a present instance removes that specific instance (identified by `instanceId`); toggling a ghost adds a fresh one. This means declared sections stay available forever (a hidden true child can always be re-added via its ghost), while adopted/foreign sections vanish once removed. The same builder feeds the section heading right-click context menu, so both are always in sync.
+- **Context menus** — right-clicking a view tab opens a **tab context menu** (Hide '\<Tab\>', Hide Badge, Move to Secondary Side Bar / Bottom Panel); right-clicking the header bar opens a **header context menu** (a checkbox per view belonging to this area including hidden ones, Show Tab Icons, and container-specific tail actions like Hide Secondary Side Bar / Hide Panel). Right-clicking a section heading opens a **section context menu** (Hide '\<Section\>', Hide Badge, then the full section list). The event travels up `SplitSection → SplitSectionArea → SplitView → SplitViewArea → ViewContainer`. All three use a single cursor-positioned `FloatingMenu` shared within the container. These menus only appear in movable containers (Secondary Side Bar and Bottom Panel); the primary sidebar gets the ⋯ dropdown but no tab/header menus.
+- **Chrome state** — a `workbenchChrome` object is `provide()`d once by `Workbench.vue` and injected by `ViewContainer`. It exposes: hide/show/toggle view visibility (recording each view's last container for restore), move a view to another container, query which views belong to a container (visible + hidden, with shortcut hints), hide a container, toggle `showTabIcons`, and a badge-visible placeholder. This avoids threading props through the three shell wrappers. `hideView` delegates to a shared internal that strips the view from all containers and marks it in `hiddenViews`; the existing Views settings menu now reuses the same functions.
+- **Tab icons** — `prefs.workbench.showTabIcons` (default `true`, persisted) controls whether icons appear in the tab strip. Toggled by Show Tab Icons in the header context menu.
+- **Duplicate guard** — a View won't hold the same section id twice unless its registry entry sets `allowDuplicateSections: true` (default off). When off, dropping a section a View already holds is refused — the not-allowed cursor on the home-View body (`acceptsDrop`), and authoritatively with an alert in `handleSectionMove`/`handleSectionToTab` (`_blockDuplicateDrop`). When on, the `v-for` keying by `instanceId` ensures Vue treats the two identical sections as distinct DOM nodes.
+- **Semantic DOM attributes** — rendered section and view elements carry `data-section-id` (e.g. `"Workbench:Explorer.OpenEditors"`), `data-section-instance-uuid` (the `instanceId`), and `data-view-id` (e.g. `"Workbench:Explorer"`) for automation and DevTools inspection. Helper functions `viewDataId(viewId)` and `sectionDataId(sectionId, homeViewId)` in `useViewRegistry.js` generate the `Workbench:Namespace.SubId` format.
+- **Collapsed section divider** — when a collapsed section follows an expanded section (or any section follows a non-first section without a sash between them), a `border-top: 1px solid var(--border)` is applied to its heading via the `hasDivider` prop (`i > 0 && !needsSash(sections, i)`). This gives a clear visual boundary without adding an interactive sash handle.
+- **`viewSections` cross-container migration** — `handleViewTransfer`, `handleViewMerge`, and `handleViewUnmerge` now migrate `viewSections` data from the source container ref to the destination when moving a view (and any merged views) between containers. Previously, Explorer dragged from the Secondary Side Bar to the Bottom Panel would show "Unknown view: explorer" because `panelViewSections.explorer` was `undefined` and the fallback self-section had no registered component.
+
+Drag state (`activeDrag`/`activeSectionDrag` in `useViewDrag.js`) is normally cleared on `dragend`, but a drop that removes the dragged element (merge, re-absorb, transfer, adoption) can stop `dragend` from firing — so the drop handlers (`clearDragState` in `ViewContainer`, and `SplitSectionArea.onAreaDrop`) clear it explicitly, otherwise a stale `activeDrag` keeps the drop overlay mounted and silently blocks interaction.
+
+A View's own self-section (`id === viewId`) can't be dragged out at all; **locked** (Places) and `dockable: false` sections can be reordered but are barred from *leaving* their biological parent (rejected at the drop side, both on bodies and the tab strip). A View only accepts *incoming* docked sections when its registry entry's `acceptsSections !== false` — Preview and Chat opt out (single-section, headerless), so they're never dock targets.
+
+**Action buttons** (`ViewActions.vue`, bound to `viewCtx`) **cascade by hierarchy**: a section's buttons live in its **section heading** when that's shown, otherwise they bubble to the **view heading** (SplitViewHeading), otherwise to the **tab strip**; a view's own buttons live in its view heading when shown, otherwise the tab strip; panel actions (maximize/hide) always sit at the right of the tab strip. Each level renders the groups it holds inline, separated by a thin divider (`ViewActions` takes either a flat `actions` array or a `groups` array of arrays, and drops empty groups so no stray separators appear), with panel actions as the last group. The registry helpers drive this: `sectionActions`/`viewActions` (a view's own registry `actions`), `sectionHeadingShown(sections, section)`, and `bubbledSectionActions(viewId, sections)` (named sections whose heading is hidden). A section opts to **always** show its heading via `alwaysShowHeading` (set on Places) — so Places keeps its heading (and *Refresh*) even as Explorer's only section, rather than hiding the heading and bubbling the button up. Examples: Debug's *Clear* (view action), Places' *Refresh* (section action).
+
+**Re-absorbing a floated View**: when a section has been floated into another container as its parent View (a SplitView or a standalone tab — see adoption above), dragging that View (its tab or its SplitViewHeading) back onto the *same* View elsewhere folds its sections home and discards the floated copy. The drop is detected when the dragged view id equals the target view id from a different container (`overlayFor` shows the drop overlay even where view stacking is disabled, e.g. the non-droppable primary sidebar); `content-drop` → `view-reabsorb` → `handleViewReabsorb` in `Workbench.vue`.
+
+**View management**: `PANEL_VIEW_REGISTRY` maps view IDs to icons, labels, and display-only shortcut hints. `VIEW_DEFAULT_CONTAINER` maps each ID to its home container. `isViewVisible` checks all containers and merge groups; `addView(id, preferredCid)` places a missing view back in a preferred or default container; `recoverMissingViews` (called on `onMounted`) restores any views lost due to corrupted workspace state, skipping those in `hiddenViews`. A runtime `viewLastContainer` map remembers each view's most recent container so that re-showing a hidden view returns it home rather than defaulting to the registry default.
+
+Note: the **Activity Bar** (`.activitybar`, the icon-only strip with Explorer/Search/Storage/Settings) is a distinct, separate VS Code concept from the views described above — it switches which view container is shown in the primary sidebar and is unaffected by this naming.
 
 ### Context menu
 
@@ -70,7 +191,8 @@ This means adding a new event in a leaf component requires threading it through 
 ## State management
 
 No Pinia or Vuex. State lives in:
-- `Workbench.vue` `reactive`/`ref` — global app state (tabs, prefs, clipboard)
+- `Workbench.vue` `reactive`/`ref` — global app state (editor grid, selection, prefs, clipboard)
+- `useWorkspaces.js` — the persisted per-workspace model in `localStorage` (`files-workbench.workspaces`), versioned with forward migration (v1→v2 wraps the flat tabs array into a single-group leaf; v2→v3 renames panel areas to primarySidebar/secondarySidebar/panel and adds `viewContainerOrder`, `mergeGroups`, and `activeViewContainerId`; v3→v4 renames the `activity` fields to `view`; v4→v5 unifies per-container section storage into a `viewSections` map keyed by view id, with `homeViewId` on each section, replacing the old `sectionState`); serialises the editor grid, sidebar/panel layout, and explorer tree state
 - `DirectoryTab.vue` — navigation history, items list, thumbnail map
 - `DirectoryPanel.vue` — sort/filter state, layout picker state
 - `ExplorerTree.vue` — expanded Set, children cache (also persisted to localStorage)
@@ -85,7 +207,8 @@ There are four independent drag systems:
 | `useDrag.js` | Directory grid/list/table items (left-button) | Custom mousedown → ghost clone, 200 ms delay, `onActivate` callback for multi-select |
 | `useRightClickDrag.js` | Directory items (right-button) | Suppresses native `contextmenu` on mousedown; ghost clone on move; resolves to `onRightClick` or `onDrop` on mouseup |
 | `useTreeDrag.js` | Explorer tree nodes | Custom mousedown → chip ghost, module-level shared state, directory-only drop targets |
-| `useDragAndDrop.js` | Tab bar | Native HTML5 drag (`draggable`, `@dragstart`/`@dragover`/`@drop`) for list reordering |
+| `useEditorDnd.js` | Editor tabs & groups | Native HTML5 drag with shared module state + region detection (`dropRegion`): dropping on a tab strip reorders/moves a tab; dropping on a group's edge/center splits or merges groups (`DropOverlay.vue` shows the target zone) |
+| `ViewContainer.vue` + `useViewDrag.js` | Panel views & sections | Native HTML5 drag with shared `activeDrag`/`activeSectionDrag` refs. `DRAG_MIME`: tab-strip drop reorders/transfers between containers, content-area drop (`ViewDropOverlay`) merges views as stacked SplitViews, SplitViewHeading drag extracts back to a tab. `SECTION_DRAG_MIME`: SplitSection heading drag reorders within an area or adopts the section into another View's area (`section-move` → `handleSectionMove`) |
 
 The file drag systems (`useDrag`, `useTreeDrag`, `useRightClickDrag`) do not set `dataTransfer` and therefore cannot interoperate with native OS drop targets.
 

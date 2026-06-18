@@ -33,64 +33,85 @@ function uuidv4() {
 
 export { uuidv4 }
 
+// ─── Default section layouts ─────────────────────────────────────────────────
+
+const DEFAULT_SECTIONS = {
+  explorer: [
+    { id: 'places',      title: 'Places',       homeViewId: 'explorer', collapsed: false, size: 4, locked: true, alwaysShowHeading: true },
+    { id: 'openEditors', title: 'Open Editors', homeViewId: 'explorer', collapsed: true,  size: 1 },
+  ],
+}
+
 // ─── Default workspace factory ───────────────────────────────────────────────
 
 function createDefaultWorkspace({ name = 'Default' } = {}) {
-  const now    = new Date().toISOString()
-  const homeId = uuidv4()
+  const now     = new Date().toISOString()
+  const homeId  = uuidv4()
+  const groupId = uuidv4()
   return {
     uuid: uuidv7(),
     name,
+    version: 5,
     dateCreated:  now,
     dateModified: now,
     dateAccessed: now,
     dateDeleted:  null,
     layout: {
+      primarySidebar: {
+        isOpen: true,
+        width: 240,
+        activeViewContainerId: 'explorer',
+        // Per-view section lists (the SplitSectionArea level). Keyed by view id;
+        // each section carries its home ("biological") View.
+        viewSections: {
+          explorer: DEFAULT_SECTIONS.explorer.map(s => ({ ...s, instanceId: uuidv4() })),
+        },
+        views: [
+          {
+            id: 'explorer',
+            name: 'Explorer',
+            context: { childrenByPath: {}, expandedNodes: [], selectedNodes: [] },
+          },
+        ],
+      },
+      secondarySidebar: {
+        isOpen: true,
+        width: 380,
+        activeViewContainerId: 'preview',
+        viewContainerOrder: ['preview', 'details', 'chat'],
+        viewSections: {},
+        mergeGroups: {},
+      },
       panel: {
-        left: {
-          isOpen: true,
-          width: 240,
-          activeActivityId: 'explorer',
-          activities: [
+        isOpen: true,
+        height: 150,
+        activeViewContainerId: 'debug',
+        viewContainerOrder: ['debug'],
+        viewSections: {},
+        mergeGroups: {},
+        hiddenViews: [],
+      },
+      editor: {
+        root: {
+          type: 'leaf',
+          id: groupId,
+          activeTabId: homeId,
+          tabs: [
             {
-              id: 'explorer',
-              name: 'Explorer',
-              context: { childrenByPath: {}, expandedNodes: [], selectedNodes: [] },
+              id: homeId,
+              type: 'Home',
+              title: 'Home',
+              subtitle: null,
+              timestampAdded:   now,
+              timestampViewed:  now,
+              timestampUpdated: now,
+              isPinned: false,
+              isPeeked: false,
+              context: {},
             },
           ],
         },
-        right: {
-          isOpen: true,
-          width: 380,
-          activeActivityId: 'preview',
-          activities: [
-            { id: 'preview', name: 'Preview', context: {} },
-            { id: 'details', name: 'Details', context: {} },
-            { id: 'chat',    name: 'Chat',    context: {} },
-          ],
-        },
-        bottom: {
-          isOpen: false,
-          height: 150,
-        },
-      },
-      editor: {
-        tabs: [
-          {
-            id: homeId,
-            type: 'Home',
-            title: 'Home',
-            subtitle: null,
-            timestampAdded:   now,
-            timestampViewed:  now,
-            timestampUpdated: now,
-            isPinned: true,
-            isPeeked: false,
-            isActive: true,
-            context: {},
-          },
-        ],
-        activeTabId: homeId,
+        activeGroupId: groupId,
       },
       context: {},
     },
@@ -104,21 +125,21 @@ function migrateFromOldKeys() {
   try {
     const s = JSON.parse(localStorage.getItem(OLD_STATE_KEY) ?? 'null')
     if (s) {
-      ws.layout.panel.left.isOpen          = s.sidebarVisible   ?? true
-      ws.layout.panel.left.width           = s.sidebarWidth     ?? 240
-      ws.layout.panel.left.activeActivityId  = s.activeActivity ?? 'explorer'
-      ws.layout.panel.right.width          = s.rightpaneWidth   ?? 380
-      ws.layout.panel.right.activeActivityId = s.rightPanel     ?? 'preview'
-      ws.layout.panel.bottom.height        = s.bottompaneHeight ?? 150
+      ws.layout.primarySidebar.isOpen               = s.sidebarVisible   ?? true
+      ws.layout.primarySidebar.width                = s.sidebarWidth     ?? 240
+      ws.layout.primarySidebar.activeViewContainerId = s.activeActivity  ?? 'explorer'
+      ws.layout.secondarySidebar.width              = s.rightpaneWidth   ?? 380
+      ws.layout.secondarySidebar.activeViewContainerId = s.rightPanel    ?? 'preview'
+      ws.layout.panel.height                        = s.bottompaneHeight ?? 150
     }
   } catch {}
   try {
     const t = JSON.parse(localStorage.getItem(OLD_TREE_KEY) ?? 'null')
     if (t) {
-      const act = ws.layout.panel.left.activities.find(a => a.id === 'explorer')
-      if (act) {
-        act.context.childrenByPath = t.childrenByPath ?? {}
-        act.context.expandedNodes  = t.expanded       ?? []
+      const view = ws.layout.primarySidebar.views.find(v => v.id === 'explorer')
+      if (view) {
+        view.context.childrenByPath = t.childrenByPath ?? {}
+        view.context.expandedNodes  = t.expanded       ?? []
       }
     }
   } catch {}
@@ -132,10 +153,153 @@ function loadWorkspaces() {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(migrateWorkspace)
     }
   } catch {}
   return [migrateFromOldKeys()]
+}
+
+// Upgrade an older persisted workspace to the current schema.
+// v1 → v2: a flat `editor.tabs` list becomes a single-group editor grid.
+// v2 → v3: panel.left/right/bottom renamed to primarySidebar/secondarySidebar/panel.
+// v3 → v4: "activity" terminology renamed to "view" (Activity Bar stays a
+// distinct concept; what we called activities are views hosted in a ViewContainer).
+function migrateWorkspace(ws) {
+  if (!ws || !ws.layout) return ws
+
+  // v1 → v2
+  const editor = ws.layout.editor ?? {}
+  if (!editor.root) {
+    const groupId = uuidv4()
+    const tabs = (editor.tabs ?? []).map(t => ({ ...t, isPinned: false }))
+    if (!tabs.length) {
+      const now = new Date().toISOString()
+      const homeId = uuidv4()
+      tabs.push({
+        id: homeId, type: 'Home', title: 'Home', subtitle: null,
+        timestampAdded: now, timestampViewed: now, timestampUpdated: now,
+        isPinned: false, isPeeked: false, context: {},
+      })
+      editor.activeTabId = homeId
+    }
+    ws.layout.editor = {
+      root: { type: 'leaf', id: groupId, activeTabId: editor.activeTabId ?? tabs[0]?.id ?? null, tabs },
+      activeGroupId: groupId,
+    }
+    ws.version = 2
+  }
+
+  // v2 → v3: rename panel areas to VS Code naming
+  if (!ws.layout.primarySidebar) {
+    const oldPanel = ws.layout.panel ?? {}
+    const left   = oldPanel.left   ?? {}
+    const right  = oldPanel.right  ?? {}
+    const bottom = oldPanel.bottom ?? {}
+
+    ws.layout.primarySidebar = {
+      isOpen: left.isOpen ?? true,
+      width:  left.width  ?? 240,
+      activeViewContainerId: left.activeActivityId ?? 'explorer',
+      sectionState: {
+        explorer: { sections: DEFAULT_SECTIONS.explorer.map(s => ({ ...s, instanceId: uuidv4() })) },
+      },
+      views: left.views ?? left.activities ?? [
+        { id: 'explorer', name: 'Explorer', context: { childrenByPath: {}, expandedNodes: [], selectedNodes: [] } },
+      ],
+    }
+
+    ws.layout.secondarySidebar = {
+      isOpen: right.isOpen ?? true,
+      width:  right.width  ?? 380,
+      activeViewContainerId: right.activeActivityId ?? 'preview',
+      viewContainerOrder: (right.activities ?? [
+        { id: 'preview' }, { id: 'details' }, { id: 'chat' },
+      ]).map(a => a.id),
+      sectionState: [
+        { id: 'preview', collapsed: false, size: 2 },
+        { id: 'details', collapsed: true,  size: 1 },
+        { id: 'chat',    collapsed: true,  size: 1 },
+      ],
+      mergeGroups: {},
+    }
+
+    ws.layout.panel = {
+      isOpen: bottom.isOpen ?? true,
+      height: bottom.height ?? 150,
+      activeViewContainerId: 'debug',
+      viewContainerOrder: ['debug'],
+      sectionState: [{ id: 'debug', collapsed: false, size: 1 }],
+      mergeGroups: {},
+      hiddenViews: [],
+    }
+
+    ws.version = 3
+  }
+
+  // v3 → v4: rename persisted "activity" fields to "view" terminology
+  if (ws.version === 3) {
+    if (ws.layout.primarySidebar && !ws.layout.primarySidebar.views) {
+      ws.layout.primarySidebar.views = ws.layout.primarySidebar.activities ?? []
+      delete ws.layout.primarySidebar.activities
+    }
+    if (ws.layout.panel && !ws.layout.panel.hiddenViews) {
+      ws.layout.panel.hiddenViews = ws.layout.panel.hiddenActivities ?? []
+      delete ws.layout.panel.hiddenActivities
+    }
+    ws.version = 4
+  }
+
+  // v4 → v5: unify section storage into a per-container `viewSections` map keyed
+  // by view id (the SplitSectionArea level). The primary sidebar's explorer
+  // sections move out of `sectionState.explorer.sections`; movable containers
+  // start empty (per-view sections only appear once a section is adopted in).
+  if (ws.version === 4) {
+    const ps = ws.layout.primarySidebar
+    if (ps && !ps.viewSections) {
+      const stored = ps.sectionState?.explorer?.sections
+      ps.viewSections = {
+        explorer: (Array.isArray(stored) && stored.length ? stored : DEFAULT_SECTIONS.explorer).map(s => ({ ...s, instanceId: s.instanceId || uuidv4() })),
+      }
+      delete ps.sectionState
+    }
+    for (const cid of ['secondarySidebar', 'panel']) {
+      if (ws.layout[cid] && !ws.layout[cid].viewSections) {
+        ws.layout[cid].viewSections = {}
+        delete ws.layout[cid].sectionState   // legacy, unused
+      }
+    }
+    ws.version = 5
+  }
+
+  // v3 patch: panel.isOpen was false by default before hide/show UI existed.
+  // Since users never had a way to hide the panel, any false value is from the
+  // old default — reset to true so the panel stays visible after the upgrade.
+  if (ws.version === 3 && ws.layout.panel?.isOpen === false) {
+    ws.layout.panel.isOpen = true
+  }
+
+  // Backfill the per-container viewSections map for any container missing it.
+  for (const cid of ['primarySidebar', 'secondarySidebar', 'panel']) {
+    if (ws.layout[cid] && !ws.layout[cid].viewSections) {
+      ws.layout[cid].viewSections = cid === 'primarySidebar'
+        ? { explorer: DEFAULT_SECTIONS.explorer.map(s => ({ ...s, instanceId: uuidv4() })) }
+        : {}
+    }
+  }
+  if (ws.layout.secondarySidebar && !ws.layout.secondarySidebar.mergeGroups) {
+    ws.layout.secondarySidebar.mergeGroups = {}
+  }
+  if (ws.layout.panel && !ws.layout.panel.mergeGroups) {
+    ws.layout.panel.mergeGroups = {}
+  }
+  if (ws.layout.panel && !ws.layout.panel.viewContainerOrder) {
+    ws.layout.panel.viewContainerOrder = [ws.layout.panel.activeViewContainerId ?? 'debug']
+  }
+  if (ws.layout.panel && !ws.layout.panel.hiddenViews) {
+    ws.layout.panel.hiddenViews = []
+  }
+
+  return ws
 }
 
 // ─── Tab serialisation ───────────────────────────────────────────────────────
@@ -147,7 +311,8 @@ export function wsTabToRuntime(tab) {
     title:         tab.title ?? '',
     path:          tab.context?.path         ?? '',
     selectedPath:  tab.context?.selectedPath ?? '',
-    mode:          tab.isPeeked ? 'peek' : 'pinned',
+    mode:          tab.isPeeked ? 'peek' : 'normal',
+    pinned:        !!tab.isPinned,
     selectedItems: tab.context?.selectedItems ?? [],
     focusedItem:   tab.context?.focusedItem   ?? null,
   }
@@ -164,7 +329,7 @@ export function runtimeTabToWs(tab, existing = null) {
     timestampAdded:   existing?.timestampAdded   ?? now,
     timestampViewed:  now,
     timestampUpdated: now,
-    isPinned:         tab.mode !== 'peek',
+    isPinned:         !!tab.pinned,
     isPeeked:         tab.mode === 'peek',
     isActive:         false,
     context: {
@@ -173,6 +338,57 @@ export function runtimeTabToWs(tab, existing = null) {
       selectedItems: tab.selectedItems ?? [],
       focusedItem:   tab.focusedItem   ?? null,
     },
+  }
+}
+
+// ─── Editor grid serialisation (persisted ⇄ runtime) ──────────────────────────
+
+export function wsGridToRuntime(node) {
+  if (!node) return null
+  if (node.type === 'leaf') {
+    return {
+      type: 'leaf',
+      id: node.id,
+      activeTabId: node.activeTabId ?? node.tabs?.[0]?.id ?? null,
+      tabs: (node.tabs ?? []).map(wsTabToRuntime),
+      tabPreviews: node.tabPreviews !== false,
+      locked: node.locked ?? false,
+    }
+  }
+  return {
+    type: 'branch',
+    id: node.id,
+    direction: node.direction === 'column' ? 'column' : 'row',
+    sizes: Array.isArray(node.sizes) ? [...node.sizes] : (node.children ?? []).map(() => 1),
+    children: (node.children ?? []).map(wsGridToRuntime),
+  }
+}
+
+function collectWsTabs(node, acc = {}) {
+  if (!node) return acc
+  if (node.type === 'leaf') (node.tabs ?? []).forEach(t => { acc[t.id] = t })
+  else (node.children ?? []).forEach(c => collectWsTabs(c, acc))
+  return acc
+}
+
+export function runtimeGridToWs(node, prevById = {}) {
+  if (!node) return null
+  if (node.type === 'leaf') {
+    return {
+      type: 'leaf',
+      id: node.id,
+      activeTabId: node.activeTabId ?? node.tabs?.[0]?.id ?? null,
+      tabs: (node.tabs ?? []).map(t => runtimeTabToWs(t, prevById[t.id])),
+      tabPreviews: node.tabPreviews !== false,
+      locked: node.locked ?? false,
+    }
+  }
+  return {
+    type: 'branch',
+    id: node.id,
+    direction: node.direction === 'column' ? 'column' : 'row',
+    sizes: Array.isArray(node.sizes) ? [...node.sizes] : (node.children ?? []).map(() => 1),
+    children: (node.children ?? []).map(c => runtimeGridToWs(c, prevById)),
   }
 }
 
@@ -205,87 +421,177 @@ export function useWorkspaces() {
     scheduleSave()
   }
 
-  // ── Layout: left (sidebar) ──────────────────────────────────────────────
+  // ── Layout: primary sidebar ─────────────────────────────────────────────
 
   const sidebarVisible = computed({
-    get: () => activeWorkspace.value?.layout.panel.left.isOpen ?? true,
-    set: v  => mutate(ws => { ws.layout.panel.left.isOpen = v }),
+    get: () => activeWorkspace.value?.layout.primarySidebar?.isOpen ?? true,
+    set: v  => mutate(ws => { ws.layout.primarySidebar.isOpen = v }),
   })
   const sidebarWidth = computed({
-    get: () => activeWorkspace.value?.layout.panel.left.width ?? 240,
-    set: v  => mutate(ws => { ws.layout.panel.left.width = v }),
+    get: () => activeWorkspace.value?.layout.primarySidebar?.width ?? 240,
+    set: v  => mutate(ws => { ws.layout.primarySidebar.width = v }),
   })
-  const activeActivity = computed({
-    get: () => activeWorkspace.value?.layout.panel.left.activeActivityId ?? 'explorer',
-    set: v  => mutate(ws => { ws.layout.panel.left.activeActivityId = v }),
+  const activePrimaryView = computed({
+    get: () => activeWorkspace.value?.layout.primarySidebar?.activeViewContainerId ?? 'explorer',
+    set: v  => mutate(ws => { ws.layout.primarySidebar.activeViewContainerId = v }),
   })
 
-  // ── Layout: right panel ─────────────────────────────────────────────────
+  // ── Layout: secondary sidebar ────────────────────────────────────────────
 
+  const rightpaneVisible = computed({
+    get: () => activeWorkspace.value?.layout.secondarySidebar?.isOpen ?? true,
+    set: v  => mutate(ws => { ws.layout.secondarySidebar.isOpen = v }),
+  })
   const rightpaneWidth = computed({
-    get: () => activeWorkspace.value?.layout.panel.right.width ?? 380,
-    set: v  => mutate(ws => { ws.layout.panel.right.width = v }),
+    get: () => activeWorkspace.value?.layout.secondarySidebar?.width ?? 380,
+    set: v  => mutate(ws => { ws.layout.secondarySidebar.width = v }),
   })
   const rightPanel = computed({
-    get: () => activeWorkspace.value?.layout.panel.right.activeActivityId ?? 'preview',
-    set: v  => mutate(ws => { ws.layout.panel.right.activeActivityId = v }),
+    get: () => activeWorkspace.value?.layout.secondarySidebar?.activeViewContainerId ?? 'preview',
+    set: v  => mutate(ws => { ws.layout.secondarySidebar.activeViewContainerId = v }),
   })
 
-  // Ordered activity IDs for the right panel (without icons — merged in Workbench.vue)
-  const rightPanelActivityIds = computed({
-    get: () => (activeWorkspace.value?.layout.panel.right.activities ?? []).map(a => a.id),
-    set: ids => mutate(ws => {
-      const current = ws.layout.panel.right.activities
-      const byId    = Object.fromEntries(current.map(a => [a.id, a]))
-      ws.layout.panel.right.activities = ids.map(id => byId[id] ?? { id, name: id, context: {} })
-    }),
+  // Ordered view container IDs for the secondary sidebar
+  const rightPanelViewIds = computed({
+    get: () => activeWorkspace.value?.layout.secondarySidebar?.viewContainerOrder ?? ['preview', 'details', 'chat'],
+    set: ids => mutate(ws => { ws.layout.secondarySidebar.viewContainerOrder = ids }),
+  })
+
+  // Merge groups for the secondary sidebar (persisted)
+  const secondarySidebarMergeGroups = computed({
+    get: () => activeWorkspace.value?.layout.secondarySidebar?.mergeGroups ?? {},
+    set: v  => mutate(ws => { ws.layout.secondarySidebar.mergeGroups = v }),
   })
 
   // ── Layout: bottom panel ────────────────────────────────────────────────
 
-  const bottompaneHeight = computed({
-    get: () => activeWorkspace.value?.layout.panel.bottom.height ?? 150,
-    set: v  => mutate(ws => { ws.layout.panel.bottom.height = v }),
+  const bottompaneVisible = computed({
+    get: () => activeWorkspace.value?.layout.panel?.isOpen ?? true,
+    set: v  => mutate(ws => { ws.layout.panel.isOpen = v }),
   })
+  const bottompaneHeight = computed({
+    get: () => activeWorkspace.value?.layout.panel?.height ?? 150,
+    set: v  => mutate(ws => { ws.layout.panel.height = v }),
+  })
+
+  const bottomPanel = computed({
+    get: () => activeWorkspace.value?.layout.panel?.activeViewContainerId ?? 'debug',
+    set: v  => mutate(ws => { ws.layout.panel.activeViewContainerId = v }),
+  })
+  const bottomPanelViewIds = computed({
+    get: () => activeWorkspace.value?.layout.panel?.viewContainerOrder ?? ['debug'],
+    set: ids => mutate(ws => { ws.layout.panel.viewContainerOrder = ids }),
+  })
+
+  const hiddenViews = computed({
+    get: () => activeWorkspace.value?.layout.panel?.hiddenViews ?? [],
+    set: v  => mutate(ws => { ws.layout.panel.hiddenViews = v }),
+  })
+
+  // Merge groups for the bottom panel (persisted)
+  const panelMergeGroups = computed({
+    get: () => activeWorkspace.value?.layout.panel?.mergeGroups ?? {},
+    set: v  => mutate(ws => { ws.layout.panel.mergeGroups = v }),
+  })
+
+  // ── Per-view section state (unified across all containers) ────────────────
+  //
+  // viewSections[containerId] = { [viewId]: Section[] }
+  // Section = { id, homeViewId, collapsed, size, title?, locked? }
+  // A view absent from the map renders a single implicit self-section (its own
+  // content, no section heading). Sections only get an explicit entry once a
+  // view owns >1 section (Explorer) or has adopted a foreign section (P4).
+
+  // The home ("biological") View of a section: explicit if set, else 'explorer'
+  // for the explorer container, else the view's own id (an implicit self-section).
+  function _homeOf(viewId, s) {
+    if (s.homeViewId) return s.homeViewId
+    return viewId === 'explorer' ? 'explorer' : s.id
+  }
+
+  function _normalizeSections(viewId, sections) {
+    const out = sections.map(s => {
+      // Rename 'folders' → 'places' for any data written before that rename.
+      const r = s.id === 'folders'
+        ? { ...s, id: 'places', title: s.title === 'Folders' ? 'Places' : s.title }
+        : { ...s }
+      r.homeViewId = _homeOf(viewId, r)
+      if (!r.instanceId) r.instanceId = uuidv4()
+      return r
+    })
+    // Explorer invariant: Places stays locked (essential — can't be hidden or
+    // pulled out of Explorer). Its position is no longer forced; the user may
+    // reorder it within the Explorer section area, and that order persists.
+    if (viewId === 'explorer') {
+      for (const s of out) {
+        const def = DEFAULT_SECTIONS.explorer.find(d => d.id === s.id)
+        if (def?.locked) s.locked = true
+        if (def?.alwaysShowHeading) s.alwaysShowHeading = true
+      }
+    }
+    return out
+  }
+
+  function getViewSections(containerId) {
+    const stored = activeWorkspace.value?.layout[containerId]?.viewSections ?? {}
+    const out = {}
+    for (const [viewId, sections] of Object.entries(stored)) {
+      if (Array.isArray(sections) && sections.length) out[viewId] = _normalizeSections(viewId, sections)
+    }
+    // The primary sidebar always has Explorer's sections.
+    if (containerId === 'primarySidebar' && !out.explorer) {
+      out.explorer = DEFAULT_SECTIONS.explorer.map(s => ({ ...s }))
+    }
+    return out
+  }
+
+  function saveViewSections(containerId, map) {
+    mutate(ws => {
+      ws.layout[containerId] ??= {}
+      ws.layout[containerId].viewSections = Object.fromEntries(
+        Object.entries(map).map(([viewId, sections]) => [viewId, sections.map(s => ({ ...s }))])
+      )
+    })
+  }
 
   // ── Explorer tree context ────────────────────────────────────────────────
 
-  function _explorerAct(ws) {
-    return ws.layout.panel.left.activities?.find(a => a.id === 'explorer')
+  function _explorerView(ws) {
+    return ws.layout.primarySidebar?.views?.find(v => v.id === 'explorer')
   }
 
   const explorerContext = computed(() => {
     const ws = activeWorkspace.value
     if (!ws) return { childrenByPath: {}, expandedNodes: [], selectedNodes: [] }
-    return _explorerAct(ws)?.context ?? { childrenByPath: {}, expandedNodes: [], selectedNodes: [] }
+    return _explorerView(ws)?.context ?? { childrenByPath: {}, expandedNodes: [], selectedNodes: [] }
   })
 
   function updateExplorerContext(ctx) {
     mutate(ws => {
-      const act = _explorerAct(ws)
-      if (act) act.context = { ...act.context, ...ctx }
+      const view = _explorerView(ws)
+      if (view) view.context = { ...view.context, ...ctx }
     })
   }
 
   // ── Tabs ─────────────────────────────────────────────────────────────────
 
-  function getInitialTabs() {
-    const wsTabs = activeWorkspace.value?.layout.editor.tabs ?? []
-    if (!wsTabs.length) {
-      return [{ id: uuidv4(), kind: 'home', title: 'Home', mode: 'pinned', selectedItems: [], focusedItem: null, selectedPath: '', path: '' }]
+  function getInitialEditor() {
+    const editor = activeWorkspace.value?.layout.editor
+    if (!editor?.root) {
+      const tabId = uuidv4()
+      const leaf = {
+        type: 'leaf', id: uuidv4(), activeTabId: tabId,
+        tabs: [{ id: tabId, kind: 'home', title: 'Home', mode: 'normal', pinned: false, selectedItems: [], focusedItem: null, selectedPath: '', path: '' }],
+      }
+      return { root: leaf, activeGroupId: leaf.id }
     }
-    return wsTabs.map(wsTabToRuntime)
+    return { root: wsGridToRuntime(editor.root), activeGroupId: editor.activeGroupId ?? editor.root.id }
   }
 
-  function getInitialActiveTabId() {
-    return activeWorkspace.value?.layout.editor.activeTabId ?? null
-  }
-
-  function saveTabs(runtimeTabs, activeTabId) {
+  function saveEditor(root, activeGroupId) {
     mutate(ws => {
-      const byId = Object.fromEntries((ws.layout.editor.tabs ?? []).map(t => [t.id, t]))
-      ws.layout.editor.tabs      = runtimeTabs.map(t => runtimeTabToWs(t, byId[t.id]))
-      ws.layout.editor.activeTabId = activeTabId
+      const prevById = collectWsTabs(ws.layout.editor?.root)
+      ws.layout.editor = { root: runtimeGridToWs(root, prevById), activeGroupId }
     })
   }
 
@@ -330,20 +636,32 @@ export function useWorkspaces() {
     workspaces,
     activeWorkspaceId,
     activeWorkspace,
-    // Backward-compatible with useWorkbenchState
+    // Layout: primary sidebar
     sidebarVisible,
     sidebarWidth,
-    activeActivity,
+    activePrimaryView,
+    // Layout: secondary sidebar
+    rightpaneVisible,
     rightpaneWidth,
     rightPanel,
+    rightPanelViewIds,
+    secondarySidebarMergeGroups,
+    // Layout: bottom panel
+    bottompaneVisible,
     bottompaneHeight,
-    // Extended
-    rightPanelActivityIds,
+    bottomPanel,
+    bottomPanelViewIds,
+    hiddenViews,
+    panelMergeGroups,
+    // Per-view section state (unified across all containers)
+    getViewSections,
+    saveViewSections,
+    // Explorer
     explorerContext,
     updateExplorerContext,
-    getInitialTabs,
-    getInitialActiveTabId,
-    saveTabs,
+    // Editor grid
+    getInitialEditor,
+    saveEditor,
     // Workspace management
     createWorkspace,
     switchWorkspace,

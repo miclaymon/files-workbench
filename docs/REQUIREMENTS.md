@@ -55,6 +55,7 @@
 
 - Standard file manager shortcuts: Ctrl+C, Ctrl+X, Ctrl+V, Delete, F2 (rename), Enter (open)
 - Navigation: Alt+Left/Right (history), Alt+Up (parent), Ctrl+T (new tab), Ctrl+W (close tab)
+- Editor layout: Ctrl+\ split right, Ctrl+1–9 focus editor group by index
 - Customizable via `config/keybindings/user-keybindings.json`
 
 ## Theming
