@@ -11,6 +11,7 @@
       :items="items"
       :selectedPaths="highlightedPaths"
       :showCheckboxes="showCheckboxes"
+      :showHiddenFiles="showHiddenFiles"
       :clipboardData="clipboardData"
       :excludedCategories="excludedCategories"
       :showFiles="showFiles"

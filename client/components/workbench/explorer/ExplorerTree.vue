@@ -38,6 +38,7 @@ const props = defineProps({
   clipboardData: { type: Object, default: null },
   excludedCategories: { type: Array,   default: () => ['System'] },
   showFiles:          { type: Boolean, default: false },
+  showHiddenFiles:    { type: Boolean, default: false },
   indentScale:        { type: Number,  default: 1.0 },
   // When supplied by the workspace, overrides legacy localStorage
   explorerState: { type: Object, default: null },
@@ -56,8 +57,9 @@ const childrenByPath = ref(_initial?.childrenByPath ?? {})
 async function listDir(path) {
   try {
     const excludeCategories = (props.excludedCategories ?? ['System']).join(',')
-    const showFiles = props.showFiles ?? false
-    const res = await explorerList({ root: path, excludeCategories, showFiles, includeMetadata: false })
+    const showFiles  = props.showFiles ?? false
+    const showHidden = props.showHiddenFiles ?? false
+    const res = await explorerList({ root: path, excludeCategories, showFiles, showHidden, includeMetadata: false })
     return res.items ?? []
   } catch {
     return []

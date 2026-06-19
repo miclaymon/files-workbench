@@ -52,22 +52,31 @@ func (t *iconTheme) pick(candidate, fallback string) string {
 }
 
 // resolveOpen returns the open/expanded variant icon name for a directory.
-// Falls back through: named-open → default-open → named-closed → default-closed.
-// Only returns names whose SVG file actually exists.
+// Falls back through: named-open → named-closed → default-open → default-closed.
+// Preferring the named-closed icon over the generic open folder keeps custom folder
+// icons consistent when no specific open variant SVG exists on disk.
 func (t *iconTheme) resolveOpen(name string) string {
 	if t == nil {
 		return ""
 	}
 	lower := strings.ToLower(name)
+	// 1. Named open variant (e.g. folder-src-open)
 	if icon, ok := t.FolderNamesExpanded[lower]; ok {
 		if t.has(icon) {
 			return icon
 		}
 	}
+	// 2. Named closed variant — keeps the custom icon style when no open SVG exists
+	if icon, ok := t.FolderNames[lower]; ok {
+		if t.has(icon) {
+			return icon
+		}
+	}
+	// 3. Default open folder
 	if t.has(t.FolderExpanded) {
 		return t.FolderExpanded
 	}
-	// Open SVG missing — fall back to the closed variant
+	// 4. Default closed folder
 	return t.resolve(name, true)
 }
 

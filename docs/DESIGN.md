@@ -368,7 +368,7 @@ The client resolves customization icons via `useCustomIcon.js`: absolute paths a
 
 `plugins.go` loads third-party icon packs from `config/plugins/` at startup. Each plugin directory contains a `plugin.json` manifest. The only supported adapter is `vscode-icon-theme`, which reads a VSCode extension icon theme JSON file and builds lookup tables for file extensions, file names, and folder names.
 
-At startup, the first successfully-loaded plugin becomes `activeIconTheme`. Icon names are resolved server-side and embedded in every list and explorer API response as `icon` and `icon_open` string fields. `resolve()` and `resolveOpen()` only return icon names whose SVG files exist on disk, cascading through fallbacks gracefully (named-open → default-open → named-closed → default-closed).
+At startup, the first successfully-loaded plugin becomes `activeIconTheme`. Icon names are resolved server-side and embedded in every list and explorer API response as `icon` and `icon_open` string fields. `resolve()` and `resolveOpen()` only return icon names whose SVG files exist on disk, cascading through fallbacks gracefully (named-open → named-closed → default-open → default-closed). Preferring the named-closed icon over the generic open folder keeps custom folder icons visually consistent when no specific open-variant SVG has been generated.
 
 The client composable `useIconPack.js` is a module-level singleton that fetches the manifest once and provides `resolveIcon()`, `iconUrl()`, and `isAvailable` to all components. `<img>` elements that load pack icons fall back to MDI icons via `@error` handlers if the SVG request fails.
 

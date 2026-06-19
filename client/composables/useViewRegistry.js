@@ -68,6 +68,7 @@ const REGISTRY = {
       selectedPath:       ctx.explorerTreeFocus?.value?.path ?? '',
       showCheckboxes:     ctx.prefs.explorer.alwaysShowCheckboxes,
       showFiles:          ctx.prefs.explorer.showFiles ?? false,
+      showHiddenFiles:    ctx.prefs.explorer.showHiddenFiles ?? false,
       isTreeView:         true,
       excludedCategories: ctx.prefs.excludedCategories,
       indentScale:        ctx.prefs.explorer.indentScale ?? 1.0,

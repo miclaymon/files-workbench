@@ -239,8 +239,7 @@
           v-if="hpItem?.path === item.path && hpRect && hpMediaReady"
           class="dl-hp-overlay"
           :style="{
-            left: (hpRect.left + hpRect.width / 2) + 'px',
-            top: (hpRect.top + hpRect.height / 2) + 'px',
+            ...hpPosition,
             ...(hpMediaSize ? { width: hpMediaSize.w + 'px', height: hpMediaSize.h + 'px' } : {})
           }"
         >
@@ -354,6 +353,21 @@ const hpMediaReady = ref(false)
 // Explicit pixel size computed during preload so translate(-50%,-50%) is correct
 // from the very first frame — no layout pass needed on the freshly-inserted element.
 const hpMediaSize = ref(null) // { w, h } in px, or null (video / unknown)
+
+// Center-point position clamped so the popup never escapes the viewport.
+// Uses known media size when available; falls back to CSS-max estimates for video.
+const HP_SAFE = 12
+const hpPosition = computed(() => {
+  const r = hpRect.value
+  if (!r) return { left: '-9999px', top: '-9999px' }
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const W = hpMediaSize.value?.w ?? Math.min(600, vw * 0.88)
+  const H = hpMediaSize.value?.h ?? Math.min(500, vh * 0.85)
+  const cx = Math.max(W / 2 + HP_SAFE, Math.min(r.left + r.width  / 2, vw - W / 2 - HP_SAFE))
+  const cy = Math.max(H / 2 + HP_SAFE, Math.min(r.top  + r.height / 2, vh - H / 2 - HP_SAFE))
+  return { left: Math.round(cx) + 'px', top: Math.round(cy) + 'px' }
+})
 
 function preloadMedia(item) {
   hpMediaReady.value = false

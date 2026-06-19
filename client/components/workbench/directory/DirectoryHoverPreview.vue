@@ -40,6 +40,9 @@ const VIDEO_EXTS = new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts
 const MAX_W = 520
 const MAX_H = 420
 
+// Minimum distance from any viewport edge before clamping kicks in.
+const SAFE = 12
+
 // Thumbnails narrower than this threshold are treated as list/details row thumbnails
 // and get a right-side popup instead of an above popup.
 const SMALL_THUMB_PX = 48
@@ -84,11 +87,11 @@ function calcPosition(popW, popH) {
     const GAP = 12
     let left = r.right + GAP
     let top  = Math.round(r.top + r.height / 2 - ph / 2)
-    top = Math.max(8, Math.min(top, vh - ph - 8))
+    top = Math.max(SAFE, Math.min(top, vh - ph - SAFE))
 
-    if (left + pw > vw - 8) {
+    if (left + pw > vw - SAFE) {
       // Not enough room on the right — flip to the left of the thumbnail
-      left = Math.max(8, r.left - pw - GAP)
+      left = Math.max(SAFE, r.left - pw - GAP)
       return { left: Math.round(left), top, placement: 'left' }
     }
     return { left: Math.round(left), top, placement: 'right' }
@@ -99,11 +102,12 @@ function calcPosition(popW, popH) {
   const GAP = 10
   let left = Math.round(r.left + r.width / 2 - pw / 2)
   let top  = r.top - ph - GAP
-  left = Math.max(8, Math.min(left, vw - pw - 8))
+  left = Math.max(SAFE, Math.min(left, vw - pw - SAFE))
 
-  if (top < 8) {
-    // Not enough room above — flip below
-    return { left, top: r.bottom + GAP, placement: 'below' }
+  if (top < SAFE) {
+    // Not enough room above — flip below, clamped so bottom stays in viewport.
+    const belowTop = r.bottom + GAP
+    return { left, top: Math.round(Math.max(SAFE, Math.min(belowTop, vh - ph - SAFE))), placement: 'below' }
   }
   return { left, top: Math.round(top), placement: 'above' }
 }

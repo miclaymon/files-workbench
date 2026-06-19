@@ -154,8 +154,13 @@ func explorerListDir(dirPath string, excluded []string, showHidden, includeMetad
 
 		eType := e.Type()
 		var itemType string
+		var symlinkTargetIsDir bool
 		if eType&os.ModeSymlink != 0 {
 			itemType = "symlink"
+			// Stat the target so we can distinguish dir-symlinks from file-symlinks.
+			if info, err := os.Stat(entryPath); err == nil {
+				symlinkTargetIsDir = info.IsDir()
+			}
 		} else if e.IsDir() {
 			itemType = "directory"
 		} else if eType.IsRegular() {
@@ -175,12 +180,18 @@ func explorerListDir(dirPath string, excluded []string, showHidden, includeMetad
 			continue
 		}
 
-		// In tree mode (showFiles=false) keep only directories, symlinks, and shortcuts.
-		if !showFiles && itemType != "directory" && itemType != "symlink" && itemType != "shortcut" {
-			continue
+		// In tree mode (showFiles=false) keep only directories, directory-symlinks, and shortcuts.
+		// File-symlinks are excluded the same as regular files.
+		if !showFiles {
+			isTreeDir := itemType == "directory" ||
+				(itemType == "symlink" && symlinkTargetIsDir) ||
+				itemType == "shortcut"
+			if !isTreeDir {
+				continue
+			}
 		}
 
-		isDir := itemType == "directory"
+		isDir := itemType == "directory" || (itemType == "symlink" && symlinkTargetIsDir)
 		icon := activeIconTheme.resolve(name, isDir)
 		var iconPtr, iconOpenPtr *string
 		if icon != "" {
