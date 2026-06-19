@@ -174,6 +174,33 @@
       </div>
     </div>
 
+    <!-- New file / folder modal -->
+    <div v-if="newItemPrompt" class="modal-overlay" @click.self="cancelNewItem">
+      <div class="modal-dialog">
+        <div class="modal-title">{{ newItemPrompt.type === 'file' ? 'New File' : 'New Folder' }}</div>
+        <div class="modal-body">
+          <p class="modal-paths">{{ newItemPrompt.dirPath }}</p>
+          <label class="modal-label">{{ newItemPrompt.type === 'file' ? 'File name' : 'Folder name' }}</label>
+          <input
+            ref="newItemInputRef"
+            v-model="newItemName"
+            type="text"
+            class="modal-input"
+            :placeholder="newItemPrompt.type === 'file' ? 'filename.txt' : 'folder name'"
+            @keydown.enter="confirmNewItem"
+            @keydown.esc="cancelNewItem"
+          />
+          <div v-if="newItemError" class="modal-error">{{ newItemError }}</div>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn" @click="cancelNewItem">Cancel</button>
+          <button class="modal-btn modal-btn--primary" :disabled="!newItemName.trim() || newItemCreating" @click="confirmNewItem">
+            {{ newItemCreating ? 'Creating…' : 'Create' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Command palette -->
     <CommandPalette
       :visible="commandPaletteOpen"
@@ -199,7 +226,7 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, provide, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, provide, ref } from 'vue'
 import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
 import CommandPalette from './ui/CommandPalette.vue'
 import SettingsModal from './ui/SettingsModal.vue'
@@ -217,7 +244,7 @@ import { usePreferences } from '~/composables/usePreferences.js'
 import { useDebugLog } from '~/composables/useDebugLog.js'
 import { useFileOpsQueue } from '~/composables/useFileOpsQueue.js'
 import { useActionHistory } from '~/composables/useActionHistory.js'
-import { fsStat, fsOpenWithSystem, fsOpenTerminal } from '~/lib/fs-api.js'
+import { fsStat, fsOpenWithSystem, fsOpenTerminal, fsCreateFile, fsCreateDir } from '~/lib/fs-api.js'
 
 function uuid() { return uuidv4() }
 
@@ -344,19 +371,101 @@ const {
 // component (see useViewRegistry.js / ViewContentHost.vue). Provided once here so
 // any view/section renders identically in any container; the handlers are sourced
 // from the selection / file-ops / context-menu slices instantiated above.
+const previewMode = ref('multi')
+
+// ── New file / folder modal ───────────────────────────────────────────────────
+
+const newItemPrompt    = ref(null)  // { type: 'file'|'folder', dirPath }
+const newItemName      = ref('')
+const newItemInputRef  = ref(null)
+const newItemError     = ref('')
+const newItemCreating  = ref(false)
+
+async function _openNewItemModal(type) {
+  const dirPath = _explorerTargetDir()
+  if (!dirPath) return
+  newItemPrompt.value   = { type, dirPath }
+  newItemName.value     = ''
+  newItemError.value    = ''
+  newItemCreating.value = false
+  await nextTick()
+  newItemInputRef.value?.focus()
+}
+
+function cancelNewItem() {
+  newItemPrompt.value = null
+}
+
+async function confirmNewItem() {
+  const name = newItemName.value.trim()
+  if (!name || newItemCreating.value) return
+  const { type, dirPath } = newItemPrompt.value
+  newItemError.value    = ''
+  newItemCreating.value = true
+  try {
+    const newPath = `${dirPath}/${name}`
+    if (type === 'file') await fsCreateFile(newPath)
+    else                 await fsCreateDir(newPath)
+    newItemPrompt.value = null
+    explorerPanelRef.value?.reloadDir(dirPath)
+  } catch (err) {
+    newItemError.value    = err?.message ?? 'Failed to create'
+    newItemCreating.value = false
+    await nextTick()
+    newItemInputRef.value?.focus()
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Tracks the last item clicked in the Explorer tree (path + kind).
+const explorerTreeFocus = ref(null)
+
+function handleExplorerSelectAndTrack(payload) {
+  const path = typeof payload === 'string' ? payload : payload?.path
+  const kind = payload?.kind ?? 'file'
+  if (path) explorerTreeFocus.value = { path, kind }
+  return handleExplorerSelect(payload)
+}
+
+// Returns the directory to target for New File / New Folder in the Explorer tree.
+// Uses the last tree-clicked node: directories map to themselves, files to their parent.
+function _explorerTargetDir() {
+  const focus = explorerTreeFocus.value
+  if (focus) {
+    if (focus.kind === 'directory' || focus.kind === 'dir' || focus.kind === 'drive' || focus.kind === 'root') {
+      return focus.path
+    }
+    const idx = focus.path.lastIndexOf('/')
+    return idx > 0 ? focus.path.substring(0, idx) : focus.path
+  }
+  // Fallback: parent of the currently open editor path
+  const sp = selectedPath.value
+  if (!sp) return null
+  const idx = sp.lastIndexOf('/')
+  return idx > 0 ? sp.substring(0, idx) : sp
+}
+
 const viewCtx = {
   // reactive state (refs / computeds — registry reads .value)
-  selectedPath, selectedItems, selectedDetails,
+  selectedPath, selectedItems, focusedItem, selectedDetails,
   editorRoot, activeGroupId,
   explorerContext,
+  explorerTreeFocus,
+  previewMode,
   prefs,            // reactive object (no .value)
   debugLog,
   // handlers
-  handleExplorerSelect, handleDoubleClick, showItemContextMenu,
+  handleExplorerSelect: handleExplorerSelectAndTrack, handleDoubleClick, showItemContextMenu,
   handleRename, doMove, updateExplorerContext,
   // imperative ref forwarding (e.g. explorerPanelRef.refresh())
   setRef(name, el) { if (name === 'explorerPanelRef') explorerPanelRef.value = el },
-  refreshExplorer: () => explorerPanelRef.value?.refresh(),
+  refreshExplorer:     () => explorerPanelRef.value?.refresh(),
+  reloadExplorerDir:   (dir) => explorerPanelRef.value?.reloadDir(dir),
+  showNewFileModal:    () => _openNewItemModal('file'),
+  showNewFolderModal:  () => _openNewItemModal('folder'),
+  collapseAllExplorer: () => explorerPanelRef.value?.collapseAll(),
+  expandRootsExplorer: () => explorerPanelRef.value?.expandRoots(),
 }
 provide('viewCtx', viewCtx)
 

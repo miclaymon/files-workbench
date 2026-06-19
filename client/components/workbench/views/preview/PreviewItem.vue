@@ -1,6 +1,6 @@
 <template>
-  <div class="preview-item" :class="{ 'most-recent': isLatest }">
-    <PreviewItemHeader :item="item" :index="index" @copy-name="$emit('copy-name', $event)" />
+  <div class="preview-item" :class="{ 'most-recent': isLatest, 'mode-single': mode === 'single' }">
+    <PreviewItemHeader v-if="mode !== 'single'" :item="item" :index="index" @copy-name="$emit('copy-name', $event)" />
 
     <template v-if="!loading">
       <TextPreview
@@ -23,12 +23,14 @@
         :height="metadata?.height"
         :format="metadata?.format"
         :fileSize="item.size"
+        :mode="mode"
       />
       <VideoPreview
         v-else-if="preview?.kind === 'video'"
         :src="previewUrl(item.path)"
         :mimeType="metadata?.mime_type ?? ''"
         :duration="metadata?.duration_formatted"
+        :mode="mode"
       />
       <AudioPreview
         v-else-if="preview?.kind === 'audio'"
@@ -57,13 +59,14 @@ import AudioPreview from './AudioPreview.vue'
 import TooLargePreview from './TooLargePreview.vue'
 
 defineProps({
-  item: { type: Object, required: true },
-  preview: { type: Object, default: null },
+  item:     { type: Object, required: true },
+  preview:  { type: Object, default: null },
   metadata: { type: Object, default: null },
-  loading: { type: Boolean, default: false },
+  loading:  { type: Boolean, default: false },
   fontSize: { type: Number, default: 13 },
-  index: { type: Number, required: true },
+  index:    { type: Number, required: true },
   isLatest: { type: Boolean, default: false },
+  mode:     { type: String, default: 'multi' },
 })
 
 defineEmits(['copy-name', 'force-load'])
@@ -74,7 +77,16 @@ defineEmits(['copy-name', 'force-load'])
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
+  background: var(--surface, rgba(255,255,255,0.02));
 }
 .preview-item.most-recent { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.preview-item.mode-single {
+  border: none;
+  border-radius: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.preview-item.mode-single :deep(> *:last-child) { flex: 1; min-height: 0; }
 .no-preview { padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
 </style>

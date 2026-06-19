@@ -250,14 +250,15 @@ func handleFsDirSize(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusForbidden, "Path is blacklisted")
 		return
 	}
-	var total int64
+	var total, files int64
 	filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
 		if err == nil && !info.IsDir() {
 			total += info.Size()
+			files++
 		}
 		return nil
 	})
-	jsonOK(w, map[string]any{"size": total})
+	jsonOK(w, map[string]any{"size": total, "files": files})
 }
 
 func handleFsPreview(w http.ResponseWriter, r *http.Request) {

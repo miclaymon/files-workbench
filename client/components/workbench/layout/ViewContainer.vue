@@ -247,7 +247,26 @@ const menuBtnRef = ref(null)
 const menuOpen   = ref(false)
 const menuPos    = ref({ x: 0, y: 0 })
 
-const allMenuItems = computed(() => [...sectionMenuItems(props.modelValue), ...props.menuItems])
+// For movable containers (SecondarySideBar, BottomPanel), always include view
+// visibility toggles so the "More Actions…" button is never hidden.
+const viewToggleItems = computed(() => {
+  if (!isMovable.value || !chrome) return []
+  const cid = props.containerId
+  return (chrome.viewsForContainer(cid) ?? []).map(v => ({
+    key:     `view-${v.id}`,
+    label:   v.label,
+    type:    'toggle',
+    checked: () => chrome.isViewVisible(v.id),
+    action:  () => chrome.toggleViewVisibility(v.id, cid),
+  }))
+})
+
+const allMenuItems = computed(() => {
+  const sections = sectionMenuItems(props.modelValue)
+  const views    = viewToggleItems.value
+  if (sections.length && views.length) return [...sections, { separator: true }, ...views, ...props.menuItems]
+  return [...sections, ...views, ...props.menuItems]
+})
 
 function openMenu() {
   const el = menuBtnRef.value

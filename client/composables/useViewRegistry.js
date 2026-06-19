@@ -1,12 +1,20 @@
 import { markRaw } from 'vue'
-import { mdiFileTree, mdiEye, mdiInformation, mdiMessage, mdiBug, mdiFolderMultiple, mdiFileDocumentMultiple, mdiNotificationClearAll, mdiRefresh } from '@mdi/js'
+import { mdiFileTree, mdiEye, mdiInformation, mdiMessage, mdiBug, mdiFolderMultiple, mdiFileDocumentMultiple, mdiNotificationClearAll, mdiRefresh, mdiImage, mdiViewGrid, mdiFilePlusOutline, mdiFolderPlusOutline, mdiCollapseAll, mdiExpandAll } from '@mdi/js'
 
 import ExplorerPanel   from '../components/workbench/explorer/ExplorerPanel.vue'
 import OpenEditorsView from '../components/workbench/explorer/OpenEditorsView.vue'
 import PreviewPanel    from '../components/workbench/views/PreviewPanel.vue'
-import DetailsPanel    from '../components/workbench/views/DetailsPanel.vue'
 import DebugPanel      from '../components/workbench/views/DebugPanel.vue'
 import ChatPanel       from '../components/workbench/views/ChatPanel.vue'
+
+import DetailsSectionInfo        from '../components/workbench/views/details/DetailsSectionInfo.vue'
+import DetailsSectionMetadata    from '../components/workbench/views/details/DetailsSectionMetadata.vue'
+import DetailsSectionEXIF        from '../components/workbench/views/details/DetailsSectionEXIF.vue'
+import DetailsSectionXMP         from '../components/workbench/views/details/DetailsSectionXMP.vue'
+import DetailsSectionIPTC        from '../components/workbench/views/details/DetailsSectionIPTC.vue'
+import DetailsSectionRaw         from '../components/workbench/views/details/DetailsSectionRaw.vue'
+import DetailsSectionPermissions from '../components/workbench/views/details/DetailsSectionPermissions.vue'
+import DetailsSectionChecksums   from '../components/workbench/views/details/DetailsSectionChecksums.vue'
 
 // ── View / section content registry ────────────────────────────────────────────
 //
@@ -43,11 +51,23 @@ const REGISTRY = {
     expose: 'explorerPanelRef',
     // Section-header actions (shown on hover/focus in the SplitSectionHeading).
     actions: [
-      { id: 'refresh', title: 'Refresh', icon: mdiRefresh, run: ctx => ctx.refreshExplorer?.() },
+      { id: 'newFile',   title: 'New File',   icon: mdiFilePlusOutline,   run: ctx => ctx.showNewFileModal?.() },
+      { id: 'newFolder', title: 'New Folder', icon: mdiFolderPlusOutline, run: ctx => ctx.showNewFolderModal?.() },
+      { id: 'refresh',   title: 'Refresh',    icon: mdiRefresh,           run: ctx => ctx.refreshExplorer?.() },
+      {
+        id:    'collapseExpand',
+        icon:  ctx => ctx.explorerContext?.value?.expandedNodes?.length > 0 ? mdiCollapseAll : mdiExpandAll,
+        title: ctx => ctx.explorerContext?.value?.expandedNodes?.length > 0 ? 'Collapse All' : 'Expand All',
+        run:   ctx => {
+          if (ctx.explorerContext?.value?.expandedNodes?.length > 0) ctx.collapseAllExplorer?.()
+          else ctx.expandRootsExplorer?.()
+        },
+      },
     ],
     props: ctx => ({
-      selectedPath:       ctx.selectedPath.value,
+      selectedPath:       ctx.explorerTreeFocus?.value?.path ?? '',
       showCheckboxes:     ctx.prefs.explorer.alwaysShowCheckboxes,
+      showFiles:          ctx.prefs.explorer.showFiles ?? false,
       isTreeView:         true,
       excludedCategories: ctx.prefs.excludedCategories,
       indentScale:        ctx.prefs.explorer.indentScale ?? 1.0,
@@ -73,23 +93,109 @@ const REGISTRY = {
     }),
   },
 
-  // ── Standalone panel views (no sections) ──
+  // ── Preview view with sections ──
   preview: {
     label: 'Preview',
     icon: mdiEye,
-    component: markRaw(PreviewPanel),
-    // Single-section only: never accepts a docked section; its lone section is
-    // unnamed and headerless, so view + section actions live in the tab strip.
+    sections: ['previewMain'],
+    // Doesn't accept docked sections from other views — the preview area is
+    // intentionally single-purpose.
     acceptsSections: false,
+  },
+  previewMain: {
+    label: 'Preview',
+    homeView: 'preview',
+    component: markRaw(PreviewPanel),
+    alwaysShowHeading: true,
+    actions: [
+      {
+        id: 'toggleMode',
+        icon:  ctx => ctx.previewMode?.value === 'single' ? mdiViewGrid : mdiImage,
+        title: ctx => ctx.previewMode?.value === 'single' ? 'Switch to multi-item preview' : 'Switch to single-item preview',
+        run:   ctx => { if (ctx.previewMode) ctx.previewMode.value = ctx.previewMode.value === 'single' ? 'multi' : 'single' },
+      },
+    ],
     props: ctx => ({
       selectedItems:  ctx.selectedItems.value,
+      focusedItem:    ctx.focusedItem.value,
+      mode:           ctx.previewMode?.value ?? 'multi',
       editorFontSize: ctx.prefs.preview?.editorFontSize ?? 13,
     }),
   },
+
+  // ── Details view with sections ──
   details: {
     label: 'Details',
     icon: mdiInformation,
-    component: markRaw(DetailsPanel),
+    sections: ['detailsInfo', 'detailsMetadata', 'detailsExif', 'detailsXmp', 'detailsIptc', 'detailsRaw', 'detailsPermissions', 'detailsChecksums'],
+  },
+
+  detailsInfo: {
+    label: 'Details',
+    homeView: 'details',
+    component: markRaw(DetailsSectionInfo),
+    props: ctx => ({
+      selectedPath: ctx.selectedPath.value,
+      selectedItem: ctx.focusedItem.value ?? ctx.selectedItems.value[0] ?? null,
+      details:      ctx.selectedDetails.value,
+    }),
+    on: ctx => ({
+      rename: ctx.handleRename,
+    }),
+  },
+  detailsMetadata: {
+    label: 'Metadata',
+    homeView: 'details',
+    component: markRaw(DetailsSectionMetadata),
+    props: ctx => ({
+      selectedPath: ctx.selectedPath.value,
+    }),
+  },
+  detailsExif: {
+    label: 'Metadata: EXIF',
+    homeView: 'details',
+    component: markRaw(DetailsSectionEXIF),
+    props: ctx => ({
+      selectedPath: ctx.selectedPath.value,
+    }),
+  },
+  detailsXmp: {
+    label: 'Metadata: XMP',
+    homeView: 'details',
+    component: markRaw(DetailsSectionXMP),
+    props: ctx => ({
+      selectedPath: ctx.selectedPath.value,
+    }),
+  },
+  detailsIptc: {
+    label: 'Metadata: IPTC',
+    homeView: 'details',
+    component: markRaw(DetailsSectionIPTC),
+    props: ctx => ({
+      selectedPath: ctx.selectedPath.value,
+    }),
+  },
+  detailsRaw: {
+    label: 'Metadata: RAW',
+    homeView: 'details',
+    component: markRaw(DetailsSectionRaw),
+    props: ctx => ({
+      selectedPath: ctx.selectedPath.value,
+    }),
+  },
+  detailsPermissions: {
+    label: 'Permissions',
+    homeView: 'details',
+    component: markRaw(DetailsSectionPermissions),
+    props: ctx => ({
+      selectedPath: ctx.selectedPath.value,
+      details:      ctx.selectedDetails.value,
+    }),
+  },
+  detailsChecksums: {
+    label: 'Checksums',
+    homeView: 'details',
+    component: markRaw(DetailsSectionChecksums),
     props: ctx => ({
       selectedPath: ctx.selectedPath.value,
       details:      ctx.selectedDetails.value,

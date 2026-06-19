@@ -6,13 +6,14 @@
       <button @click="loadRootItems">Retry</button>
     </div>
     <ExplorerTree
+      ref="treeRef"
       v-else-if="isTreeView"
       :items="items"
-      :selectedPath="selectedPath"
-      :selectedPaths="selectedPaths"
+      :selectedPaths="highlightedPaths"
       :showCheckboxes="showCheckboxes"
       :clipboardData="clipboardData"
       :excludedCategories="excludedCategories"
+      :showFiles="showFiles"
       :indentScale="indentScale"
       :explorerState="explorerState"
       @select="$emit('select', $event)"
@@ -36,9 +37,9 @@ import { explorerRoot, explorerHome, explorerDrives } from '~/lib/explorer-api.j
 
 const props = defineProps({
   selectedPath:       { type: String,  default: '' },
-  selectedPaths:      { type: Set,     default: () => new Set() },
   showIcons:          { type: Boolean, default: true },
   showHiddenFiles:    { type: Boolean, default: false },
+  showFiles:          { type: Boolean, default: false },
   showCheckboxes:     { type: Boolean, default: false },
   isTreeView:         { type: Boolean, default: true },
   clipboardData:      { type: Object,  default: null },
@@ -49,9 +50,11 @@ const props = defineProps({
 
 const emit = defineEmits(['select', 'dblclick', 'contextmenu', 'toggleSelect', 'selectAll', 'paste', 'rename', 'move', 'state-change'])
 
-const loading   = ref(false)
-const error     = ref('')
-const rootItems = ref([])
+const treeRef        = ref(null)
+const loading        = ref(false)
+const error          = ref('')
+const rootItems      = ref([])
+const highlightedPaths = computed(() => props.selectedPath ? new Set([props.selectedPath]) : new Set())
 
 const items = computed(() => rootItems.value)
 
@@ -62,15 +65,16 @@ async function loadRootItems() {
     loading.value = true
     error.value   = ''
 
-    const showHidden       = props.showHiddenFiles ?? false
+    const showHidden        = props.showHiddenFiles ?? false
+    const showFiles         = props.showFiles ?? false
     const excludeCategories = (props.excludedCategories ?? ['System']).join(',')
 
     const tasks = [
       platform !== 'win32'
-        ? explorerRoot({ showHidden, excludeCategories, includeMetadata: false })
+        ? explorerRoot({ showHidden, showFiles, excludeCategories, includeMetadata: false })
         : Promise.reject(new Error('not applicable')),
-      explorerHome({ showHidden, excludeCategories, includeMetadata: false }),
-      explorerDrives({ showHidden, excludeCategories }),
+      explorerHome({ showHidden, showFiles, excludeCategories, includeMetadata: false }),
+      explorerDrives({ showHidden, showFiles, excludeCategories }),
     ]
 
     const [rootResult, homeResult, drivesResult] = await Promise.allSettled(tasks)
@@ -95,7 +99,12 @@ async function loadRootItems() {
 }
 
 onMounted(loadRootItems)
-defineExpose({ refresh: loadRootItems })
+defineExpose({
+  refresh:     loadRootItems,
+  reloadDir:   (dir) => treeRef.value?.reloadDir(dir),
+  collapseAll: ()    => treeRef.value?.collapseAll(),
+  expandRoots: ()    => treeRef.value?.expandRoots(),
+})
 </script>
 
 <style scoped>

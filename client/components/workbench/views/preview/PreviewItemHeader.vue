@@ -19,7 +19,7 @@
         </svg>
       </button>
     </div>
-    <span class="preview-index">#{{ index + 1 }}</span>
+    <span v-if="mode !== 'single'" class="preview-index">#{{ index + 1 }}</span>
   </div>
 </template>
 
@@ -28,8 +28,9 @@ import { ref } from 'vue'
 import { mdiFile, mdiLinkVariant, mdiContentCopy } from '@mdi/js'
 
 defineProps({
-  item: { type: Object, required: true },
+  item:  { type: Object, required: true },
   index: { type: Number, required: true },
+  mode:  { type: String, default: 'multi' },
 })
 
 defineEmits(['copy-name'])
@@ -43,7 +44,7 @@ const failedThumbnail = ref(false)
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  background: var(--hover-background);
+  background: var(--surface, rgba(255,255,255,0.02));
   border-bottom: 1px solid var(--border);
   font-size: 12px;
 }

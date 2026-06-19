@@ -1,11 +1,11 @@
 <template>
-  <div class="preview-panel">
-    <div v-if="!validItems.length" class="empty-state">
-      Select files to preview.
+  <div class="preview-panel" :class="{ 'mode-single': mode === 'single' }">
+    <div v-if="!displayItems.length" class="empty-state">
+      {{ validItems.length ? 'No previewable item focused.' : 'Select files to preview.' }}
     </div>
-    <div v-else class="previews-list">
+    <div v-else class="previews-list" :class="{ 'mode-single': mode === 'single' }">
       <PreviewItem
-        v-for="(item, index) in validItems"
+        v-for="(item, index) in displayItems"
         :key="item.path"
         :item="item"
         :preview="previews[item.path]"
@@ -13,7 +13,8 @@
         :loading="!!loadingStates[item.path]"
         :fontSize="editorFontSize"
         :index="index"
-        :isLatest="index === validItems.length - 1"
+        :isLatest="mode !== 'single' && index === validItems.length - 1"
+        :mode="mode"
         @copy-name="copyName"
         @force-load="forceLoadPreview"
       />
@@ -32,13 +33,26 @@ import { MEDIA_BASE as API_BASE } from '~/lib/api-config.js'
 import PreviewItem from './preview/PreviewItem.vue'
 
 const props = defineProps({
-  selectedItems: { type: Array, required: true },
+  selectedItems:  { type: Array, required: true },
+  focusedItem:    { type: Object, default: null },
+  mode:           { type: String, default: 'multi' },
   editorFontSize: { type: Number, default: 13 },
 })
 
 const validItems = computed(() =>
   props.selectedItems.filter(item => item?.path && item?.name && item?.kind !== 'dir' && item?.kind !== 'directory')
 )
+
+const displayItems = computed(() => {
+  if (props.mode === 'single') {
+    const fi = props.focusedItem
+    const item = (fi?.path && fi?.kind !== 'dir' && fi?.kind !== 'directory')
+      ? fi
+      : (validItems.value.at(-1) ?? null)
+    return item ? [item] : []
+  }
+  return validItems.value
+})
 
 const previews = ref({})
 const metadata = ref({})
@@ -179,6 +193,7 @@ function copyName(name) {
 
 <style scoped>
 .preview-panel { min-height: 0; overflow: auto; height: 100%; user-select: none; }
+.preview-panel.mode-single { overflow: hidden; }
 
 .empty-state {
   padding: 20px;
@@ -193,6 +208,7 @@ function copyName(name) {
   flex-direction: column;
   gap: 16px;
 }
+.previews-list.mode-single { height: 100%; padding: 0; gap: 0; }
 
 .toast {
   position: fixed;

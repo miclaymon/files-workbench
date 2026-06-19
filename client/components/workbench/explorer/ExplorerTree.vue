@@ -36,8 +36,9 @@ const props = defineProps({
   showCheckboxes: { type: Boolean, default: false },
   showHeader: { type: Boolean, default: false },
   clipboardData: { type: Object, default: null },
-  excludedCategories: { type: Array, default: () => ['System'] },
-  indentScale: { type: Number, default: 1.0 },
+  excludedCategories: { type: Array,   default: () => ['System'] },
+  showFiles:          { type: Boolean, default: false },
+  indentScale:        { type: Number,  default: 1.0 },
   // When supplied by the workspace, overrides legacy localStorage
   explorerState: { type: Object, default: null },
 })
@@ -55,8 +56,8 @@ const childrenByPath = ref(_initial?.childrenByPath ?? {})
 async function listDir(path) {
   try {
     const excludeCategories = (props.excludedCategories ?? ['System']).join(',')
-    // includeMetadata=false skips stat() on every entry — much faster for large dirs
-    const res = await explorerList({ root: path, excludeCategories, includeMetadata: false })
+    const showFiles = props.showFiles ?? false
+    const res = await explorerList({ root: path, excludeCategories, showFiles, includeMetadata: false })
     return res.items ?? []
   } catch {
     return []
@@ -99,6 +100,33 @@ watch(() => props.items, (newItems) => {
 function onSelect(item) { emit('select', item) }
 function onOpen(item) { emit('open', item) }
 function onSelectAll() { emit('selectAll', new Set(props.items.map(i => i.path))) }
+
+// ── Collapse / expand all ─────────────────────────────────────────────────────
+
+function collapseAll() {
+  expanded.value = new Set()
+  emit('state-change', { expandedNodes: [], childrenByPath: childrenByPath.value })
+}
+
+function expandRoots() {
+  const newExpanded = new Set(expanded.value)
+  for (const item of props.items) {
+    const rootKey = item.path ?? item.name ?? 'root'
+    newExpanded.add(`${rootKey}::${item.path ?? item.name}`)
+  }
+  expanded.value = newExpanded
+  emit('state-change', { expandedNodes: [...expanded.value], childrenByPath: childrenByPath.value })
+}
+
+async function reloadDir(dirPath) {
+  const children = await listDir(dirPath)
+  childrenByPath.value = { ...childrenByPath.value, [dirPath]: children }
+  emit('state-change', { expandedNodes: [...expanded.value], childrenByPath: childrenByPath.value })
+}
+
+defineExpose({ collapseAll, expandRoots, reloadDir })
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function onToggleExpand({ expandKey, path }) {
   const wasExpanded = expanded.value.has(expandKey)

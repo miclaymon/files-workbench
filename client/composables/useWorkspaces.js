@@ -40,6 +40,19 @@ const DEFAULT_SECTIONS = {
     { id: 'places',      title: 'Places',       homeViewId: 'explorer', collapsed: false, size: 4, locked: true, alwaysShowHeading: true },
     { id: 'openEditors', title: 'Open Editors', homeViewId: 'explorer', collapsed: true,  size: 1 },
   ],
+  preview: [
+    { id: 'previewMain', title: 'Preview', homeViewId: 'preview', collapsed: false, size: 1, locked: true, alwaysShowHeading: true },
+  ],
+  details: [
+    { id: 'detailsInfo',     title: 'Details',  homeViewId: 'details', collapsed: false, size: 4, locked: true },
+    { id: 'detailsMetadata', title: 'Metadata', homeViewId: 'details', collapsed: true,  size: 1 },
+    { id: 'detailsExif',     title: 'EXIF',           homeViewId: 'details', collapsed: true,  size: 1 },
+    { id: 'detailsXmp',      title: 'XMP',            homeViewId: 'details', collapsed: true,  size: 1 },
+    { id: 'detailsIptc',     title: 'Metadata: IPTC', homeViewId: 'details', collapsed: true,  size: 1 },
+    { id: 'detailsRaw',      title: 'RAW',            homeViewId: 'details', collapsed: true,  size: 1 },
+    // Permissions and Checksums are intentionally absent — they appear as ghosts
+    // in the "More Actions…" menu and must be opted in by the user.
+  ],
 }
 
 // ─── Default workspace factory ───────────────────────────────────────────────
@@ -541,6 +554,13 @@ export function useWorkspaces() {
     // The primary sidebar always has Explorer's sections.
     if (containerId === 'primarySidebar' && !out.explorer) {
       out.explorer = DEFAULT_SECTIONS.explorer.map(s => ({ ...s }))
+    }
+    // Backfill any view that has declared defaults but no stored sections yet.
+    // This handles views added after workspace creation without a version bump.
+    for (const [viewId, defaults] of Object.entries(DEFAULT_SECTIONS)) {
+      if (!out[viewId]) {
+        out[viewId] = defaults.map(s => ({ ...s, instanceId: `${s.id}-default` }))
+      }
     }
     return out
   }

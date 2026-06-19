@@ -94,6 +94,8 @@ func registerDataRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+apiPrefix+"/fs/archive/capabilities", handleArchiveCapabilities)
 	mux.HandleFunc("GET "+apiPrefix+"/fs/archive/ls", handleFsArchiveLs)
 	mux.HandleFunc("GET "+apiPrefix+"/fs/customization", handleFsCustomizationGet)
+	mux.HandleFunc("GET "+apiPrefix+"/fs/permissions", handleFsPermissions)
+	mux.HandleFunc("GET "+apiPrefix+"/fs/checksums", handleFsChecksums)
 
 	// Media
 	mux.HandleFunc("GET "+apiPrefix+"/media/capabilities", handleMediaCapabilities)
@@ -105,6 +107,8 @@ func registerDataRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+apiPrefix+"/media/artwork", handleMediaArtwork)
 	mux.HandleFunc("GET "+apiPrefix+"/media/exe_icon", handleMediaExeIcon)
 	mux.HandleFunc("GET "+apiPrefix+"/media/exe_info", handleMediaExeInfo)
+	mux.HandleFunc("GET "+apiPrefix+"/media/exif", handleMediaExif)
+	mux.HandleFunc("GET "+apiPrefix+"/media/audio_tags", handleMediaAudioTags)
 
 	// Explorer
 	mux.HandleFunc("GET "+apiPrefix+"/Explorer/categories", handleExplorerCategories)

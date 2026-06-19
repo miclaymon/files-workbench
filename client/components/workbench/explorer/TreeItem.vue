@@ -82,6 +82,7 @@
         @select="$emit('select', $event)"
         @toggleExpand="$emit('toggleExpand', $event)"
         @dblclick="$emit('dblclick', $event)"
+        @rename="$emit('rename', $event)"
       />
     </ul>
   </li>

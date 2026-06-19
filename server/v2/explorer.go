@@ -42,12 +42,13 @@ func handleExplorerRoot(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	showHidden := qBool(q, "showHidden", true)
+	showFiles := qBool(q, "showFiles", true)
 	includeMetadata := qBool(q, "includeMetadata", false)
 	excludeVals, hasExclude := q["excludeCategories"]
 	excluded := parseExcludeParam(strings.Join(excludeVals, ","), hasExclude)
 
 	path := "/"
-	items := explorerListDir(path, excluded, showHidden, includeMetadata)
+	items := explorerListDir(path, excluded, showHidden, includeMetadata, showFiles)
 	root := makeRootItem(path, "Root", "root")
 	jsonOK(w, map[string]any{"root": root, "items": items})
 }
@@ -55,12 +56,13 @@ func handleExplorerRoot(w http.ResponseWriter, r *http.Request) {
 func handleExplorerHome(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	showHidden := qBool(q, "showHidden", true)
+	showFiles := qBool(q, "showFiles", true)
 	includeMetadata := qBool(q, "includeMetadata", false)
 	excludeVals, hasExclude := q["excludeCategories"]
 	excluded := parseExcludeParam(strings.Join(excludeVals, ","), hasExclude)
 
 	home, _ := os.UserHomeDir()
-	items := explorerListDir(home, excluded, showHidden, includeMetadata)
+	items := explorerListDir(home, excluded, showHidden, includeMetadata, showFiles)
 	root := makeItemInfo(home, "", "Home")
 	jsonOK(w, map[string]any{"root": root, "items": items})
 }
@@ -68,6 +70,7 @@ func handleExplorerHome(w http.ResponseWriter, r *http.Request) {
 func handleExplorerDrives(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	showHidden := qBool(q, "showHidden", true)
+	showFiles := qBool(q, "showFiles", true)
 	excludeVals, hasExclude := q["excludeCategories"]
 	excluded := parseExcludeParam(strings.Join(excludeVals, ","), hasExclude)
 
@@ -84,7 +87,7 @@ func handleExplorerDrives(w http.ResponseWriter, r *http.Request) {
 			jsonOK(w, map[string]any{"root": root, "items": []any{}})
 			return
 		}
-		items := explorerListDir(mounts, excluded, showHidden, true)
+		items := explorerListDir(mounts, excluded, showHidden, true, showFiles)
 		root := makeItemInfo(mounts, "drive", "Volumes")
 		jsonOK(w, map[string]any{"root": root, "items": items})
 	default:
@@ -120,18 +123,19 @@ func handleExplorer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	showHidden := qBool(q, "showHidden", true)
+	showFiles := qBool(q, "showFiles", true)
 	includeMetadata := qBool(q, "includeMetadata", true)
 	excludeVals, hasExclude := q["excludeCategories"]
 	excluded := parseExcludeParam(strings.Join(excludeVals, ","), hasExclude)
 
-	items := explorerListDir(path, excluded, showHidden, includeMetadata)
+	items := explorerListDir(path, excluded, showHidden, includeMetadata, showFiles)
 	root := makeItemInfo(path, "", "")
 	jsonOK(w, map[string]any{"root": root, "items": items})
 }
 
 // ── listing ───────────────────────────────────────────────────────────────────
 
-func explorerListDir(dirPath string, excluded []string, showHidden, includeMetadata bool) []explorerItem {
+func explorerListDir(dirPath string, excluded []string, showHidden, includeMetadata, showFiles bool) []explorerItem {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return nil
@@ -168,6 +172,11 @@ func explorerListDir(dirPath string, excluded []string, showHidden, includeMetad
 				itemType = mimeType
 			}
 		} else {
+			continue
+		}
+
+		// In tree mode (showFiles=false) keep only directories, symlinks, and shortcuts.
+		if !showFiles && itemType != "directory" && itemType != "symlink" && itemType != "shortcut" {
 			continue
 		}
 

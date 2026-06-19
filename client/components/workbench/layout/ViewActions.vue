@@ -5,10 +5,12 @@
       v-for="a in group"
       :key="a.id"
       class="view-action-btn"
-      :title="a.title"
+      :title="typeof a.title === 'function' ? a.title(ctx) : a.title"
       @click.stop="ctx && a.run(ctx)"
     >
-      <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path :d="a.icon" /></svg>
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
+        <path :d="typeof a.icon === 'function' ? a.icon(ctx) : a.icon" />
+      </svg>
     </button>
   </template>
 </template>
