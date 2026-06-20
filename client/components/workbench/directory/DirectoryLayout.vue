@@ -133,7 +133,7 @@
 
     <div
       v-for="item in activeItems"
-      :key="item.path + (item._depth ?? 0)"
+      :key="(item._id ?? item.path) + '|' + (item._depth ?? 0)"
       class="dl-item"
       :data-path="item.path"
       :class="{
@@ -191,7 +191,7 @@
         <img
           v-if="item.thumbnail && (imageStates[item.path] === 'loading' || imageStates[item.path] === 'loaded')"
           crossorigin="anonymous"
-          :src="item.thumbnail"
+          :src="imgSrc(item)"
           :alt="item.name"
           class="dl-img"
           :style="{ opacity: imageStates[item.path] === 'loaded' ? 1 : 0 }"
@@ -374,7 +374,7 @@ const props = defineProps({
   filterActive: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['select', 'focus', 'contextmenu', 'background-contextmenu', 'right-drag-drop', 'navigate', 'rename', 'zoom-change', 'sort-change', 'filter-change', 'filter-click', 'copy', 'cut', 'paste'])
+const emit = defineEmits(['select', 'focus', 'contextmenu', 'background-contextmenu', 'right-drag-drop', 'navigate', 'rename', 'rename-batch', 'zoom-change', 'sort-change', 'filter-change', 'filter-click', 'copy', 'cut', 'paste'])
 
 // ── Hover preview ─────────────────────────────────────────────────────────────
 const VIDEO_EXTS = new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts'])
@@ -528,13 +528,13 @@ function doFindReplace(replaceWith) {
 function doFindReplaceAll(replaceWith) {
   const re = _buildFindRe('g')
   if (!re || !findMatches.value.length) return
+  const renames = []
   for (const match of findMatches.value) {
     const name = itemDisplayName(match)
     const newName = name.replace(re, replaceWith)
-    if (newName !== name && newName.trim()) {
-      emit('rename', { path: match.path, newName })
-    }
+    if (newName !== name && newName.trim()) renames.push({ path: match.path, newName })
   }
+  if (renames.length) emit('rename-batch', renames)
 }
 
 // ── Info widget ───────────────────────────────────────────────────────────────
@@ -719,6 +719,20 @@ const dlRef = ref(null)
 // States: '' = no thumbnail | 'idle' = not yet in viewport | 'loading' = fetching | 'loaded' | 'failed'
 const imageStates = reactive({})
 
+// Thumbnail load retry with exponential backoff. The main case this covers: a lazy
+// load racing an in-flight rename — the <img> fetches the pre-rename path just as the
+// file is moved, 404ing. Retrying (with a cache-bust nonce to force a re-fetch) lets it
+// succeed once the path settles. While an optimistic rename is in flight (item has a
+// thumbnailPath) we retry generously; otherwise we fail fast to the file-type icon.
+const _imgRetryCount  = new Map()  // path → attempts (non-reactive)
+const _imgRetryTimers = new Map()  // path → timeout id
+const imgRetryNonce   = reactive({})  // path → nonce appended to src to force re-fetch
+
+function imgSrc(item) {
+  const n = imgRetryNonce[item.path]
+  return n ? `${item.thumbnail}&_r=${n}` : item.thumbnail
+}
+
 let _observer = null
 
 function _onIntersect(entries) {
@@ -752,13 +766,21 @@ onMounted(() => {
   }
 })
 
-onUnmounted(() => { _observer?.disconnect(); _observer = null })
+onUnmounted(() => {
+  _observer?.disconnect(); _observer = null
+  _imgRetryTimers.forEach(clearTimeout); _imgRetryTimers.clear()
+})
 
 watch(() => props.items, (items) => {
   items.forEach(item => {
     if (item.thumbnail) {
-      const prev = imageStates[item.path]
-      if (!prev) imageStates[item.path] = 'idle'
+      // During optimistic rename, carry the loaded state from the old path so the
+      // thumbnail doesn't flicker or attempt to load from the not-yet-renamed path.
+      if (item.thumbnailPath && !imageStates[item.path] && imageStates[item.thumbnailPath]) {
+        imageStates[item.path] = imageStates[item.thumbnailPath]
+      } else if (!imageStates[item.path]) {
+        imageStates[item.path] = 'idle'
+      }
     } else {
       imageStates[item.path] = ''
     }
@@ -766,8 +788,32 @@ watch(() => props.items, (items) => {
   if (_observer) _observeAll()
 }, { immediate: true })
 
-function onImgLoad(item) { imageStates[item.path] = 'loaded' }
-function onImgError(item) { imageStates[item.path] = 'failed' }
+function onImgLoad(item) {
+  imageStates[item.path] = 'loaded'
+  _imgRetryCount.delete(item.path)
+}
+
+function onImgError(item) {
+  const path = item.path
+  const attempts = _imgRetryCount.get(path) ?? 0
+  // Retry generously while a rename is in flight (transient self-inflicted 404s);
+  // fail fast for genuine failures (corrupt/unsupported media).
+  const maxRetries = item.thumbnailPath ? 6 : 1
+  if (attempts >= maxRetries) {
+    _imgRetryCount.delete(path)
+    imageStates[path] = 'failed'  // give up → file-type icon
+    return
+  }
+  _imgRetryCount.set(path, attempts + 1)
+  imageStates[path] = 'loading'   // keep the skeleton, hide the broken img
+  const delay = Math.min(2000, 200 * 2 ** attempts)  // 200,400,800,1600,2000,2000
+  clearTimeout(_imgRetryTimers.get(path))
+  _imgRetryTimers.set(path, setTimeout(() => {
+    _imgRetryTimers.delete(path)
+    // Bump the nonce to force the <img> to re-fetch; by now the path has usually settled.
+    if (imageStates[path] === 'loading') imgRetryNonce[path] = (imgRetryNonce[path] ?? 0) + 1
+  }, delay))
+}
 
 // ── Gallery filter — media items only ─────────────────────────────────────
 const displayItems = computed(() => {

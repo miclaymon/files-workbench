@@ -47,6 +47,7 @@
               @background-contextmenu="showBackgroundContextMenu"
               @right-drag-drop="showRightDragDropMenu"
               @rename="handleRename"
+              @rename-batch="handleRenameBatch"
               @stats="onGroupStats"
               @update:layout="handleLayoutChange"
               @tab-contextmenu="handleTabContextMenu"
@@ -327,7 +328,7 @@ provide('editorController', editorController)
 // editor grid one-directionally (per-tab selection); editor never reads these.
 const {
   selectedPath, selectedItems, focusedItem, selectedDetails,
-  updateSelectionAfterRename,
+  updateSelectionAfterRename, updateSelectionAfterBatchRename,
   handleExplorerSelect, handleSelectFromDirectory, handleDoubleClick,
   navigateInCurrentTab, handleOpenFromTab,
 } = useSelection({
@@ -340,14 +341,14 @@ const {
 // elevation dialog, and the missing-tool install prompt.
 const fileOps = useFileOperations({
   editor,
-  selection: { selectedItems, focusedItem, updateSelectionAfterRename },
+  selection: { selectedItems, focusedItem, updateSelectionAfterRename, updateSelectionAfterBatchRename },
   statusbar: { flashStatus },
   enqueue, history, log, explorerPanelRef,
 })
 // Most file ops reach the menu/context-menu/keyboard slices via the `fileOps`
 // object; Workbench's own template + viewCtx use only these directly.
 const {
-  clipboard, handleRename, doMove,
+  clipboard, handleRename, handleRenameBatch, doMove,
   elevationPasswordRef, elevationPrompt, elevationPassword, elevationError,
   cancelElevation, confirmElevation,
   installPrompt,

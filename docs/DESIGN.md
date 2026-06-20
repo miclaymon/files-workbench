@@ -307,6 +307,10 @@ Container queries are placed at the bottom of the `<style scoped>` block after a
 
 Rename uses an optimistic update: `DirectoryTab.renameItem` patches the item in-place immediately; the network op runs in the background; on failure the patch is rolled back.
 
+Find & Replace's "Replace All" uses a batch path: `DirectoryLayout` emits a single `rename-batch` event (forwarded up through DirectoryPanel → DirectoryTab → EditorGroup → Editor → Workbench) rather than N individual `rename` events. `handleRenameBatch` in `useFileOperations` calls `forEachGroup(r => r.batchRenameItems?.(ops))` for one atomic optimistic UI update — unchanged items keep the same object reference so Vue skips their DOM diff entirely. All server renames are fired in parallel; failures roll back individually. After `Promise.allSettled`, `clearOptimisticThumbnails` removes the temporary `thumbnailPath` field so thumbnail URLs switch to the now-existing new paths.
+
+Thumbnail continuity during batch rename: each item receives a stable `_id` at fetch time (`DirectoryTab`), used as the v-for key in `DirectoryLayout`. Renaming changes `item.path` but not `_id`, so Vue reuses the existing DOM node instead of remounting it — the loaded `<img>` is never destroyed. `itemsWithThumbnails` uses `item.thumbnailPath ?? item.path` to build the thumbnail URL, keeping it pointed at the still-existing old path during the operation window. `imageStates` migration carries the `'loaded'` state forward to the new path key so the `<img>` v-if stays true and nothing re-loads. A race where a lazy-load intersects exactly as the file is moved is healed by an exponential backoff retry (200 ms → 2 s, up to 6 attempts while a rename is in flight).
+
 Reversible operations (rename, move, copy) push an entry to `useActionHistory` so Ctrl+Z / Ctrl+Y work across the session.
 
 ## Service worker operations queue

@@ -106,6 +106,7 @@
           @background-contextmenu="$emit('background-contextmenu', $event)"
           @right-drag-drop="$emit('right-drag-drop', $event)"
           @rename="$emit('rename', $event)"
+          @rename-batch="$emit('rename-batch', $event)"
           @stats="$emit('stats', { groupId: group.id, stats: $event })"
           @update:layout="$emit('update:layout', $event)"
         />
@@ -159,7 +160,7 @@ const props = defineProps({
 
 defineEmits([
   'select', 'open', 'navigate', 'contextmenu', 'background-contextmenu',
-  'right-drag-drop', 'rename', 'stats', 'update:layout',
+  'right-drag-drop', 'rename', 'rename-batch', 'stats', 'update:layout',
   'preferences-save', 'preferences-change', 'tab-contextmenu',
 ])
 
@@ -320,6 +321,8 @@ function toggleGroupMenu() {
 defineExpose({
   refresh: () => directoryTabRef.value?.refresh?.(),
   renameItem: (...a) => directoryTabRef.value?.renameItem?.(...a),
+  batchRenameItems: (...a) => directoryTabRef.value?.batchRenameItems?.(...a),
+  clearOptimisticThumbnails: (...a) => directoryTabRef.value?.clearOptimisticThumbnails?.(...a),
   getDirectoryTab: () => directoryTabRef.value,
 })
 </script>

@@ -17,7 +17,6 @@
       :navigationHistory="navigationHistory"
       :changeTabPath="changeTabPath"
       @select="handleSelect"
-      @focus="handleFocus"
       @contextmenu="showContextMenu"
       @background-contextmenu="$emit('background-contextmenu', $event)"
       @right-drag-drop="$emit('right-drag-drop', $event)"
@@ -27,6 +26,7 @@
       @navigate-next="handleNavigateNext"
       @update:layout="$emit('update:layout', $event)"
       @rename="$emit('rename', $event)"
+      @rename-batch="$emit('rename-batch', $event)"
     />
   </div>
 </template>
@@ -52,7 +52,7 @@ const props = defineProps({
   focusedItem: { type: Object, default: null },
 })
 
-const emit = defineEmits(['select', 'open', 'navigate', 'contextmenu', 'background-contextmenu', 'right-drag-drop', 'update:layout', 'rename', 'stats'])
+const emit = defineEmits(['select', 'open', 'navigate', 'contextmenu', 'background-contextmenu', 'right-drag-drop', 'update:layout', 'rename', 'rename-batch', 'stats'])
 
 const directoryPanelRef = ref(null)
 const navigationHistory = ref({ previous: [], next: [] })
@@ -68,6 +68,11 @@ const archiveInfo = computed(() => {
 const items = ref([])
 const loading = ref(false)
 let _gen = 0
+// Stable per-item identity, assigned at fetch time and preserved across renames so
+// the directory grid's v-for key never changes for an existing item. Without this,
+// an optimistic rename (path change) would change the key and force Vue to remount
+// the item — reloading its thumbnail and causing flicker / 404s mid-rename.
+let _uid = 0
 let _ctrl = null
 
 async function fetchItems(path) {
@@ -88,6 +93,7 @@ async function fetchItems(path) {
       items.value = (result.items ?? [])
         .map(item => ({
           ...item,
+          _id: ++_uid,
           path: info.archiveFile + '::' + info.innerPath + item.name + (item.kind === 'dir' ? '/' : ''),
         }))
         .sort((a, b) => {
@@ -102,7 +108,7 @@ async function fetchItems(path) {
       perfMark('mount')
       const result = await fsListDir(path, { includeMetadata: true, includeDirSize: true, showHidden, excludeCategories: excl, signal: ctrl.signal })
       if (gen !== _gen) return
-      items.value = result.items ?? []
+      items.value = (result.items ?? []).map(item => ({ ...item, _id: ++_uid }))
     }
     const totalSize = items.value.reduce((sum, i) => sum + (i.size ?? 0), 0)
     emit('stats', { count: items.value.length, totalSize })
@@ -165,13 +171,16 @@ const itemsWithThumbnails = computed(() => items.value.map(item => {
   const inArchive = item.path.includes('::')
   let thumbnail = null
   if (!inArchive) {
+    // During optimistic rename, thumbnailPath holds the old (still-existing) path so the
+    // thumbnail URL remains valid until the server-side rename completes.
+    const srcPath = item.thumbnailPath ?? item.path
     if (ext === 'exe') {
-      thumbnail = `${MEDIA_BASE}/exe_icon?path=${encodeURIComponent(item.path)}`
+      thumbnail = `${MEDIA_BASE}/exe_icon?path=${encodeURIComponent(srcPath)}`
     } else if (thumbnailsEnabled.value) {
       thumbnail = IMAGE_EXTS.has(ext)
-        ? `${MEDIA_BASE}/image?path=${encodeURIComponent(item.path)}&size=${THUMB_SIZE}`
+        ? `${MEDIA_BASE}/image?path=${encodeURIComponent(srcPath)}&size=${THUMB_SIZE}`
         : (VIDEO_EXTS.has(ext) || AUDIO_EXTS.has(ext))
-          ? `${MEDIA_BASE}/thumbnail?path=${encodeURIComponent(item.path)}&size=${THUMB_SIZE}`
+          ? `${MEDIA_BASE}/thumbnail?path=${encodeURIComponent(srcPath)}&size=${THUMB_SIZE}`
           : null
     }
   }
@@ -259,7 +268,42 @@ function renameItem(oldPath, newName, newPath) {
   return true
 }
 
-defineExpose({ changeTabPath, navigationHistory, refresh: () => fetchItems(props.path), renameItem })
+function batchRenameItems(ops) {
+  // Map of oldPath → op for quick lookup
+  const opMap = new Map(ops.map(o => [o.oldPath, o]))
+  const anyMatch = items.value.some(item => opMap.has(item.path))
+  if (!anyMatch) return
+
+  items.value = items.value
+    .map(item => {
+      const o = opMap.get(item.path)
+      if (!o) return item  // same object reference — Vue skips DOM diff
+      const updated = { ...item, name: o.newName, path: o.newPath, thumbnailPath: item.path }
+      if (item.path in exeInfoCache) {
+        exeInfoCache[o.newPath] = exeInfoCache[item.path]
+        delete exeInfoCache[item.path]
+      }
+      return updated
+    })
+    .sort((a, b) => {
+      const ad = a.kind === 'dir' || a.kind === 'app'
+      const bd = b.kind === 'dir' || b.kind === 'app'
+      if (ad !== bd) return ad ? -1 : 1
+      return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+    })
+}
+
+function clearOptimisticThumbnails(paths) {
+  const pathSet = new Set(paths)
+  if (!items.value.some(item => pathSet.has(item.path) && item.thumbnailPath)) return
+  items.value = items.value.map(item =>
+    pathSet.has(item.path) && item.thumbnailPath
+      ? { ...item, thumbnailPath: undefined }
+      : item
+  )
+}
+
+defineExpose({ changeTabPath, navigationHistory, refresh: () => fetchItems(props.path), renameItem, batchRenameItems, clearOptimisticThumbnails })
 
 function showContextMenu({ event, item }) { emit('contextmenu', { event, item }) }
 

@@ -87,8 +87,8 @@ Hand-rolled store slices instantiated by `Workbench.vue` and wired by dependency
 | `useArchive.js` | Archive-file detection (`isArchiveItem`, `ARCHIVE_EXTS`, `getArchiveExt`) and host capabilities (`archiveCaps`, `platform`) *(leaf)*. |
 | `useEditorGrid.js` | Editor split-grid model, every structural mutation, and the provided `editorController`. Deliberately selection-free. Params: `{ log, getInitialEditor, saveEditor }`. |
 | `useViewLayout.js` | Panel/sidebar layout engine: per-container view lists, merge groups, per-view section state, all drag-driven layout mutations, and the provided `workbenchChrome`. Params: `{ workspaces, prefs, savePrefs }`. |
-| `useSelection.js` | Current selection + explorer/directory/navigate handlers. Consumes the editor grid one-directionally. Params: `{ editor, statusbar, log, fsStat, fsOpenWithSystem, isArchiveItem, uuid }`. |
-| `useFileOperations.js` | Create/rename/trash/delete/compress/extract/paste/move/undo + clipboard, elevation dialog, and install prompt. Params: `{ editor, selection, statusbar, enqueue, history, log, explorerPanelRef }`. |
+| `useSelection.js` | Current selection + explorer/directory/navigate handlers. Consumes the editor grid one-directionally. Exposes `updateSelectionAfterRename` and `updateSelectionAfterBatchRename` for post-rename reconciliation. Params: `{ editor, statusbar, log, fsStat, fsOpenWithSystem, isArchiveItem, uuid }`. |
+| `useFileOperations.js` | Create/rename/trash/delete/compress/extract/paste/move/undo + clipboard, elevation dialog, and install prompt. `handleRenameBatch` handles the `rename-batch` event from find-replace Replace All: one optimistic `batchRenameItems` call, parallel server enqueues, per-item rollback on failure, `clearOptimisticThumbnails` after settle. Params: `{ editor, selection, statusbar, enqueue, history, log, explorerPanelRef }`. |
 | `useFileContextMenus.js` | Builds the four context-menu item arrays (editor tab / background / right-drag / item). Params: `{ editor, selection, fileOps, archive, enqueue, statusbar, fsOpenWithSystem, fsOpenTerminal, uuid }`. |
 | `useAppMenus.js` | File/Edit/View + Settings menus, command-palette command list, and modal open-state. Params: `{ fileOps, selection, editor, history, prefs, savePrefs, statusbar, explorerPanelRef, appearance, views }`. |
 | `useWorkbenchKeyboard.js` | Window-level keyboard shortcuts. Self-manages its listener via `onMounted`/`onUnmounted`. Params: `{ editor, fileOps, selection, openCommandPalette, openSettingsModal }`. |
@@ -191,7 +191,9 @@ When a custom drag ends, a `click` event fires after `mouseup`. `wasDragging` in
 ## Conventions
 
 - Vue component styles use `scoped`. Use `:deep()` only when targeting child component internals from a parent (e.g., `ExplorerTree.vue` targeting `.ig` inside `TreeItem`).
-- Events propagate upward through `defineEmits` chains all the way to `Workbench.vue`. When adding a new event in a leaf component, thread it through every intermediate layer.
+- Events propagate upward through `defineEmits` chains all the way to `Workbench.vue`. When adding a new event in a leaf component, thread it through every intermediate layer. The `rename-batch` event follows the chain DirectoryLayout → DirectoryPanel → DirectoryTab → EditorGroup → Editor → Workbench.
+- `DirectoryTab` assigns a stable `_id` (monotonically-incrementing integer, scoped to the module) to every item at fetch time. `DirectoryLayout` uses `item._id ?? item.path` as the v-for key. This ensures that an optimistic rename — which changes `item.path` but not `_id` — reuses the existing DOM node rather than remounting it, preventing unnecessary thumbnail reloads. Always preserve `_id` when mutating items (spread `...item` as the base).
+- `DirectoryTab.defineExpose` includes `renameItem`, `batchRenameItems`, and `clearOptimisticThumbnails`. `EditorGroup` proxies all three to `directoryTabRef`. `handleRenameBatch` in `useFileOperations` reaches them via `forEachGroup`.
 - `user-select: none` on all interactive UI chrome. Restore `user-select: text` explicitly inside Monaco containers and `contenteditable` spans.
 - No comments unless the WHY is non-obvious. No trailing summary comments.
 - All theme colors are CSS custom properties defined in `client/assets/css/workbench.css`. Theme JSON files in `config/themes/` map variable names to hex values.

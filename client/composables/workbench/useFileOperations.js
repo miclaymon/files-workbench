@@ -7,7 +7,7 @@ import { ref, nextTick } from 'vue'
 // rename reconciliation), the status bar, and the ops queue / history.
 export function useFileOperations({ editor, selection, statusbar, enqueue, history, log, explorerPanelRef }) {
   const { refreshAllDirs, forEachGroup, activeTab } = editor
-  const { selectedItems, focusedItem, updateSelectionAfterRename } = selection
+  const { selectedItems, focusedItem, updateSelectionAfterRename, updateSelectionAfterBatchRename } = selection
   const { flashStatus } = statusbar
 
   // Clipboard
@@ -87,6 +87,63 @@ export function useFileOperations({ editor, selection, statusbar, enqueue, histo
       updateSelectionAfterRename(optimisticPath, oldName, path)
       flashStatus(`Rename failed: ${e?.message ?? e}`, 2500)
     }
+  }
+
+  // Batch rename — receives [{ path, newName }] from find-replace-all.
+  // Applies one optimistic update for all items, fires all server calls in parallel.
+  async function handleRenameBatch(renames) {
+    if (!renames?.length) return
+    const sep = renames[0].path.includes('\\') ? '\\' : '/'
+
+    // Build the rename map with computed new paths
+    const ops = renames.map(({ path, newName }) => {
+      const dir = path.slice(0, path.lastIndexOf(sep))
+      return { oldPath: path, newName, newPath: dir + sep + newName, oldName: path.split(/[/\\]/).pop() }
+    })
+
+    const renameMap = new Map(ops.map(o => [o.oldPath, o]))
+
+    // Single optimistic update — unchanged items keep same object reference
+    forEachGroup(r => r.batchRenameItems?.(ops))
+    updateSelectionAfterBatchRename(renameMap)
+
+    // Fire all server renames in parallel; collect results and failures
+    const results = await Promise.allSettled(
+      ops.map(o => enqueue({ label: `Rename "${o.oldName}" → "${o.newName}"`, kind: 'rename', params: { path: o.oldPath, new_name: o.newName } }))
+    )
+
+    const failed = []
+    for (let i = 0; i < ops.length; i++) {
+      const o = ops[i]
+      const res = results[i]
+      if (res.status === 'fulfilled') {
+        // Reconcile if server returned a different path (e.g. case normalization)
+        const serverPath = res.value?.path
+        if (serverPath && serverPath !== o.newPath) {
+          const serverName = serverPath.split(/[/\\]/).pop()
+          forEachGroup(r => r.renameItem?.(o.newPath, serverName, serverPath))
+          updateSelectionAfterRename(o.newPath, serverName, serverPath)
+        }
+      } else {
+        failed.push(o)
+      }
+    }
+
+    // Roll back only the failed items
+    if (failed.length) {
+      const rollbackOps = failed.map(o => ({ oldPath: o.newPath, newName: o.oldName, newPath: o.oldPath }))
+      forEachGroup(r => r.batchRenameItems?.(rollbackOps))
+      const rollbackMap = new Map(failed.map(o => [o.newPath, { newName: o.oldName, newPath: o.oldPath }]))
+      updateSelectionAfterBatchRename(rollbackMap)
+      flashStatus(`${failed.length} rename${failed.length > 1 ? 's' : ''} failed`, 2500)
+    }
+
+    // All server ops have settled — clear thumbnailPath so every item's thumbnail uses its
+    // final, now-existing path: newPath for successes, the rolled-back oldPath for failures.
+    const finalPaths = ops.map((o, i) => results[i].status === 'fulfilled' ? o.newPath : o.oldPath)
+    forEachGroup(r => r.clearOptimisticThumbnails?.(finalPaths))
+
+    explorerPanelRef.value?.refresh()
   }
 
   async function doTrash(items) {
@@ -331,7 +388,7 @@ export function useFileOperations({ editor, selection, statusbar, enqueue, histo
     // clipboard
     clipboard, copyToClipboard, cutToClipboard,
     // create / mutate
-    createNewFolder, createNewFile, handleRename,
+    createNewFolder, createNewFile, handleRename, handleRenameBatch,
     doTrash, doDelete, doCompress, doDecompress, doPaste, doMove, doUndo, doRedo,
     // elevation dialog (bound by the modal in Workbench)
     elevationPasswordRef, elevationPrompt, elevationPassword, elevationError,

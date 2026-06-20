@@ -40,6 +40,19 @@ export function useSelection({ editor, statusbar, log, fsStat, fsOpenWithSystem,
     }
   }
 
+  function updateSelectionAfterBatchRename(renameMap) {
+    if (selectedItems.value.some(item => renameMap.has(item.path))) {
+      selectedItems.value = selectedItems.value.map(item => {
+        const r = renameMap.get(item.path)
+        return r ? { ...item, name: r.newName, path: r.newPath } : item
+      })
+    }
+    if (focusedItem.value && renameMap.has(focusedItem.value.path)) {
+      const r = renameMap.get(focusedItem.value.path)
+      focusedItem.value = { ...focusedItem.value, name: r.newName, path: r.newPath }
+    }
+  }
+
   async function handleExplorerSelect(payload) {
     const path = typeof payload === 'string' ? payload : payload?.path
     if (!path) return
@@ -148,7 +161,7 @@ export function useSelection({ editor, statusbar, log, fsStat, fsOpenWithSystem,
 
   return {
     selectedPath, selectedItems, focusedItem, selectedDetails,
-    updateSelectionAfterRename,
+    updateSelectionAfterRename, updateSelectionAfterBatchRename,
     handleExplorerSelect, handleSelectFromDirectory, handleDoubleClick,
     navigateInCurrentTab, handleOpenFromTab,
   }

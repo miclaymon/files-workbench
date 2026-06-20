@@ -104,6 +104,7 @@
       @right-drag-drop="$emit('right-drag-drop', $event)"
       @navigate="handleNavigate"
       @rename="$emit('rename', $event)"
+      @rename-batch="$emit('rename-batch', $event)"
       @zoom-change="zoomLevel = $event"
       @sort-change="handleSortChange"
       @filter-change="filterText = $event"
@@ -219,7 +220,7 @@ const props = defineProps({
   changeTabPath: { type: Function, default: null },
 })
 
-const emit = defineEmits(['select', 'focus', 'contextmenu', 'background-contextmenu', 'right-drag-drop', 'navigate', 'navigate-up', 'navigate-previous', 'navigate-next', 'update:layout', 'rename', 'copy', 'cut', 'paste'])
+const emit = defineEmits(['select', 'focus', 'contextmenu', 'background-contextmenu', 'right-drag-drop', 'navigate', 'navigate-up', 'navigate-previous', 'navigate-next', 'update:layout', 'rename', 'rename-batch', 'copy', 'cut', 'paste'])
 
 const currentLayout = DirectoryLayout
 
