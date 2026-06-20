@@ -1,6 +1,24 @@
 <template>
   <div class="dl-wrap" :style="cssVars" tabindex="0" @keydown="onKeyDown">
 
+    <!-- Find widget — anchored to top-right, above scroll content -->
+    <div v-if="findOpen" class="dl-find-wrap">
+      <DirectoryFindWidget
+        ref="findWidgetRef"
+        v-model:query="findQuery"
+        v-model:caseSensitive="findCaseSensitive"
+        v-model:wholeWord="findWholeWord"
+        v-model:useRegex="findUseRegex"
+        :matchCount="findMatches.length"
+        :currentIdx="findCurrentIdx"
+        @close="findOpen = false"
+        @next="findNext"
+        @prev="findPrev"
+        @replace="doFindReplace"
+        @replace-all="doFindReplaceAll"
+      />
+    </div>
+
     <!-- Non-columnar header (Grid / Gallery / Mosaic / Feed) — outside the scroll container -->
     <div v-if="!isColumnarLayout" class="dl-nc-header">
       <input
@@ -119,16 +137,18 @@
       class="dl-item"
       :data-path="item.path"
       :class="{
-        'dl-item--selected': isSelected(item),
-        'dl-item--focused':  isFocused(item),
-        'dl-item--dragging': draggingPath === item.path,
-        'dl-item--hidden':   item.hidden,
+        'dl-item--selected':     isSelected(item),
+        'dl-item--focused':      isFocused(item),
+        'dl-item--dragging':     draggingPath === item.path,
+        'dl-item--hidden':       item.hidden,
+        'dl-item--find-match':   findOpen && findMatchPaths.has(item.path),
+        'dl-item--find-current': findOpen && findMatches[findCurrentIdx]?.path === item.path,
       }"
       @mousedown="(e) => { cancelPending(); onMouseDown(e, item); onRightMouseDown(e, item) }"
       @click="(e) => onItemClick(e, item)"
       @contextmenu.prevent.stop="$emit('contextmenu', { event: $event, item })"
-      @mouseenter="hoverItem = item; hpStart(item, $event.currentTarget)"
-      @mouseleave="hoverItem = null; endHover()"
+      @mouseenter="hoverItem = item; onItemEnter(item, $event)"
+      @mouseleave="hoverItem = null; endHover(); onItemLeave()"
     >
       <!-- Checkbox -->
       <label
@@ -167,7 +187,7 @@
       </template>
 
       <!-- Thumbnail -->
-      <div class="dl-thumb">
+      <div class="dl-thumb" @mouseenter="onThumbEnter(item, $event)" @mouseleave="onThumbLeave($event)">
         <img
           v-if="item.thumbnail && (imageStates[item.path] === 'loading' || imageStates[item.path] === 'loaded')"
           crossorigin="anonymous"
@@ -203,7 +223,7 @@
           class="dl-name"
           :title="item.customization?.comment || undefined"
           @click="onNameClick($event, item)"
-        >{{ itemDisplayName(item) }}</span>
+        ><template v-if="findOpen && findMatchPaths.has(item.path)"><template v-for="(p, pi) in highlightParts(itemDisplayName(item))" :key="pi"><mark v-if="p.hl" class="dl-find-hl" :class="{ 'dl-find-active-index': findMatches[findCurrentIdx]?.path === item.path }">{{ p.text }}</mark><template v-else>{{ p.text }}</template></template></template><template v-else>{{ itemDisplayName(item) }}</template></span>
         <span
           v-else
           :ref="(el) => { if (el) nameEls[item.path] = el }"
@@ -278,6 +298,18 @@
     </div>
 
     </div><!-- end .dl -->
+
+    <!-- Directory info / selection status — bottom-left overlay -->
+    <div v-if="infoText" class="dl-info-widget">{{ infoText }}</div>
+
+    <!-- Item hover tooltip — fixed, populated async for extra metadata -->
+    <div v-if="ttVisible && ttItem" class="dl-tooltip" :style="ttStyle">
+      <div class="dl-tt-row"><span class="dl-tt-key">Type</span><span>{{ itemTypeLabel(ttItem) }}</span></div>
+      <div v-if="ttItem.size != null" class="dl-tt-row"><span class="dl-tt-key">Size</span><span>{{ formatBytes(ttItem.size) }}</span></div>
+      <div v-if="ttItem.modified" class="dl-tt-row"><span class="dl-tt-key">Modified</span><span>{{ formatDateLong(ttItem.modified) }}</span></div>
+      <div v-if="ttMeta" class="dl-tt-row"><span class="dl-tt-key">Resolution</span><span>{{ ttMeta.w }} × {{ ttMeta.h }}</span></div>
+    </div>
+
   </div><!-- end .dl-wrap -->
 </template>
 
@@ -292,6 +324,7 @@ import { useIconPack } from '~/composables/useIconPack.js'
 import { resolveCustomIcon } from '~/composables/useCustomIcon.js'
 import { fsListDir, fsArchiveList } from '~/lib/fs-api.js'
 import { MEDIA_BASE } from '~/lib/api-config.js'
+import DirectoryFindWidget from './DirectoryFindWidget.vue'
 
 const MEDIA_EXTS = new Set([
   'png','jpg','jpeg','webp','gif','bmp','ico','avif',
@@ -393,11 +426,10 @@ function preloadMedia(item) {
   }
 }
 
-function hpStart(item, itemEl) {
+function hpStart(item, thumbEl) {
   if (!props.hoverPreviewEnabled || !item.thumbnail) return
   hpMediaReady.value = false
   hpMediaSize.value = null
-  const thumbEl = itemEl.querySelector('.dl-thumb') ?? itemEl
   const preloadMs = Math.min(500, Math.round(props.hoverPreviewDelayMs / 2))
   startHover(item, thumbEl, props.hoverPreviewDelayMs, preloadMs, preloadMedia)
 }
@@ -405,6 +437,219 @@ function hpStart(item, itemEl) {
 function hpSrc(item) {
   return `${MEDIA_BASE}/preview?path=${encodeURIComponent(item.path)}`
 }
+
+// ── Find widget ───────────────────────────────────────────────────────────────
+const findOpen          = ref(false)
+const findQuery         = ref('')
+const findCaseSensitive = ref(false)
+const findWholeWord     = ref(false)
+const findUseRegex      = ref(false)
+const findCurrentIdx    = ref(0)
+const findWidgetRef     = ref(null)
+
+function _buildFindRe(flags = '') {
+  try {
+    const q = findUseRegex.value
+      ? findQuery.value
+      : findQuery.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const pattern = findWholeWord.value ? `\\b${q}\\b` : q
+    return new RegExp(pattern, (findCaseSensitive.value ? '' : 'i') + flags)
+  } catch { return null }
+}
+
+const findMatches = computed(() => {
+  if (!findOpen.value || !findQuery.value) return []
+  const re = _buildFindRe()
+  return re ? activeItems.value.filter(item => re.test(itemDisplayName(item))) : []
+})
+
+const findMatchPaths = computed(() => new Set(findMatches.value.map(i => i.path)))
+
+function highlightParts(name) {
+  const re = _buildFindRe('g')
+  if (!re) return [{ text: name, hl: false }]
+  const parts = []
+  let last = 0, m
+  while ((m = re.exec(name)) !== null) {
+    if (m.index > last) parts.push({ text: name.slice(last, m.index), hl: false })
+    parts.push({ text: m[0], hl: true })
+    last = m.index + m[0].length
+    if (m[0].length === 0) re.lastIndex++
+  }
+  if (last < name.length) parts.push({ text: name.slice(last), hl: false })
+  return parts
+}
+
+function findNext() {
+  if (!findMatches.value.length) return
+  findCurrentIdx.value = (findCurrentIdx.value + 1) % findMatches.value.length
+}
+
+function findPrev() {
+  if (!findMatches.value.length) return
+  findCurrentIdx.value = (findCurrentIdx.value - 1 + findMatches.value.length) % findMatches.value.length
+}
+
+function openFind() {
+  findOpen.value = true
+  nextTick(() => findWidgetRef.value?.focus())
+}
+
+watch([findQuery, findCaseSensitive, findWholeWord, findUseRegex], () => {
+  findCurrentIdx.value = 0
+  nextTick(scrollToFindMatch)
+})
+
+watch(findCurrentIdx, () => nextTick(scrollToFindMatch))
+
+watch(findOpen, (v) => {
+  if (!v) { findQuery.value = '' }
+  else nextTick(() => findWidgetRef.value?.focus())
+})
+
+function scrollToFindMatch() {
+  const match = findMatches.value[findCurrentIdx.value]
+  if (!match || !dlRef.value) return
+  dlRef.value.querySelector(`[data-path="${CSS.escape(match.path)}"]`)
+    ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+}
+
+function doFindReplace(replaceWith) {
+  const match = findMatches.value[findCurrentIdx.value]
+  if (!match) return
+  const re = _buildFindRe('g')
+  if (!re) return
+  const newName = itemDisplayName(match).replace(re, replaceWith)
+  if (newName !== itemDisplayName(match) && newName.trim()) {
+    emit('rename', { path: match.path, newName })
+  }
+}
+
+function doFindReplaceAll(replaceWith) {
+  const re = _buildFindRe('g')
+  if (!re || !findMatches.value.length) return
+  for (const match of findMatches.value) {
+    const name = itemDisplayName(match)
+    const newName = name.replace(re, replaceWith)
+    if (newName !== name && newName.trim()) {
+      emit('rename', { path: match.path, newName })
+    }
+  }
+}
+
+// ── Info widget ───────────────────────────────────────────────────────────────
+const totalSize    = computed(() => props.items.reduce((s, i) => s + (i.size ?? 0), 0))
+const selectedSize = computed(() => props.selectedItems.reduce((s, i) => s + (i.size ?? 0), 0))
+
+const infoText = computed(() => {
+  const c = props.items.length
+  if (c === 0) return ''
+  let t = `${c.toLocaleString()} ${c === 1 ? 'item' : 'items'}`
+  if (totalSize.value > 0) t += ` (${formatBytes(totalSize.value)})`
+  const sc = props.selectedItems.length
+  if (sc > 0) {
+    t += ` | ${sc.toLocaleString()} selected`
+    if (selectedSize.value > 0) t += ` (${formatBytes(selectedSize.value)})`
+  }
+  return t
+})
+
+// ── Item hover tooltip ────────────────────────────────────────────────────────
+const ttItem    = ref(null)
+const ttPos     = ref({ x: 0, y: 0 })
+const ttVisible = ref(false)
+const ttMeta    = ref(null)
+let _ttTimer    = null
+let _ttOverThumb = false
+let _ttHoverItem = null
+
+const AUDIO_EXT_SET = new Set(['mp3','m4a','flac','ogg','opus','aac','wav','aiff','wma'])
+const IMAGE_EXT_SET = new Set(['png','jpg','jpeg','webp','gif','bmp','ico','avif'])
+
+function itemTypeLabel(item) {
+  if (item.kind === 'dir')      return 'Folder'
+  if (item.kind === 'shortcut') return 'Symbolic Link'
+  if (item.kind === 'archive')  return 'Archive'
+  const ext = item.name.split('.').pop()?.toLowerCase() ?? ''
+  if (!ext) return 'File'
+  const up = ext.toUpperCase()
+  if (IMAGE_EXT_SET.has(ext)) return `${up} Image`
+  if (VIDEO_EXTS.has(ext))    return `${up} Video`
+  if (AUDIO_EXT_SET.has(ext)) return `${up} Audio`
+  return `${up} File`
+}
+
+function formatDateLong(ts) {
+  return new Date(ts * 1000).toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
+}
+
+async function _loadTtMeta(item) {
+  ttMeta.value = null
+  if (!IMAGE_EXT_SET.has(item.name.split('.').pop()?.toLowerCase() ?? '')) return
+  try {
+    const res = await fetch(`${MEDIA_BASE}/metadata?path=${encodeURIComponent(item.path)}`)
+    if (!res.ok) return
+    const data = await res.json()
+    if (data.width && data.height && ttItem.value?.path === item.path)
+      ttMeta.value = { w: data.width, h: data.height }
+  } catch { /* ignore */ }
+}
+
+const ttStyle = computed(() => {
+  if (!ttVisible.value) return { display: 'none' }
+  const TW = 230
+  const x = Math.min(ttPos.value.x + 16, window.innerWidth - TW - 8)
+  const y = Math.min(ttPos.value.y + 10, window.innerHeight - 130)
+  return { left: `${x}px`, top: `${y}px`, width: `${TW}px` }
+})
+
+function _scheduleTt(item, e) {
+  clearTimeout(_ttTimer)
+  ttVisible.value = false
+  ttPos.value = { x: e.clientX, y: e.clientY }
+  _ttTimer = setTimeout(() => {
+    if (!_ttOverThumb && _ttHoverItem?.path === item.path && !hpItem.value) {
+      ttItem.value = item
+      ttVisible.value = true
+      _loadTtMeta(item)
+    }
+  }, 500)
+}
+
+function _clearTt() {
+  clearTimeout(_ttTimer)
+  ttVisible.value = false
+  ttItem.value = null
+  ttMeta.value = null
+  _ttHoverItem = null
+}
+
+function onItemEnter(item, e) {
+  _ttHoverItem = item
+  _ttOverThumb = false
+  _scheduleTt(item, e)
+}
+
+function onItemLeave() {
+  _clearTt()
+}
+
+function onThumbEnter(item, e) {
+  _ttOverThumb = true
+  clearTimeout(_ttTimer)
+  ttVisible.value = false
+  hpStart(item, e.currentTarget)
+}
+
+function onThumbLeave(e) {
+  _ttOverThumb = false
+  endHover()
+  if (_ttHoverItem) _scheduleTt(_ttHoverItem, e)
+}
+
+watch(hpItem, (v) => { if (v) { clearTimeout(_ttTimer); ttVisible.value = false } })
 
 // ── Sort / filter header ──────────────────────────────────────────────────────
 const isColumnarLayout = computed(() =>
@@ -919,6 +1164,11 @@ function cancelRename() { renamingPath.value = null }
 
 // ── Keyboard nav ──────────────────────────────────────────────────────────
 function onKeyDown(event) {
+  if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
+    event.preventDefault()
+    openFind()
+    return
+  }
   if (event.ctrlKey || event.metaKey) {
     if (event.key === '=' || event.key === '+') {
       event.preventDefault()
@@ -1002,6 +1252,7 @@ function onKeyDown(event) {
   height: 100%;
   min-height: 0;
   outline: none;
+  position: relative;
   container-type: inline-size;
   container-name: dl;
 
@@ -1684,6 +1935,90 @@ function onKeyDown(event) {
 .hp-expand-leave-active { transition: transform 0.1s ease, opacity 0.08s ease; }
 .hp-expand-enter-from,
 .hp-expand-leave-to { transform: translate(-50%, -50%) scale(0.1); opacity: 0; }
+
+/* ── Find widget ──────────────────────────────────────────────────────────── */
+
+.dl-find-wrap {
+  position: absolute;
+  top: 0;
+  right: 16px; /* leave room for scrollbar */
+  z-index: 150;
+}
+
+.dl-find-hl {
+  background: rgba(255, 200, 0, 0.28);
+  color: inherit;
+  border-radius: 2px;
+  font-style: normal;
+}
+
+mark.dl-find-hl.dl-find-active-index {
+  background: rgba(255, 200, 0, 0.33);
+  outline: 1px solid rgba(255, 200, 0, 0.667);
+  filter: brightness(1.25);
+  outline-offset: -1px;
+}
+
+.dl-item--find-current {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* ── Info widget ──────────────────────────────────────────────────────────── */
+
+.dl-info-widget {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  z-index: 100;
+  max-width: 50%;
+  padding: 3px 8px;
+  background: rgba(0, 0, 0, 0.667);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border-radius: 0 4px 0 0;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: auto;
+  transition: max-width 0.2s ease;
+  user-select: none;
+
+  &:hover { max-width: 100%; }
+}
+
+/* ── Hover tooltip ────────────────────────────────────────────────────────── */
+
+.dl-tooltip {
+  position: fixed;
+  z-index: 9200;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 7px 10px;
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+.dl-tt-row {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.9);
+
+  &:first-child { color: #fff; font-weight: 500; }
+}
+
+.dl-tt-key {
+  color: rgba(255, 255, 255, 0.45);
+  min-width: 68px;
+  flex-shrink: 0;
+}
 
 /* ── Container queries ────────────────────────────────────────────────────── */
 
