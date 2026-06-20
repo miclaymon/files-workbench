@@ -126,7 +126,21 @@ async function reloadDir(dirPath) {
   emit('state-change', { expandedNodes: [...expanded.value], childrenByPath: childrenByPath.value })
 }
 
-defineExpose({ collapseAll, expandRoots, reloadDir })
+// Re-list every cached directory so a visibility change (hidden items / files)
+// takes effect across the whole tree, not just newly-expanded nodes.
+async function reloadAll() {
+  const paths = Object.keys(childrenByPath.value)
+  if (!paths.length) return
+  const entries = await Promise.all(paths.map(async p => [p, await listDir(p)]))
+  childrenByPath.value = Object.fromEntries(entries)
+  emit('state-change', { expandedNodes: [...expanded.value], childrenByPath: childrenByPath.value })
+}
+
+// A component reading its own prop sees the new value in the callback, so listDir
+// inside reloadAll fetches with the updated showHidden/showFiles flags.
+watch(() => [props.showHiddenFiles, props.showFiles], () => { reloadAll() })
+
+defineExpose({ collapseAll, expandRoots, reloadDir, reloadAll })
 
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -32,7 +32,7 @@ All workbench components live under `client/components/workbench/` and are group
 
 | Folder | Contents |
 |---|---|
-| `shell/` | `TitleBar`, `MenuBar`, `CommandCenter`, `AppHistory`, `ActivityBar`, `StatusBar`, `PrimarySideBar`, `SecondarySideBar`, `BottomPanel` — the app chrome and resizable workspace panes |
+| `shell/` | `TitleBar`, `MenuBar`, `CommandCenter`, `AppHistory`, `ActivityBar`, `StatusBar`, `PrimarySideBar`, `SecondarySideBar`, `BottomPanel`, `NotificationPanel`, `NotificationItem`, `NotificationJobGroup`, `NotificationOperation` — the app chrome and resizable workspace panes |
 | `layout/` | `ViewContainer`, `SplitViewArea`, `SplitView`, `SplitSectionArea`, `SplitSection`, `ViewContentHost`, `ViewActions`, `ViewDropOverlay`, `Sash` |
 | `editor/` | `Editor`, `GridView`, `EditorGroup`, `EditorDropOverlay`, `DirectoryTab`, `HomePage`, `MonacoEditor` |
 | `directory/` | `DirectoryPanel`, `DirectoryLayout`, all `Directory*Layout` variants, `DirectoryBreadcrumb`, `DirectoryHoverPreview`, `AudioPlayer`, `VideoPlayer` |
@@ -50,7 +50,7 @@ Composables live in `client/composables/` and are split into three layers (Nuxt 
 |---|---|
 | `composables/*.js` | Foundational services and utilities: `useWorkspaces`, `usePreferences`, `useFileOpsQueue`, `useActionHistory`, `useDebugLog`, `useLayoutGrid`, `useViewRegistry`, `useIconPack`, `useCustomIcon`, `useRpc` |
 | `composables/interaction/` | UI-behavior primitives consumed by individual components: drag systems (`useDrag`, `useRightClickDrag`, `useTreeDrag`, `useEditorDnd`, `useViewDrag`), `useClickDebounce`, `useHoverPreview`, `useSideBar`, `useStackResize` |
-| `composables/workbench/` | Workbench assembly-root slices — see Workbench shell section: `useStatusBar`, `useArchive`, `useEditorGrid`, `useViewLayout`, `useSelection`, `useFileOperations`, `useFileContextMenus`, `useAppMenus`, `useWorkbenchKeyboard` |
+| `composables/workbench/` | Workbench assembly-root slices — see Workbench shell section: `useStatusBar`, `useNotifications`, `useArchive`, `useEditorGrid`, `useViewLayout`, `useSelection`, `useFileOperations`, `useFileContextMenus`, `useAppMenus`, `useWorkbenchKeyboard` |
 
 ### Workbench shell
 
@@ -312,6 +312,17 @@ Find & Replace's "Replace All" uses a batch path: `DirectoryLayout` emits a sing
 Thumbnail continuity during batch rename: each item receives a stable `_id` at fetch time (`DirectoryTab`), used as the v-for key in `DirectoryLayout`. Renaming changes `item.path` but not `_id`, so Vue reuses the existing DOM node instead of remounting it — the loaded `<img>` is never destroyed. `itemsWithThumbnails` uses `item.thumbnailPath ?? item.path` to build the thumbnail URL, keeping it pointed at the still-existing old path during the operation window. `imageStates` migration carries the `'loaded'` state forward to the new path key so the `<img>` v-if stays true and nothing re-loads. A race where a lazy-load intersects exactly as the file is moved is healed by an exponential backoff retry (200 ms → 2 s, up to 6 attempts while a rename is in flight).
 
 Reversible operations (rename, move, copy) push an entry to `useActionHistory` so Ctrl+Z / Ctrl+Y work across the session.
+
+## Notifications
+
+`useNotifications` is a module-level singleton (like `useFileOpsQueue`) so any producer can push without prop-drilling. `Workbench` instantiates it, owns the panel's open state, and passes `notify`/`startJob` into `useFileOperations`. The bell toggle + unread dot live in the status bar (right side); the floating `NotificationPanel` teleports to the body, anchored bottom-right above the bell, and closes on Esc or outside-click (ignoring the bell).
+
+Two notification shapes share one renderer:
+
+- **Simple** — `title`/`message`/`actions`, optional flat `items` list. Used by single-call ops (trash, delete, compress, extract, move, copy). Failures carry a **Retry** action.
+- **Job** — `startJob({ verb, operations })` creates a `type: 'progress'` notification and returns `start`/`succeed`/`fail`/`setActions` handles. As each operation settles, the title (`Job: rename 142 items (2 failed)`), `type`, and `progress` recompute live. The panel renders three collapsible status subgroups (In progress / Failed / Completed), each operation expandable to its details (original/new name, started, finished/failed, duration, error). Batch rename is the first job producer.
+
+`silent` notifications appear in the panel but never light the unread dot or toast — used by trivial single ops (single rename, create file/folder). `activeJob` (the newest still-running `progress` job) drives a status-bar progress item (descriptive text + `<meter>`) that is only visible while a job runs. Relative times render via `<time datetime="PT…">2h 30m ago</time>` (see `lib/time.js`).
 
 ## Service worker operations queue
 

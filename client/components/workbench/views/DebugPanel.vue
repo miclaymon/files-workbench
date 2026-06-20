@@ -271,9 +271,10 @@ watch(entries, async () => {
   text-transform: uppercase;
   padding: 0 5px;
   border-radius: 3px;
-  width: 60px;
+  width: 80px;
   text-align: center;
   user-select: none;
+  margin-inline: 0.25rem;
 }
 
 .dbg-cat--nav        { background: rgba(38,198,218,0.18);  color: #26c6da; }

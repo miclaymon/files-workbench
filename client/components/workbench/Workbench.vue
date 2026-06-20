@@ -105,6 +105,19 @@
       :statusText="status.left"
       :serverConnected="serverConnected"
       :statusRight="statusRight"
+      :hasUnread="hasUnread"
+      :notificationsOpen="notificationsVisible"
+      :activeJob="activeJob"
+      @toggle-notifications="toggleNotifications"
+    />
+
+    <!-- Notification center -->
+    <NotificationPanel
+      :visible="notificationsVisible"
+      :notifications="notifications"
+      @close="notificationsVisible = false"
+      @clear="clearNotifications"
+      @dismiss="dismissNotification"
     />
 
     <!-- Context menu -->
@@ -227,13 +240,14 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, onUnmounted, provide, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
 import CommandPalette from './ui/CommandPalette.vue'
 import SettingsModal from './ui/SettingsModal.vue'
 import KeyboardShortcutsModal from './ui/KeyboardShortcutsModal.vue'
 import { useEditorGrid } from '~/composables/workbench/useEditorGrid.js'
 import { useStatusBar } from '~/composables/workbench/useStatusBar.js'
+import { useNotifications } from '~/composables/workbench/useNotifications.js'
 import { useSelection } from '~/composables/workbench/useSelection.js'
 import { useArchive } from '~/composables/workbench/useArchive.js'
 import { useFileOperations } from '~/composables/workbench/useFileOperations.js'
@@ -251,6 +265,19 @@ function uuid() { return uuidv4() }
 
 // Status bar — server-ping lifecycle, transient status line, and dir stats.
 const { serverConnected, dirStats, status, statusRight, formatBytes, flashStatus } = useStatusBar()
+
+// Notification center — shared singleton; producers push via `notify`.
+const {
+  notifications, hasUnread, activeJob, notify, startJob,
+  dismiss: dismissNotification, clear: clearNotifications, markAllRead,
+} = useNotifications()
+const notificationsVisible = ref(false)
+function toggleNotifications() {
+  notificationsVisible.value = !notificationsVisible.value
+  if (notificationsVisible.value) markAllRead()
+}
+// Anything arriving while the panel is open counts as seen.
+watch(notifications, () => { if (notificationsVisible.value) markAllRead() })
 
 // Persisted workspace state — a single instance shared across slices. The editor
 // + view-content context pull a few methods directly; the rest is consumed by the
@@ -343,6 +370,7 @@ const fileOps = useFileOperations({
   editor,
   selection: { selectedItems, focusedItem, updateSelectionAfterRename, updateSelectionAfterBatchRename },
   statusbar: { flashStatus },
+  notifications: { notify, startJob },
   enqueue, history, log, explorerPanelRef,
 })
 // Most file ops reach the menu/context-menu/keyboard slices via the `fileOps`

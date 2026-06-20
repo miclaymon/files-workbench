@@ -1808,7 +1808,8 @@ function onKeyDown(event) {
   }
 
   .dl-img {
-    width: 100%;
+    /* TODO: @Michael evaluate whether to use auto (maintain aspect ratio in thumbnail) or 100% (fill thumbnail space) */
+    /*width: 100%;*/
     height: 100%;
     object-fit: cover;
     object-position: center;

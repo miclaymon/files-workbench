@@ -1,5 +1,5 @@
 import { markRaw } from 'vue'
-import { mdiFileTree, mdiEye, mdiInformation, mdiMessage, mdiBug, mdiFolderMultiple, mdiFileDocumentMultiple, mdiNotificationClearAll, mdiRefresh, mdiImage, mdiViewGrid, mdiFilePlusOutline, mdiFolderPlusOutline, mdiCollapseAll, mdiExpandAll } from '@mdi/js'
+import { mdiFileTree, mdiEye, mdiEyeOff, mdiInformation, mdiMessage, mdiBug, mdiFolderMultiple, mdiFileDocumentMultiple, mdiNotificationClearAll, mdiRefresh, mdiImage, mdiViewGrid, mdiFilePlusOutline, mdiFolderPlusOutline, mdiCollapseAll, mdiExpandAll } from '@mdi/js'
 
 import ExplorerPanel   from '../components/workbench/explorer/ExplorerPanel.vue'
 import OpenEditorsView from '../components/workbench/explorer/OpenEditorsView.vue'
@@ -54,6 +54,12 @@ const REGISTRY = {
       { id: 'newFile',   title: 'New File',   icon: mdiFilePlusOutline,   run: ctx => ctx.showNewFileModal?.() },
       { id: 'newFolder', title: 'New Folder', icon: mdiFolderPlusOutline, run: ctx => ctx.showNewFolderModal?.() },
       { id: 'refresh',   title: 'Refresh',    icon: mdiRefresh,           run: ctx => ctx.refreshExplorer?.() },
+      {
+        id:    'toggleHidden',
+        icon:  ctx => ctx.prefs.explorer.showHiddenFiles ? mdiEyeOff : mdiEye,
+        title: ctx => ctx.prefs.explorer.showHiddenFiles ? 'Hide hidden items' : 'Show hidden items',
+        run:   ctx => { ctx.prefs.explorer.showHiddenFiles = !ctx.prefs.explorer.showHiddenFiles },
+      },
       {
         id:    'collapseExpand',
         icon:  ctx => ctx.explorerContext?.value?.expandedNodes?.length > 0 ? mdiCollapseAll : mdiExpandAll,

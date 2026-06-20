@@ -42,6 +42,7 @@ Workbench.vue                  Root shell: titlebar, activity bar, sidebar, edit
 | `lib/sw-queue.js` | Client bridge to the service worker. `swQueue.enqueue(kind, params)` adds an op; `swQueue.execute(opIds)` drains the SW queue and returns an array of Promises. Falls back to direct fetch when SW is unavailable. |
 | `lib/explorer-api.js` | Explorer tree API calls. |
 | `lib/perf-log.js` | Client-side performance timing helpers. |
+| `lib/time.js` | Notification time helpers: `isoDuration`/`humanAgo` for `<time>` relative labels, `isoDurationMs`/`humanDurationMs` for op timings, `clockTime` for absolute timestamps. |
 | `public/sw.js` | Service worker. Maintains a per-client op queue (keyed by `event.source.id`). Handles `INIT`, `ENQUEUE`, `EXECUTE`, `CLEAR` messages. `EXECUTE` fires all queued ops concurrently via fetch and replies `OP_COMPLETE`/`OP_ERROR` per op. |
 | `plugins/sw.client.js` | Registers the service worker on app startup (fire-and-forget; fallback handles early ops). |
 
@@ -84,6 +85,7 @@ Hand-rolled store slices instantiated by `Workbench.vue` and wired by dependency
 | File | Purpose |
 |---|---|
 | `useStatusBar.js` | Server-ping lifecycle, the transient status line, directory stats, and `flashStatus(msg, ms)` helper *(leaf)*. |
+| `useNotifications.js` | Module-level singleton notification center *(leaf)*. `notify`/`update`/`dismiss`/`clear` plus `startJob({verb, operations})` which returns `start`/`succeed`/`fail`/`setActions` handles that recompute a job's title/type/progress live. `silent` notifications skip the unread dot; `activeJob` (running `progress` job) drives the status-bar `<meter>`. Rendered by `shell/NotificationPanel.vue` → `NotificationItem` → `NotificationJobGroup` → `NotificationOperation`. |
 | `useArchive.js` | Archive-file detection (`isArchiveItem`, `ARCHIVE_EXTS`, `getArchiveExt`) and host capabilities (`archiveCaps`, `platform`) *(leaf)*. |
 | `useEditorGrid.js` | Editor split-grid model, every structural mutation, and the provided `editorController`. Deliberately selection-free. Params: `{ log, getInitialEditor, saveEditor }`. |
 | `useViewLayout.js` | Panel/sidebar layout engine: per-container view lists, merge groups, per-view section state, all drag-driven layout mutations, and the provided `workbenchChrome`. Params: `{ workspaces, prefs, savePrefs }`. |
@@ -190,6 +192,7 @@ When a custom drag ends, a `click` event fires after `mouseup`. `wasDragging` in
 
 ## Conventions
 
+- When writing JavaScript comments, use standard JSDoc formatting.
 - Vue component styles use `scoped`. Use `:deep()` only when targeting child component internals from a parent (e.g., `ExplorerTree.vue` targeting `.ig` inside `TreeItem`).
 - Events propagate upward through `defineEmits` chains all the way to `Workbench.vue`. When adding a new event in a leaf component, thread it through every intermediate layer. The `rename-batch` event follows the chain DirectoryLayout → DirectoryPanel → DirectoryTab → EditorGroup → Editor → Workbench.
 - `DirectoryTab` assigns a stable `_id` (monotonically-incrementing integer, scoped to the module) to every item at fetch time. `DirectoryLayout` uses `item._id ?? item.path` as the v-for key. This ensures that an optimistic rename — which changes `item.path` but not `_id` — reuses the existing DOM node rather than remounting it, preventing unnecessary thumbnail reloads. Always preserve `_id` when mutating items (spread `...item` as the base).
