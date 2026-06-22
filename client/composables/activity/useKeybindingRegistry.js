@@ -41,7 +41,31 @@ export function createKeybindingRegistry({ log = () => {} } = {}) {
   function forChord(chord) { return byChord.get(chord) ?? [] }
   function list() { return [...byChord.values()].flat() }
 
-  return { register, forChord, list, normalizeChord }
+  // Every binding that runs a given command id (a command may be bound to more
+  // than one chord, e.g. editor.focusGroup → Ctrl+1…9). Used by the palette (to
+  // annotate rows with their chord) and the keyboard-shortcuts viewer.
+  function forCommand(commandId) {
+    const out = []
+    for (const arr of byChord.values()) {
+      for (const b of arr) if (b.command === commandId) out.push(b)
+    }
+    return out
+  }
+
+  return { register, forChord, forCommand, list, normalizeChord }
+}
+
+// Display tokens for a canonical chord ('ctrl+shift+p' → ['Ctrl','Shift','P']),
+// for rendering as <kbd> keys in the palette and keyboard-shortcuts viewer.
+const CHORD_LABELS = {
+  ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift',
+  delete: 'Delete', enter: 'Enter', escape: 'Esc', tab: 'Tab',
+  space: 'Space', backspace: '⌫',
+  arrowup: '↑', arrowdown: '↓', arrowleft: '←', arrowright: '→',
+}
+export function formatChord(chord) {
+  return String(chord).split('+').filter(Boolean).map(tok =>
+    CHORD_LABELS[tok] ?? (tok.length === 1 ? tok.toUpperCase() : tok.charAt(0).toUpperCase() + tok.slice(1)))
 }
 
 // Canonicalize a chord: lowercase, fold cmd/meta→ctrl and option→alt, and order

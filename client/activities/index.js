@@ -1,9 +1,9 @@
-import workbench from './workbench.js'
-import explorer  from './explorer.js'
-import preview   from './preview.js'
-import details   from './details.js'
-import debug     from './debug.js'
-import chat      from './chat.js'
+import WorkbenchActivity from './Workbench.js'
+import ExplorerActivity  from './Explorer.js'
+import PreviewActivity   from './Preview.js'
+import DetailsActivity   from './Details.js'
+import DebugActivity     from './Debug.js'
+import ChatActivity      from './Chat.js'
 
 // ── Activity registry ───────────────────────────────────────────────────────
 //
@@ -21,7 +21,7 @@ import chat      from './chat.js'
 //   panelViews?  { [viewId]: { label, icon, component?, sections?, actions?, props?, on?, ... } }
 //   sections?    { [sectionId]: { label, icon, homeView, component, props?, on?, actions?, ... } }
 //   statusViews? { [id]: { region, component, order? } }
-export const ACTIVITIES = [workbench, explorer, preview, details, debug, chat]
+export const ACTIVITIES = [WorkbenchActivity, ExplorerActivity, PreviewActivity, DetailsActivity, DebugActivity, ChatActivity]
 
 export const ACTIVITY_MAP = Object.fromEntries(ACTIVITIES.map(a => [a.id, a]))
 

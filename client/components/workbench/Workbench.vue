@@ -2,7 +2,7 @@
   <div class="vscode-shell">
 
     <!-- Titlebar -->
-    <TitleBar :menus="titleMenus" @open-command-palette="openCommandPalette" />
+    <TitleBar :menus="titleMenus" @open-command-palette="showCommandPalette('', true)" />
 
     <!-- Main area -->
     <div class="main">
@@ -205,7 +205,9 @@
     <!-- Command palette -->
     <CommandPalette
       :visible="commandPaletteOpen"
-      :commands="paletteCommands"
+      :modes="paletteModes"
+      :initial-prefix="palettePrefix"
+      :show-modes="paletteHome"
       @close="commandPaletteOpen = false"
     />
 
@@ -220,6 +222,7 @@
     <!-- Keyboard shortcuts modal -->
     <KeyboardShortcutsModal
       :visible="keyboardShortcutsModalOpen"
+      :host="host"
       @close="keyboardShortcutsModalOpen = false"
     />
 
@@ -236,6 +239,7 @@ import { useEditorGrid } from '~/composables/workbench/useEditorGrid.js'
 import { useStatusBar } from '~/composables/workbench/useStatusBar.js'
 import { useNotifications } from '~/composables/workbench/useNotifications.js'
 import { useActivityHost } from '~/composables/activity/useActivityHost.js'
+import { formatChord } from '~/composables/activity/useKeybindingRegistry.js'
 import { useArchive } from '~/composables/workbench/useArchive.js'
 import { useFileOperations } from '~/composables/workbench/useFileOperations.js'
 import { useFileContextMenus } from '~/composables/workbench/useFileContextMenus.js'
@@ -510,6 +514,17 @@ const {
   explorerPanelRef,
 })
 
+// The palette opens into a mode by prefilling its prefix: '>' for commands
+// (Ctrl+Shift+P), '' for Go to File quick-open (Ctrl+P). `home` (title-bar
+// command center) opens Go to File with the mode list surfaced for discovery.
+const palettePrefix = ref('>')
+const paletteHome   = ref(false)
+function showCommandPalette(prefix = '>', home = false) {
+  palettePrefix.value = prefix
+  paletteHome.value   = home
+  openCommandPalette()
+}
+
 // ── App command catalog ─────────────────────────────────────────────────────
 // The app-level commands as the single source of truth for invokable behaviour;
 // menus, keybindings, and the command palette reference these by id. They close
@@ -555,7 +570,8 @@ for (const cmd of [
   { id: 'view.toggleAlwaysShowCheckboxes', title: 'Always Show Checkboxes', category: 'View', toggled: () => prefs.explorer.alwaysShowCheckboxes, run: () => { prefs.explorer.alwaysShowCheckboxes = !prefs.explorer.alwaysShowCheckboxes } },
 
   // Workbench
-  { id: 'workbench.openCommandPalette',    title: 'Show Command Palette',    category: 'Workbench',   run: () => openCommandPalette() },
+  { id: 'workbench.openCommandPalette',    title: 'Show Command Palette',    category: 'Workbench',   run: () => showCommandPalette('>') },
+  { id: 'workbench.openQuickOpen',         title: 'Go to File…',             category: 'Workbench',   run: () => showCommandPalette('') },
   { id: 'workbench.openSettings',          title: 'Open Settings',           category: 'Preferences', run: () => openSettingsModal() },
   { id: 'workbench.openKeyboardShortcuts', title: 'Open Keyboard Shortcuts', category: 'Preferences', run: () => openKeyboardShortcuts() },
 ]) host.facade.commands.register(cmd)
@@ -565,6 +581,7 @@ for (const cmd of [
 // against these; activities and plugins contribute their own through the facade.
 for (const binding of [
   { key: 'ctrl+shift+p', command: 'workbench.openCommandPalette', allowInInput: true },
+  { key: 'ctrl+p',       command: 'workbench.openQuickOpen',      allowInInput: true },
   { key: 'ctrl+,',       command: 'workbench.openSettings',       allowInInput: true },
   { key: 'ctrl+z', command: 'edit.undo' },
   { key: 'ctrl+y', command: 'edit.redo' },
@@ -582,22 +599,36 @@ for (const binding of [
 // command / contribution surfaces (e.g. __wb.facade.commands.list()).
 if (import.meta.dev) window.__wb = host
 
-// Command palette list — enabled commands (minus arg-only ones), shaped for
-// CommandPalette and sorted by category then title. Derived live from the
-// registry so contributed commands appear automatically.
-const paletteCommands = computed(() =>
+// Command-palette items for the `>` commands mode — enabled commands (minus
+// arg-only ones), annotated with their bound chord, sorted by category then
+// title. Derived live from the registries so contributed commands/keybindings
+// appear automatically.
+const paletteCommandItems = computed(() =>
   host.facade.commands.list()
     .filter(c => c.palette !== false && host.facade.commands.isEnabled(c.id))
     .sort((a, b) => (a.category ?? '').localeCompare(b.category ?? '') || a.title.localeCompare(b.title))
-    .map(c => ({
-      key:       c.id,
-      label:     c.title,
-      category:  c.category ?? '',
-      action:    () => host.facade.commands.execute(c.id),
-      checkable: !!c.toggled,
-      checked:   !!c.toggled?.(host),
-    }))
+    .map(c => {
+      const binds = host.facade.keybindings.forCommand(c.id)
+      return {
+        key:       c.id,
+        label:     c.title,
+        category:  c.category ?? '',
+        keys:      binds.length ? formatChord(binds[0].chord) : [],
+        checkable: !!c.toggled,
+        checked:   !!c.toggled?.(host),
+        run:       () => host.facade.commands.execute(c.id),
+      }
+    })
 )
+
+// Palette modes, selected by a leading prefix. Only `>` (Show and Run Commands)
+// is wired; Go to File is a stub that renders its own empty state until file
+// search lands — the prefix architecture is in place so it drops in without UI
+// changes. `keys`/`listable` feed the mode list shown in the home view and `?`.
+const paletteModes = [
+  { prefix: '',  name: 'Go to File',            placeholder: 'Search files by name', empty: 'File search is not available yet', listable: true, keys: ['Ctrl', 'P'],          items: () => [] },
+  { prefix: '>', name: 'Show and Run Commands', placeholder: 'Type a command name…', empty: 'No matching commands', recents: true, listable: true, keys: ['Ctrl', 'Shift', 'P'], items: () => paletteCommandItems.value },
+]
 
 // Global keyboard shortcuts: a generic chord → command dispatcher.
 useWorkbenchKeyboard({ host })

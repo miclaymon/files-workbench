@@ -33,12 +33,16 @@
   - [ ] Service worker has a WebSocket connection to the server for more realtime data transfer (listing directories, fetching metadata, sending commands to perform file operations, etc.)
 - [ ] Improvements to themes (adjustments to dark and black themes)
 - [ ] Directory Tab address bar history and autocomplete
-- [ ] Command pallete: search, recents, actions, queries
+- [x] Command pallete: search, recents, actions, queries (mode-prefix architecture: `>` commands wired, `?` mode list, Go-to-File stub; per-row chords; recently-used)
+- [ ] Keyboard Shortcuts modal: enable "Open Keyboard Shortcuts (JSON)" titlebar action (currently disabled). Blocked on two prerequisites: (1) keybindings loaded/merged from `config/keybindings/*.json` into the registry so the JSON actually drives bindings; (2) a code-editor tab kind so the file can open as an in-app editor tab (or a config-path API + `fsOpenWithSystem` for an OS-editor stopgap). See `client/components/workbench/ui/KeyboardShortcutsModal.vue`.
+- [ ] Keyboard Shortcuts modal: make read-only viewer editable (rebind, conflict detection, write-through to user-keybindings.json) once keybindings are file-backed.
 - [ ] Aggressive pre-fetching feature: hovering over an item will prefetch the preview API endpoint to warm it up and potentially get the server to cache to repsonse
 - [x] Breadcrumbs: if longer than about 80% of the container (we could use container queries?) for the path, show ellipses ('...') instead of some of the middle items (always show the first 2 breadcrumb items and the last 2 breadcrumb items, any in between those can be condensed to the overlow breadcrumb denoted with ellipses). Clicking on the overflow breadcrumb will is somehwat similar to how the carets between them trigger a dropdown, but the dropdown will represent the nested directories. Each option in the dropdown for the overflow breadcrumb will have the following indent icon to denote that it's a sub-item, and clicking the options does that same thing as it would do for the other breadcrumbs and navigate to that path.
   - If the breadcrumbs are still too longs after these changes then it can overflow-x within the box, but hopefully the overflow breadcrumb will make that unlikely (unless the folder names are very very long)
 - [ ] Pinned items in directories
 - [ ] Storage side menu option
+- [ ] Activity/View/Section-level option to remember state on new session or reset
+- [ ] Tabs persistent (no re-render when switching tabs -- tab loads once and remains until closed to avoid loading multiple times and increase responsiveness)
 
 - [x] File operations functionality: rename (optimistic), delete, trash, move (drag+drop, cut/paste), copy/cut/paste, create folder, compress, extract, undo/redo, elevation prompt
 

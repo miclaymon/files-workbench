@@ -120,8 +120,9 @@ export function useActivityHost({ editor, prefs, services = {}, log = () => {} }
       list:      commands.list,
       isEnabled: commands.isEnabled,
     },
-    // keybindings (chord → command); the dispatcher lives in useWorkbenchKeyboard
-    keybindings: { register: keybindings.register },
+    // keybindings (chord → command); the dispatcher lives in useWorkbenchKeyboard.
+    // list/forCommand let the palette and keyboard-shortcuts viewer read bindings.
+    keybindings: { register: keybindings.register, list: keybindings.list, forCommand: keybindings.forCommand },
     // generic ordered hooks (transform/veto), and the menu contribution API
     // (app-level menus + shared context menus) built on top of them
     hooks: { add: hooks.add, apply: hooks.apply, has: hooks.has },
