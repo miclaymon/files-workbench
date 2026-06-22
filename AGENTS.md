@@ -18,11 +18,11 @@ Workbench.vue                  Root shell: titlebar, activity bar, sidebar, edit
 │           └── TreeItem.vue   Recursive tree node
 ├── GridView.vue               Recursive editor split-grid (Sash.vue resize handles between siblings)
 │   └── EditorGroup.vue        Editor group: tab strip + active tab content (DropOverlay.vue shows drop zones)
-│       ├── HomePage.vue
-│       ├── DirectoryTab.vue   Directory tab content; owns fetch + nav history
-│       │   └── DirectoryPanel.vue       Navigation header, sort/filter state, layout switcher
-│       │       └── DirectoryLayout.vue  Unified layout component — all view modes via CSS data-layout attr
-│       └── PreferencesActivity.vue
+│       └── TabContentHost.vue Resolves the active tab's `kind` → registered tab view (editor twin of ViewContentHost)
+│           ├── HomePage.vue            (Workbench activity · tab view "home")
+│           └── DirectoryTab.vue        (Explorer activity · tab view "directory") — owns fetch + nav history
+│               └── DirectoryPanel.vue       Navigation header, sort/filter state, layout switcher
+│                   └── DirectoryLayout.vue  Unified layout component — all view modes via CSS data-layout attr
 └── PreviewPanel.vue           Right panel: dispatches to per-type preview components
     ├── preview/ImagePreview.vue
     ├── preview/VideoPreview.vue
@@ -30,6 +30,42 @@ Workbench.vue                  Root shell: titlebar, activity bar, sidebar, edit
     ├── preview/TextPreview.vue
     └── preview/HtmlPreview.vue
 ```
+
+## Activity system
+
+The workbench is organized into **activities** — self-contained feature modules in `client/activities/` (`workbench`, `explorer`, `preview`, `details`, `debug`, `chat`). Each declares the surfaces it contributes and, optionally, a runtime **API** for collaboration. This is the foundation for a future plugin system; first-party activities use the same internal API a plugin will.
+
+**Activity definition** (default export of each `activities/*.js`):
+
+```
+{
+  id, label, icon, core?,
+  setup(ctx) → api,                       // optional; ctx = { host, editor, prefs, services, log }
+  tabViews:    { [viewId]: { kind, label, icon, component, props(tab, ctx) } },
+  panelViews:  { [viewId]: { label, icon, component?, sections?, acceptsSections?, actions?, props?, on? } },
+  sections:    { [sectionId]: { label, icon, homeView, component, props(ctx), on(ctx), actions, … } },
+  statusViews: { [id]: { region: 'left'|'right', order, component } },
+}
+```
+
+**Three surfaces, rendered by id:**
+- **tab views** → `editor/TabContentHost.vue` resolves a tab's runtime `kind` → tab view → component; listeners pass through via `$attrs` (so the EditorGroup → Editor → Workbench event chain is unchanged), and the mounted instance is handed back via `registerInstance` so EditorGroup keeps its imperative handle (refresh / optimistic rename).
+- **panel views + sections** → unchanged; `ViewContentHost.vue` + the SplitView system render them. `useViewRegistry.js` just sources them from activities now.
+- **status views** → `shell/StatusBar.vue` is a host that renders the registered widgets by region (`shell/status/*`); each widget injects the host and **self-gates** (renders nothing when it has no data).
+
+**The activity host** (`composables/activity/useActivityHost.js`) instantiates each activity's API and is `provide()`d as `viewCtx` (it replaced the old hand-built bag). Public surface used by registry entries / widgets / other activities:
+- `api(id)` / `requireApi(id)` — query another activity's API.
+- `selection` — reactive **capability**: the *active* activity's published selection snapshot (`{ selectedItems, focusedItem, selectedPath, details }`) or `null`. Preview/Details read this and self-gate on `null`.
+- `on` / `once` / `emit` — app-level pub/sub. Events: `active-tab-change`, `active-activity-change`.
+- `log(category, msg, data)` — delegates to the Debug activity's logger.
+- `activeTab`, `activeActivityId`, `activeGroupId`, `editorRoot`, `prefs`.
+- Workbench `Object.assign`s its slice handlers (`handleRename`, `doMove`, `showItemContextMenu`, modals, `setRef`, status refs) onto the host so existing entries reach them. **These are app internals, not the eventual public plugin API.**
+
+**Two collaboration mechanisms:**
+1. **Reactive capability pull** — read `host.selection` / `host.api(id).<ref>` in a computed/template; Vue updates it automatically. Used by Preview/Details and the status widgets.
+2. **Event push** — `composables/activity/useEmitter.js` (`createEmitter` → `on`/`once`/`off`/`emit`/`clear`). A provider activity owns an emitter and `emit`s on change (Explorer emits `selection-change`); subscribe via `host.api('explorer').on('selection-change', cb)`. Use for imperative side effects (prefetch, logging) and non-Vue consumers.
+
+**Ownership:** Explorer owns the selection + dir-stats context (its `setup` wraps the existing `useSelection` slice, exposes the `selection` capability + `dirStats`, emits `selection-change`); Workbench pulls the selection refs/handlers from `host.api('explorer')` and feeds them to the file-op / menu / keyboard slices unchanged. Debug is a *provider* (exposes `log`). Preview/Details are *consumers*.
 
 ## Key lib files and composables
 
@@ -56,10 +92,17 @@ Workbench.vue                  Root shell: titlebar, activity bar, sidebar, edit
 | `useActionHistory.js` | Global undo/redo stack. `push({ label, undo, redo })` adds a reversible action. `undo()` / `redo()` execute and shift between stacks. |
 | `useDebugLog.js` | In-memory debug log shown in the Debug panel. `log(kind, msg, data)` appends; `.clear()` resets. |
 | `useLayoutGrid.js` | Pure recursive split-view grid engine. Leaves carry `{tabs[], activeTabId, tabPreviews, locked}`; branches carry `{direction, children[], sizes[]}`. Core ops: `insertLeafBeside`, `removeLeaf`, `mergeAll`, five presets. No DOM/reactivity. |
-| `useViewRegistry.js` | Central content registry keyed by view/section id: `{ label, icon, component, props(ctx), sections, actions, expose }`. Used by `ViewContentHost` to render any view/section in any container. Helpers: `getViewEntry`, `viewActions`, `sectionActions`, `sectionHeadingShown`, `bubbledSectionActions`, `viewAllowsDuplicateSections`, `viewDataId`, `sectionDataId`. |
+| `useViewRegistry.js` | Flat content registry **aggregated from `client/activities/`** (grouped by activity, flattened to a by-id lookup) keyed by view/section/tab/status id. Used by `ViewContentHost` (plus `TabContentHost` and `StatusBar`) to render content by id. `props(ctx)`/`on(ctx)` receive the activity host. Helpers: `getViewEntry`, `viewActions`, `sectionActions`, `sectionHeadingShown`, `bubbledSectionActions`, `viewAllowsDuplicateSections`, `viewDataId`, `sectionDataId`, plus activity-aware `tabViewForKind`, `getStatusViews(region)`, `activityOfView`, `activityOfTabKind`, `listActivities`, `getActivity`. |
 | `useIconPack.js` | Module-level singleton for the icon pack. Fetches `/icons/manifest` once; exposes `ensureLoaded()`, `resolveIcon(filename, isDir)`, `iconUrl(iconName)`, and `isAvailable`. All components needing pack icons call `ensureLoaded()` at mount time. |
 | `useCustomIcon.js` | Pure helper (no reactive state). `resolveCustomIcon(iconStr)` returns `null`, `{ type: 'url', url }`, or `{ type: 'folder-color', color }`. Folder-color must render as inline `<svg>` — not `<img>` — so CSS `color` applies. |
 | `useRpc.js` | Lightweight JSON-RPC helper for calling Go control-server endpoints. |
+
+### Composables — `activity/` (inter-activity API)
+
+| File | Purpose |
+|---|---|
+| `useEmitter.js` | `createEmitter()` → tiny synchronous pub/sub (`on`/`once`/`off`/`emit`/`clear`); subscriber errors are isolated. One per providing activity API, plus one for the host's app-level events. |
+| `useActivityHost.js` | The broker. Instantiates each activity's API (calls `setup`), and exposes `api(id)`/`requireApi(id)`, the reactive `selection` capability (active activity's published selection or `null`), `on`/`once`/`emit` (app events `active-tab-change` / `active-activity-change`), `log()` (→ Debug activity), and `activeTab`/`activeActivityId`/`activeGroupId`/`editorRoot`/`prefs`. Provided as `viewCtx`. Params: `{ editor, prefs, services, log }`. |
 
 ### Composables — `interaction/` (UI-behavior primitives)
 
@@ -89,7 +132,7 @@ Hand-rolled store slices instantiated by `Workbench.vue` and wired by dependency
 | `useArchive.js` | Archive-file detection (`isArchiveItem`, `ARCHIVE_EXTS`, `getArchiveExt`) and host capabilities (`archiveCaps`, `platform`) *(leaf)*. |
 | `useEditorGrid.js` | Editor split-grid model, every structural mutation, and the provided `editorController`. Deliberately selection-free. Params: `{ log, getInitialEditor, saveEditor }`. |
 | `useViewLayout.js` | Panel/sidebar layout engine: per-container view lists, merge groups, per-view section state, all drag-driven layout mutations, and the provided `workbenchChrome`. Params: `{ workspaces, prefs, savePrefs }`. |
-| `useSelection.js` | Current selection + explorer/directory/navigate handlers. Consumes the editor grid one-directionally. Exposes `updateSelectionAfterRename` and `updateSelectionAfterBatchRename` for post-rename reconciliation. Params: `{ editor, statusbar, log, fsStat, fsOpenWithSystem, isArchiveItem, uuid }`. |
+| `useSelection.js` | Current selection + explorer/directory/navigate handlers. Consumes the editor grid one-directionally. Exposes `updateSelectionAfterRename` and `updateSelectionAfterBatchRename` for post-rename reconciliation. Params: `{ editor, statusbar, log, fsStat, fsOpenWithSystem, isArchiveItem, uuid }`. **Now instantiated by the Explorer activity's `setup` (in `activities/explorer.js`), which wraps it as the `selection` capability + `selection-change` event and owns `dirStats`; Workbench pulls its refs/handlers from `host.api('explorer')`.** |
 | `useFileOperations.js` | Create/rename/trash/delete/compress/extract/paste/move/undo + clipboard, elevation dialog, and install prompt. `handleRenameBatch` handles the `rename-batch` event from find-replace Replace All: one optimistic `batchRenameItems` call, parallel server enqueues, per-item rollback on failure, `clearOptimisticThumbnails` after settle. Params: `{ editor, selection, statusbar, enqueue, history, log, explorerPanelRef }`. |
 | `useFileContextMenus.js` | Builds the four context-menu item arrays (editor tab / background / right-drag / item). Params: `{ editor, selection, fileOps, archive, enqueue, statusbar, fsOpenWithSystem, fsOpenTerminal, uuid }`. |
 | `useAppMenus.js` | File/Edit/View + Settings menus, command-palette command list, and modal open-state. Params: `{ fileOps, selection, editor, history, prefs, savePrefs, statusbar, explorerPanelRef, appearance, views }`. |
@@ -190,11 +233,20 @@ When a custom drag ends, a `click` event fires after `mouseup`. `wasDragging` in
 ### Inline rename and click debounce
 `useClickDebounce` has a `cancel()` method. Call it in `startRename()` to prevent the pending single-click callback from firing after rename mode activates.
 
+### `viewCtx` is the activity host
+The object injected as `viewCtx` (by `ViewContentHost`, `ViewActions`, `TabContentHost`, and the status widgets) is the **activity host** from `useActivityHost.js` — not a hand-built bag anymore. Registry `props(ctx)` / `on(ctx)` and `actions[].run/icon/title(ctx)` all receive it. Read selection via `ctx.selection.value` (never a global `selectedItems`), query other activities via `ctx.api(id)`, and reach Workbench's late-bound handlers (`ctx.handleRename`, `ctx.doMove`, …) which are `Object.assign`ed onto the host after the slices initialise (so always optional-chain: `ctx.handleRename?.(…)`).
+
+### Adding a tab / panel / status surface = edit an activity, not the host
+Tab content is registry-driven through `editor/TabContentHost.vue` (resolves a tab's `kind` → tab view). The status bar is registry-driven through `shell/StatusBar.vue`. To add a new editor tab type, sidebar panel, section, or status widget, add it to the relevant `client/activities/*.js` module (creating a new one + registering it in `activities/index.js` if it's a new activity) — **do not** edit EditorGroup / StatusBar. A tab view declares the runtime `kind` it renders; `activityOfTabKind`/`tabViewForKind` map `kind` → activity/view. There is **no workspace-schema migration** for this — the persisted tab `kind` is still the bridge.
+
+### Status widgets self-gate
+Each status widget (`shell/status/*`) injects the host and renders nothing when it lacks relevant context (e.g. the Explorer widget only shows on a `dir` tab; the job meter only while a job runs). `StatusBar.vue` carries no props — it just lays out `getStatusViews('left')` / `('right')`.
+
 ## Conventions
 
 - When writing JavaScript comments, use standard JSDoc formatting.
 - Vue component styles use `scoped`. Use `:deep()` only when targeting child component internals from a parent (e.g., `ExplorerTree.vue` targeting `.ig` inside `TreeItem`).
-- Events propagate upward through `defineEmits` chains all the way to `Workbench.vue`. When adding a new event in a leaf component, thread it through every intermediate layer. The `rename-batch` event follows the chain DirectoryLayout → DirectoryPanel → DirectoryTab → EditorGroup → Editor → Workbench.
+- Events propagate upward through `defineEmits` chains all the way to `Workbench.vue`. When adding a new event in a leaf component, thread it through every intermediate layer. The `rename-batch` event follows the chain DirectoryLayout → DirectoryPanel → DirectoryTab → EditorGroup → Editor → Workbench. Between the tab content and EditorGroup the event passes through `TabContentHost.vue`, which forwards all parent listeners to the rendered component via `$attrs` (so tab views don't need to re-declare them).
 - `DirectoryTab` assigns a stable `_id` (monotonically-incrementing integer, scoped to the module) to every item at fetch time. `DirectoryLayout` uses `item._id ?? item.path` as the v-for key. This ensures that an optimistic rename — which changes `item.path` but not `_id` — reuses the existing DOM node rather than remounting it, preventing unnecessary thumbnail reloads. Always preserve `_id` when mutating items (spread `...item` as the base).
 - `DirectoryTab.defineExpose` includes `renameItem`, `batchRenameItems`, and `clearOptimisticThumbnails`. `EditorGroup` proxies all three to `directoryTabRef`. `handleRenameBatch` in `useFileOperations` reaches them via `forEachGroup`.
 - `user-select: none` on all interactive UI chrome. Restore `user-select: text` explicitly inside Monaco containers and `contenteditable` spans.

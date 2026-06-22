@@ -87,37 +87,26 @@
       @drop="onBodyDrop"
       @dragleave="onBodyDragLeave"
     >
-      <template v-if="activeTab">
-        <HomePage v-if="activeTab.kind === 'home'" />
-        <DirectoryTab
-          v-else-if="activeTab.kind === 'dir'"
-          ref="directoryTabRef"
-          :key="activeTab.id"
-          :path="activeTab.path"
-          :excludedCategories="excludedCategories"
-          :selectedPath="activeTab.selectedPath ?? ''"
-          :selectedItems="activeTab.selectedItems ?? []"
-          :focusedItem="activeTab.focusedItem ?? null"
-          :prefs="prefs.explorer"
-          @select="$emit('select', $event)"
-          @open="$emit('open', $event)"
-          @navigate="$emit('navigate', $event)"
-          @contextmenu="$emit('contextmenu', $event)"
-          @background-contextmenu="$emit('background-contextmenu', $event)"
-          @right-drag-drop="$emit('right-drag-drop', $event)"
-          @rename="$emit('rename', $event)"
-          @rename-batch="$emit('rename-batch', $event)"
-          @stats="$emit('stats', { groupId: group.id, stats: $event })"
-          @update:layout="$emit('update:layout', $event)"
-        />
-        <PreferencesActivity
-          v-else-if="activeTab.kind === 'preferences'"
-          :prefs="prefs"
-          @save="$emit('preferences-save', $event)"
-          @change="$emit('preferences-change', $event)"
-        />
-        <div v-else class="group-placeholder">No tab.</div>
-      </template>
+      <TabContentHost
+        v-if="activeTab"
+        :key="activeTab.id"
+        :tab="activeTab"
+        :prefs="prefs"
+        :excludedCategories="excludedCategories"
+        :registerInstance="setTabInstance"
+        @select="$emit('select', $event)"
+        @open="$emit('open', $event)"
+        @navigate="$emit('navigate', $event)"
+        @contextmenu="$emit('contextmenu', $event)"
+        @background-contextmenu="$emit('background-contextmenu', $event)"
+        @right-drag-drop="$emit('right-drag-drop', $event)"
+        @rename="$emit('rename', $event)"
+        @rename-batch="$emit('rename-batch', $event)"
+        @stats="$emit('stats', { groupId: group.id, stats: $event })"
+        @update:layout="$emit('update:layout', $event)"
+        @preferences-save="$emit('preferences-save', $event)"
+        @preferences-change="$emit('preferences-change', $event)"
+      />
       <div v-else class="group-placeholder">
         <span>No open tabs in this group.</span>
       </div>
@@ -170,7 +159,11 @@ const { dragState, startTabDrag, endTabDrag } = useEditorDnd()
 const tabs = computed(() => props.group.tabs)
 const activeTab = computed(() => tabs.value.find(t => t.id === props.group.activeTabId) ?? tabs.value[0] ?? null)
 
+// The active tab's mounted content instance, handed back by TabContentHost.
+// Kept for imperative directory ops (refresh / optimistic rename); non-directory
+// tabs simply lack those methods, so the proxied calls below no-op via `?.`.
 const directoryTabRef = ref(null)
+function setTabInstance(el) { directoryTabRef.value = el }
 
 // ── Tab drag (reorder within strip + cross-group via body regions) ────────────
 

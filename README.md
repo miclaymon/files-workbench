@@ -25,6 +25,7 @@ A desktop file manager built with Electron + Nuxt 3 (Vue 3) on the front end and
 - Context menus, clipboard (cut/copy/paste), multi-select with Shift and Ctrl/Cmd
 - Preferences panel (theme, accent color, layout defaults, explorer options)
 - Command palette (WIP)
+- Activity architecture: the UI is composed of self-contained **activities** (Explorer, Preview, Details, Debug, …) that contribute editor-tab / sidebar-panel / status-bar surfaces and collaborate through an internal API (query, capabilities, pub/sub) — the foundation for a future plugin system
 
 ## Tech stack
 
@@ -79,8 +80,10 @@ npm run dev:v2
 files-workbench2/
 ├── client/                   Nuxt 3 SPA + Electron shell
 │   ├── assets/css/           Global CSS variables and base styles
+│   ├── activities/           First-party activity modules — each declares its tab/panel/status surfaces + runtime API (Workbench, Explorer, Preview, Details, Debug, Chat)
 │   ├── components/workbench/ All UI components
-│   ├── composables/          Vue composables in three layers:
+│   ├── composables/          Vue composables in four groups:
+│   │   ├── activity/         Inter-activity API: event emitter + activity host (broker)
 │   │   ├── interaction/      UI-behavior primitives (drag systems, click, hover, resize)
 │   │   ├── workbench/        Workbench assembly-root slices (editor grid, view layout, file ops, …)
 │   │   └── *.js              Foundational services (workspaces, preferences, queues, registries, …)

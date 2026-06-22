@@ -95,21 +95,8 @@
       </div>
     </div>
 
-    <!-- Status bar -->
-    <StatusBar
-      v-show="statusbarVisible"
-      :activeTab="activeTab"
-      :dirStats="dirStats"
-      :selectedItems="selectedItems"
-      :clipboard="clipboard"
-      :statusText="status.left"
-      :serverConnected="serverConnected"
-      :statusRight="statusRight"
-      :hasUnread="hasUnread"
-      :notificationsOpen="notificationsVisible"
-      :activeJob="activeJob"
-      @toggle-notifications="toggleNotifications"
-    />
+    <!-- Status bar (activity-driven; each widget reads the host via viewCtx) -->
+    <StatusBar v-show="statusbarVisible" />
 
     <!-- Notification center -->
     <NotificationPanel
@@ -248,7 +235,7 @@ import KeyboardShortcutsModal from './ui/KeyboardShortcutsModal.vue'
 import { useEditorGrid } from '~/composables/workbench/useEditorGrid.js'
 import { useStatusBar } from '~/composables/workbench/useStatusBar.js'
 import { useNotifications } from '~/composables/workbench/useNotifications.js'
-import { useSelection } from '~/composables/workbench/useSelection.js'
+import { useActivityHost } from '~/composables/activity/useActivityHost.js'
 import { useArchive } from '~/composables/workbench/useArchive.js'
 import { useFileOperations } from '~/composables/workbench/useFileOperations.js'
 import { useFileContextMenus } from '~/composables/workbench/useFileContextMenus.js'
@@ -351,18 +338,31 @@ const {
 
 provide('editorController', editorController)
 
-// Selection state + explorer/directory/open/navigate handlers. Consumes the
-// editor grid one-directionally (per-tab selection); editor never reads these.
+// Activity host: instantiates each activity's runtime API and brokers
+// collaboration between them. Built before the file-op / menu / keyboard slices
+// because they consume the Explorer activity's selection API. The same object is
+// later provided as `viewCtx` so registry-bound view/section content reads
+// app-level state and other activities' APIs through it.
+const host = useActivityHost({
+  editor,
+  prefs,
+  services: {
+    statusbar: { status, dirStats, formatBytes, flashStatus },
+    fsStat, fsOpenWithSystem, isArchiveItem, uuid,
+  },
+  log,
+})
+
+// Selection now lives in the Explorer activity. Pull the same refs/handlers the
+// rest of the app consumes (file ops, context menus, keyboard) from its API —
+// selection ownership moved, but the consuming wiring is unchanged.
+const explorerApi = host.requireApi('explorer')
 const {
   selectedPath, selectedItems, focusedItem, selectedDetails,
   updateSelectionAfterRename, updateSelectionAfterBatchRename,
   handleExplorerSelect, handleSelectFromDirectory, handleDoubleClick,
   navigateInCurrentTab, handleOpenFromTab,
-} = useSelection({
-  editor,
-  statusbar: { status, dirStats, formatBytes, flashStatus },
-  log, fsStat, fsOpenWithSystem, isArchiveItem, uuid,
-})
+} = explorerApi
 
 // File operations: create/rename/trash/delete/compress/paste/move/undo + clipboard,
 // elevation dialog, and the missing-tool install prompt.
@@ -394,13 +394,6 @@ const {
   enqueue, statusbar: { flashStatus },
   fsOpenWithSystem, fsOpenTerminal, uuid,
 })
-
-// ── View content context ─────────────────────────────────────────────────────
-// Shared bag of state + handlers that the view registry binds into each panel
-// component (see useViewRegistry.js / ViewContentHost.vue). Provided once here so
-// any view/section renders identically in any container; the handlers are sourced
-// from the selection / file-ops / context-menu slices instantiated above.
-const previewMode = ref('multi')
 
 // ── New file / folder modal ───────────────────────────────────────────────────
 
@@ -475,16 +468,19 @@ function _explorerTargetDir() {
   return idx > 0 ? sp.substring(0, idx) : sp
 }
 
-const viewCtx = {
-  // reactive state (refs / computeds — registry reads .value)
-  selectedPath, selectedItems, focusedItem, selectedDetails,
-  editorRoot, activeGroupId,
+// Finish wiring the activity host: assign the explorer/file-op/menu handlers and
+// the Workbench-local context (explorer tree focus, new-item modals, imperative
+// ref forwarding) that registry-bound content reaches through `ctx`. These are
+// late-bound here because they come from slices instantiated above. The host is
+// then provided as `viewCtx` so ViewContentHost binds content against it.
+Object.assign(host, {
   explorerContext,
   explorerTreeFocus,
-  previewMode,
-  prefs,            // reactive object (no .value)
-  debugLog,
-  // handlers
+  // app-level status state read by the status-bar widgets (status views)
+  status, serverConnected, statusRight, formatBytes,
+  clipboard, activeJob, hasUnread,
+  notificationsOpen: notificationsVisible, toggleNotifications,
+  // handlers (sourced from the selection / file-ops / context-menu slices)
   handleExplorerSelect: handleExplorerSelectAndTrack, handleDoubleClick, showItemContextMenu,
   handleRename, doMove, updateExplorerContext,
   // imperative ref forwarding (e.g. explorerPanelRef.refresh())
@@ -495,8 +491,8 @@ const viewCtx = {
   showNewFolderModal:  () => _openNewItemModal('folder'),
   collapseAllExplorer: () => explorerPanelRef.value?.collapseAll(),
   expandRootsExplorer: () => explorerPanelRef.value?.expandRoots(),
-}
-provide('viewCtx', viewCtx)
+})
+provide('viewCtx', host)
 
 // App menus (File/Edit/View + Settings), command palette, and modal open-state.
 const {
@@ -541,9 +537,10 @@ onUnmounted(() => {
   window.removeEventListener('editor:sash-resize-end', onSashResizeEnd)
 })
 
-// Editor-group directory stats bubble up to the status bar.
+// Editor-group directory stats bubble up to the Explorer activity (which owns
+// dir stats and publishes them over its API to the status widget).
 function onGroupStats({ groupId, stats }) {
-  if (groupId === activeGroupId.value) dirStats.value = stats
+  if (groupId === activeGroupId.value) explorerApi.setDirStats(stats)
 }
 
 </script>

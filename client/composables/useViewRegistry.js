@@ -1,244 +1,80 @@
-import { markRaw } from 'vue'
-import { mdiFileTree, mdiEye, mdiEyeOff, mdiInformation, mdiMessage, mdiBug, mdiFolderMultiple, mdiFileDocumentMultiple, mdiNotificationClearAll, mdiRefresh, mdiImage, mdiViewGrid, mdiFilePlusOutline, mdiFolderPlusOutline, mdiCollapseAll, mdiExpandAll } from '@mdi/js'
-
-import ExplorerPanel   from '../components/workbench/explorer/ExplorerPanel.vue'
-import OpenEditorsView from '../components/workbench/explorer/OpenEditorsView.vue'
-import PreviewPanel    from '../components/workbench/views/PreviewPanel.vue'
-import DebugPanel      from '../components/workbench/views/DebugPanel.vue'
-import ChatPanel       from '../components/workbench/views/ChatPanel.vue'
-
-import DetailsSectionInfo        from '../components/workbench/views/details/DetailsSectionInfo.vue'
-import DetailsSectionMetadata    from '../components/workbench/views/details/DetailsSectionMetadata.vue'
-import DetailsSectionEXIF        from '../components/workbench/views/details/DetailsSectionEXIF.vue'
-import DetailsSectionXMP         from '../components/workbench/views/details/DetailsSectionXMP.vue'
-import DetailsSectionIPTC        from '../components/workbench/views/details/DetailsSectionIPTC.vue'
-import DetailsSectionRaw         from '../components/workbench/views/details/DetailsSectionRaw.vue'
-import DetailsSectionPermissions from '../components/workbench/views/details/DetailsSectionPermissions.vue'
-import DetailsSectionChecksums   from '../components/workbench/views/details/DetailsSectionChecksums.vue'
+import { ACTIVITIES, ACTIVITY_MAP, activityOfTabKind, tabViewIdForKind } from '~/activities/index.js'
 
 // ── View / section content registry ────────────────────────────────────────────
 //
-// Single source of truth mapping a view/section id to the component that renders
-// it, the props it needs (derived from a shared `ctx` provided by Workbench), and
-// the DOM events it emits. Rendering content by id — rather than through
-// container-scoped named slots — lets any view or section render in any
-// container, which is what cross-context section drag (a section "adopted" into a
-// different View's area) requires.
+// A flat id → entry lookup, aggregated from the per-activity definition modules
+// in `client/activities/`. Activities are the source of truth (grouped by
+// activity), but the panel system (ViewContentHost, ViewContainer, SplitView …)
+// and the editor still resolve content by a flat id, so this module flattens the
+// activities' surfaces into one map and keeps the original helper API intact.
 //
-// Entry shape:
+// Entry shape (unchanged from before the activity grouping):
 //   label      display name (also the default heading/tab label)
 //   icon       MDI path string
 //   component  the Vue component (markRaw'd — no need for reactivity)
-//   homeView   for sections: the View this section natively belongs to
-//   sections   for Views that own sections: ordered section ids
-//   props(ctx) → object of props bound to the component
+//   kind       (tab views) the runtime editor-tab kind this view renders
+//   homeView   (sections) the View this section natively belongs to
+//   sections   (Views that own sections) ordered section ids
+//   props(ctx) → object of props bound to the component (ctx = the activity host)
 //   on(ctx)    → object of event listeners
 //   expose     name of a Workbench ref to populate with the mounted instance
-const REGISTRY = {
-  // ── Views that own sections ──
-  explorer: {
-    label: 'Explorer',
-    icon: mdiFileTree,
-    sections: ['places', 'openEditors'],
-  },
+//
+// `ctx` passed to props/on is the activity host (see useActivityHost.js) — a
+// superset of the old `viewCtx`, additionally exposing `api(id)` and `selection`.
 
-  // ── Explorer's sections ──
-  places: {
-    label: 'Places',
-    icon: mdiFolderMultiple,
-    homeView: 'explorer',
-    component: markRaw(ExplorerPanel),
-    expose: 'explorerPanelRef',
-    // Section-header actions (shown on hover/focus in the SplitSectionHeading).
-    actions: [
-      { id: 'newFile',   title: 'New File',   icon: mdiFilePlusOutline,   run: ctx => ctx.showNewFileModal?.() },
-      { id: 'newFolder', title: 'New Folder', icon: mdiFolderPlusOutline, run: ctx => ctx.showNewFolderModal?.() },
-      { id: 'refresh',   title: 'Refresh',    icon: mdiRefresh,           run: ctx => ctx.refreshExplorer?.() },
-      {
-        id:    'toggleHidden',
-        icon:  ctx => ctx.prefs.explorer.showHiddenFiles ? mdiEyeOff : mdiEye,
-        title: ctx => ctx.prefs.explorer.showHiddenFiles ? 'Hide hidden items' : 'Show hidden items',
-        run:   ctx => { ctx.prefs.explorer.showHiddenFiles = !ctx.prefs.explorer.showHiddenFiles },
-      },
-      {
-        id:    'collapseExpand',
-        icon:  ctx => ctx.explorerContext?.value?.expandedNodes?.length > 0 ? mdiCollapseAll : mdiExpandAll,
-        title: ctx => ctx.explorerContext?.value?.expandedNodes?.length > 0 ? 'Collapse All' : 'Expand All',
-        run:   ctx => {
-          if (ctx.explorerContext?.value?.expandedNodes?.length > 0) ctx.collapseAllExplorer?.()
-          else ctx.expandRootsExplorer?.()
-        },
-      },
-    ],
-    props: ctx => ({
-      selectedPath:       ctx.explorerTreeFocus?.value?.path ?? '',
-      showCheckboxes:     ctx.prefs.explorer.alwaysShowCheckboxes,
-      showFiles:          ctx.prefs.explorer.showFiles ?? false,
-      showHiddenFiles:    ctx.prefs.explorer.showHiddenFiles ?? false,
-      isTreeView:         true,
-      excludedCategories: ctx.prefs.excludedCategories,
-      indentScale:        ctx.prefs.explorer.indentScale ?? 1.0,
-      explorerState:      ctx.explorerContext.value,
-    }),
-    on: ctx => ({
-      select:         ctx.handleExplorerSelect,
-      dblclick:       ctx.handleDoubleClick,
-      contextmenu:    ctx.showItemContextMenu,
-      rename:         ctx.handleRename,
-      move:           ({ items, destPath }) => ctx.doMove(items, destPath),
-      'state-change': ctx.updateExplorerContext,
-    }),
-  },
-  openEditors: {
-    label: 'Open Editors',
-    icon: mdiFileDocumentMultiple,
-    homeView: 'explorer',
-    component: markRaw(OpenEditorsView),
-    props: ctx => ({
-      editorRoot:    ctx.editorRoot.value,
-      activeGroupId: ctx.activeGroupId.value,
-    }),
-  },
+const REGISTRY = {}
+const STATUS_VIEWS = {}        // id → { ...def, activityId }
+const VIEW_TO_ACTIVITY = {}    // view/section id → activity id
 
-  // ── Preview view with sections ──
-  preview: {
-    label: 'Preview',
-    icon: mdiEye,
-    sections: ['previewMain'],
-    // Doesn't accept docked sections from other views — the preview area is
-    // intentionally single-purpose.
-    acceptsSections: false,
-  },
-  previewMain: {
-    label: 'Preview',
-    homeView: 'preview',
-    component: markRaw(PreviewPanel),
-    alwaysShowHeading: true,
-    actions: [
-      {
-        id: 'toggleMode',
-        icon:  ctx => ctx.previewMode?.value === 'single' ? mdiViewGrid : mdiImage,
-        title: ctx => ctx.previewMode?.value === 'single' ? 'Switch to multi-item preview' : 'Switch to single-item preview',
-        run:   ctx => { if (ctx.previewMode) ctx.previewMode.value = ctx.previewMode.value === 'single' ? 'multi' : 'single' },
-      },
-    ],
-    props: ctx => ({
-      selectedItems:  ctx.selectedItems.value,
-      focusedItem:    ctx.focusedItem.value,
-      mode:           ctx.previewMode?.value ?? 'multi',
-      editorFontSize: ctx.prefs.preview?.editorFontSize ?? 13,
-    }),
-  },
-
-  // ── Details view with sections ──
-  details: {
-    label: 'Details',
-    icon: mdiInformation,
-    sections: ['detailsInfo', 'detailsMetadata', 'detailsExif', 'detailsXmp', 'detailsIptc', 'detailsRaw', 'detailsPermissions', 'detailsChecksums'],
-  },
-
-  detailsInfo: {
-    label: 'Details',
-    homeView: 'details',
-    component: markRaw(DetailsSectionInfo),
-    props: ctx => ({
-      selectedPath: ctx.selectedPath.value,
-      selectedItem: ctx.focusedItem.value ?? ctx.selectedItems.value[0] ?? null,
-      details:      ctx.selectedDetails.value,
-    }),
-    on: ctx => ({
-      rename: ctx.handleRename,
-    }),
-  },
-  detailsMetadata: {
-    label: 'Metadata',
-    homeView: 'details',
-    component: markRaw(DetailsSectionMetadata),
-    props: ctx => ({
-      selectedPath: ctx.selectedPath.value,
-    }),
-  },
-  detailsExif: {
-    label: 'Metadata: EXIF',
-    homeView: 'details',
-    component: markRaw(DetailsSectionEXIF),
-    props: ctx => ({
-      selectedPath: ctx.selectedPath.value,
-    }),
-  },
-  detailsXmp: {
-    label: 'Metadata: XMP',
-    homeView: 'details',
-    component: markRaw(DetailsSectionXMP),
-    props: ctx => ({
-      selectedPath: ctx.selectedPath.value,
-    }),
-  },
-  detailsIptc: {
-    label: 'Metadata: IPTC',
-    homeView: 'details',
-    component: markRaw(DetailsSectionIPTC),
-    props: ctx => ({
-      selectedPath: ctx.selectedPath.value,
-    }),
-  },
-  detailsRaw: {
-    label: 'Metadata: RAW',
-    homeView: 'details',
-    component: markRaw(DetailsSectionRaw),
-    props: ctx => ({
-      selectedPath: ctx.selectedPath.value,
-    }),
-  },
-  detailsPermissions: {
-    label: 'Permissions',
-    homeView: 'details',
-    component: markRaw(DetailsSectionPermissions),
-    props: ctx => ({
-      selectedPath: ctx.selectedPath.value,
-      details:      ctx.selectedDetails.value,
-    }),
-  },
-  detailsChecksums: {
-    label: 'Checksums',
-    homeView: 'details',
-    component: markRaw(DetailsSectionChecksums),
-    props: ctx => ({
-      selectedPath: ctx.selectedPath.value,
-      details:      ctx.selectedDetails.value,
-    }),
-  },
-  chat: {
-    label: 'Chat',
-    icon: mdiMessage,
-    component: markRaw(ChatPanel),
-    acceptsSections: false,
-  },
-  debug: {
-    label: 'Debug',
-    icon: mdiBug,
-    component: markRaw(DebugPanel),
-    // Context actions: shown in the tab strip while Debug is standalone, and in
-    // its SplitViewHeading once merged with other views. `run` receives ctx.
-    actions: [
-      { id: 'clear', title: 'Clear', icon: mdiNotificationClearAll, run: ctx => ctx.debugLog.clear() },
-    ],
-  },
+for (const act of ACTIVITIES) {
+  for (const [id, def] of Object.entries(act.panelViews ?? {}))  { REGISTRY[id] = def; VIEW_TO_ACTIVITY[id] = act.id }
+  for (const [id, def] of Object.entries(act.sections ?? {}))    { REGISTRY[id] = def; VIEW_TO_ACTIVITY[id] = act.id }
+  for (const [id, def] of Object.entries(act.tabViews ?? {}))    { REGISTRY[id] = def; VIEW_TO_ACTIVITY[id] = act.id }
+  for (const [id, def] of Object.entries(act.statusViews ?? {})) { STATUS_VIEWS[id] = { ...def, id, activityId: act.id }; VIEW_TO_ACTIVITY[id] = act.id }
 }
 
 export function getViewEntry(id) {
   return REGISTRY[id] ?? null
 }
 
+// ── Activity-aware lookups ─────────────────────────────────────────────────────
+
+// The activity that owns a given view/section/tab id.
+export function activityOfView(id) {
+  return VIEW_TO_ACTIVITY[id] ?? null
+}
+
+// Resolve an editor tab (by its runtime `kind`) to its tab-view registry entry.
+export function tabViewForKind(kind) {
+  const id = tabViewIdForKind(kind)
+  return id ? REGISTRY[id] : null
+}
+
+export { activityOfTabKind, tabViewIdForKind }
+
+// Status-bar widgets contributed by activities, in registration order, optionally
+// filtered by region ('left' | 'right').
+export function getStatusViews(region) {
+  const all = Object.values(STATUS_VIEWS).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  return region ? all.filter(v => (v.region ?? 'left') === region) : all
+}
+
+export function listActivities() {
+  return ACTIVITIES.map(a => ({ id: a.id, label: a.label, icon: a.icon, core: !!a.core }))
+}
+
+export function getActivity(id) {
+  return ACTIVITY_MAP[id] ?? null
+}
+
+// ── View capability flags ──────────────────────────────────────────────────────
+
 // Whether other Views' sections may be docked into this View (default true).
 export function viewAcceptsSections(viewId) {
   return getViewEntry(viewId)?.acceptsSections !== false
 }
 
-// Whether a View may hold the same section id more than once (default false). When
-// false, dropping a section a View already has is blocked; when true, the section
-// can appear twice. (Rendering true duplicates correctly needs per-instance keys —
-// not yet wired — so this stays opt-in and unset.)
+// Whether a View may hold the same section id more than once (default false).
 export function viewAllowsDuplicateSections(viewId) {
   return getViewEntry(viewId)?.allowDuplicateSections === true
 }

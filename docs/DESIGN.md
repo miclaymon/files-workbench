@@ -32,9 +32,9 @@ All workbench components live under `client/components/workbench/` and are group
 
 | Folder | Contents |
 |---|---|
-| `shell/` | `TitleBar`, `MenuBar`, `CommandCenter`, `AppHistory`, `ActivityBar`, `StatusBar`, `PrimarySideBar`, `SecondarySideBar`, `BottomPanel`, `NotificationPanel`, `NotificationItem`, `NotificationJobGroup`, `NotificationOperation` — the app chrome and resizable workspace panes |
+| `shell/` | `TitleBar`, `MenuBar`, `CommandCenter`, `AppHistory`, `ActivityBar`, `StatusBar` (a host of activity status widgets), `PrimarySideBar`, `SecondarySideBar`, `BottomPanel`, `NotificationPanel`, `NotificationItem`, `NotificationJobGroup`, `NotificationOperation`; `status/` subfolder for the self-gating status widgets — the app chrome and resizable workspace panes |
 | `layout/` | `ViewContainer`, `SplitViewArea`, `SplitView`, `SplitSectionArea`, `SplitSection`, `ViewContentHost`, `ViewActions`, `ViewDropOverlay`, `Sash` |
-| `editor/` | `Editor`, `GridView`, `EditorGroup`, `EditorDropOverlay`, `DirectoryTab`, `HomePage`, `MonacoEditor` |
+| `editor/` | `Editor`, `GridView`, `EditorGroup`, `EditorDropOverlay`, `TabContentHost` (resolves a tab's `kind` → registered tab view), `DirectoryTab`, `HomePage`, `MonacoEditor` |
 | `directory/` | `DirectoryPanel`, `DirectoryLayout`, all `Directory*Layout` variants, `DirectoryBreadcrumb`, `DirectoryHoverPreview`, `AudioPlayer`, `VideoPlayer` |
 | `explorer/` | `ExplorerPanel`, `ExplorerTree`, `TreeList`, `TreeItem`, `OpenEditorsView` |
 | `views/` | `PreviewPanel`, `DetailsPanel`, `ChatPanel`, `DebugPanel`; `preview/` subfolder for preview sub-components |
@@ -49,8 +49,11 @@ Composables live in `client/composables/` and are split into three layers (Nuxt 
 | Folder | Contents |
 |---|---|
 | `composables/*.js` | Foundational services and utilities: `useWorkspaces`, `usePreferences`, `useFileOpsQueue`, `useActionHistory`, `useDebugLog`, `useLayoutGrid`, `useViewRegistry`, `useIconPack`, `useCustomIcon`, `useRpc` |
+| `composables/activity/` | Inter-activity API (see Activity system): `useEmitter` (pub/sub primitive), `useActivityHost` (the broker, provided as `viewCtx`) |
 | `composables/interaction/` | UI-behavior primitives consumed by individual components: drag systems (`useDrag`, `useRightClickDrag`, `useTreeDrag`, `useEditorDnd`, `useViewDrag`), `useClickDebounce`, `useHoverPreview`, `useSideBar`, `useStackResize` |
 | `composables/workbench/` | Workbench assembly-root slices — see Workbench shell section: `useStatusBar`, `useNotifications`, `useArchive`, `useEditorGrid`, `useViewLayout`, `useSelection`, `useFileOperations`, `useFileContextMenus`, `useAppMenus`, `useWorkbenchKeyboard` |
+
+Activity definition modules live in `client/activities/` (a sibling of `components/` and `composables/`) — one file per activity plus `index.js` (the ordered list + tab-kind→activity lookups). See the Activity system section.
 
 ### Workbench shell
 
@@ -60,13 +63,13 @@ Composables live in `client/composables/` and are split into three layers (Nuxt 
 - `useArchive` — archive-file detection (`isArchiveItem`) + host capabilities *(leaf)*
 - `useEditorGrid` — the editor split-grid model, every structural mutation, and the provided `editorController`; deliberately selection-free so the selection dependency stays one-directional
 - `useViewLayout` — the panel/sidebar layout engine: per-container view lists, merge groups, per-view section state, every drag-driven layout mutation (transfer / merge / unmerge / section adoption), and the provided `workbenchChrome`
-- `useSelection` — current selection + explorer/directory/open/navigate handlers (consumes the editor grid)
+- `useSelection` — current selection + explorer/directory/open/navigate handlers (consumes the editor grid). Now instantiated by the **Explorer activity** (`activities/explorer.js`), which wraps it as the `selection` capability; Workbench pulls its refs/handlers from `host.api('explorer')`
 - `useFileOperations` — create/rename/trash/delete/compress/extract/paste/move/undo + clipboard, elevation dialog, and the install prompt
 - `useFileContextMenus` — the cursor-positioned ContextMenu item lists (editor tab / background / right-drag / item)
 - `useAppMenus` — the File/Edit/View + Settings menus, command-palette command list, and modal open-state
 - `useWorkbenchKeyboard` — window-level keyboard shortcuts (self-manages its listener)
 
-`useWorkspaces` is the single persistence instance; Workbench keeps it and passes it to `useViewLayout` (and pulls `getInitialEditor`/`saveEditor`/`explorerContext` for the editor + viewCtx). Workbench still owns the small local appearance/maximize toggles and the `viewCtx` bag. It composes the visible chrome from `shell/` components, which stay presentational (props in, events out):
+`useWorkspaces` is the single persistence instance; Workbench keeps it and passes it to `useViewLayout` (and pulls `getInitialEditor`/`saveEditor`/`explorerContext` for the editor + host). Workbench still owns the small local appearance/maximize toggles. The `viewCtx` that registry-bound content binds against is now the **activity host** (see Activity system), which Workbench builds and `provide`s; it assigns its slice handlers onto the host once the slices are instantiated. It composes the visible chrome from `shell/` components, which stay presentational (props in, events out):
 
 - `TitleBar` (`shell/`) — brand + `MenuBar` (File/Edit/View, each `{ key, label, items }`; the items arrays stay computed in `Workbench`), `AppHistory` (global back/forward — a placeholder, distinct from a tab's navigation history and from undo/redo), `CommandCenter` (the omnibar → command palette), and Electron window controls. `MenuBar` and `ActivityBar` own their own dropdown open/position state locally.
 - `ActivityBar` (`shell/`) — explorer/search/storage switcher + the Settings gear (which owns its own menu, fed `settingsMenuItems`); emits `toggle-view`.
@@ -74,7 +77,7 @@ Composables live in `client/composables/` and are split into three layers (Nuxt 
 - `Editor` (`editor/`) — the recursive split grid of editor groups; receives `viewRoot`/`activeGroupId`/`maximizedGroupId`/`prefs` and a `registerGroup` ref-callback prop (the `useEditorGrid` slice owns the EditorGroup instance registry it uses for imperative refresh/rename), and re-emits every EditorGroup event up unchanged
 - `SecondarySideBar` + `BottomPanel` (`shell/`) — the two movable, droppable panes, each wrapping a tabbed `ViewContainer` (see ViewContainer panel system) plus its maximize/hide actions
 - All floating UI (context menus, right-drag drop menus, command palette, settings modal, keyboard shortcuts modal)
-- `StatusBar` (`shell/`) — directory item count/size, selection count/size, clipboard pill (mode + count + size), and the server-connection indicator
+- `StatusBar` (`shell/`) — now an activity-driven host: it renders the registered status widgets (`shell/status/*`) by region (left/right) and carries no props. The Explorer widget shows directory item count/size, selection count/size, and the clipboard pill; the core Workbench widgets show the transient message, running-job meter, server-connection indicator, and notification bell. Each widget injects the host and self-gates.
 
 The three panes share `useSideBar.js`, which (1) runs the mousedown drag-resize loop, reporting new sizes back via `v-model:width`/`v-model:height` so persistence stays in `Workbench`, and (2) attaches a `ResizeObserver` that derives each pane's split direction (`dropDirection`) from its measured shape — tall → `col`, wide → `row` — instead of hard-coding it. So a side bar stacks merged views vertically and the (wide) bottom panel stacks them horizontally automatically, and the direction adapts if a pane is ever repositioned. Cross-container coordination (`handleViewTransfer`/`Merge`/`Unmerge`/`handleSectionMove`, which move views and sections *between* panes) lives in the `useViewLayout` slice instantiated by `Workbench`; the pane components just forward `ViewContainer`'s events.
 
@@ -126,7 +129,7 @@ ViewContainer (tab strip + ⋯ menu + merge/transfer orchestration)
 
 Two orthogonal axes drive it. `mergedSlots` (`{ [primaryId]: [{ id, collapsed, size }] }`) tracks **which Views stack in a slot** (the SplitViewArea level). `viewSections` (`{ [viewId]: Section[] }`, `Section = { id, homeViewId, collapsed, size, instanceId, locked? }`) tracks **each View's own sections** (the SplitSectionArea level). `instanceId` is a uuidv4 generated at section creation and backfilled by `_normalizeSections` for legacy data; it is used as the `v-for` key so Vue can track two sections with the same `id` as distinct DOM nodes (needed for duplicate sections). A heading appears only when its level has more than one sibling — so a standalone View with one implicit self-section renders as plain content, exactly as before. The primary sidebar is just a non-droppable (`:droppable="false"`) single-View container whose Explorer view owns the `places` + `openEditors` sections; there is no longer a separate "sections mode".
 
-**Content registry**: view/section content is rendered by id through `ViewContentHost.vue`, which looks the id up in `useViewRegistry.js` (`{ label, icon, component, props(ctx), on(ctx), homeView, sections, actions, expose }`) and binds it against a shared `viewCtx` provided by `Workbench.vue`. Rendering by id (rather than container-scoped named slots) lets any view or section render in any container — the prerequisite for cross-context section drag.
+**Content registry**: view/section content is rendered by id through `ViewContentHost.vue`, which looks the id up in `useViewRegistry.js` (`{ label, icon, component, props(ctx), on(ctx), homeView, sections, actions, expose }`) and binds it against a shared `viewCtx` provided by `Workbench.vue` — which is the **activity host** (see Activity system). Rendering by id (rather than container-scoped named slots) lets any view or section render in any container — the prerequisite for cross-context section drag.
 
 **Tab drag**: each tab is HTML5-draggable. Dropping a tab onto another container's tab strip reorders or transfers it (secondary sidebar ↔ bottom panel). Shared drag state lives in `useViewDrag.js` (`activeDrag` + `DRAG_MIME`).
 
@@ -188,10 +191,62 @@ All user-initiated events (select, navigate, rename, contextmenu, etc.) travel u
 
 This means adding a new event in a leaf component requires threading it through every layer in the chain. This is intentional: it keeps business logic centralized and components dumb.
 
+## Activity system
+
+The workbench is organized into **activities** — self-contained feature modules in `client/activities/` (`workbench`, `explorer`, `preview`, `details`, `debug`, `chat`). An activity declares the **surfaces** it contributes and, optionally, a runtime **API** that other activities query or subscribe to. This modularizes each activity's context and is the foundation for a future third-party plugin system: first-party activities use the same internal API a plugin eventually will.
+
+### Activity definition
+
+Each module default-exports a plain object:
+
+```
+{
+  id, label, icon, core?,                 // identity
+  setup(ctx) → api,                       // optional runtime API factory; ctx = { host, editor, prefs, services, log }
+  tabViews:    { [viewId]: { kind, label, icon, component, props(tab, ctx) } },
+  panelViews:  { [viewId]: { label, icon, component?, sections?, acceptsSections?, actions?, props?, on? } },
+  sections:    { [sectionId]: { label, icon, homeView, component, props(ctx), on(ctx), actions, … } },
+  statusViews: { [id]: { region: 'left' | 'right', order, component } },
+}
+```
+
+Three **surfaces**, each rendered by id:
+
+- **Tab views** — editor tabs. `editor/TabContentHost.vue` resolves a tab's runtime `kind` → its tab view → component (the editor twin of `ViewContentHost`). Parent (`EditorGroup`) listeners pass straight through via `$attrs`, so the existing event-up chain to `Workbench` is unchanged; the mounted instance is handed back via a `registerInstance` callback so `EditorGroup` keeps its imperative handle for refresh / optimistic rename.
+- **Panel views & sections** — sidebar/panel content. Unchanged from before; `ViewContentHost.vue` + the SplitView/SplitSection hierarchy render them. The registry just sources them from activities now.
+- **Status views** — status-bar widgets. `shell/StatusBar.vue` is a host that renders the registered widgets by region (`shell/status/*`); each widget injects the host and **self-gates** (renders nothing when it has no relevant context).
+
+`useViewRegistry.js` flattens every activity's surfaces into the by-id lookups the panel system already used (`getViewEntry`, `viewActions`, `sectionActions`, …), so that subsystem needed no changes, and adds activity-aware helpers: `tabViewForKind`, `getStatusViews(region)`, `activityOfView`, `activityOfTabKind`, `listActivities`, `getActivity`.
+
+### The activity host (broker)
+
+`composables/activity/useActivityHost.js` instantiates each activity's API (calling its `setup`) and brokers collaboration. It is `provide()`d as `viewCtx` — replacing the old hand-built bag — so registry-bound content (panels, sections, tab views, status widgets, action buttons) binds against it. Its public surface:
+
+- `api(id)` / `requireApi(id)` — query another activity's API.
+- `selection` — a reactive **capability**: the *active* activity's published selection snapshot (`{ selectedItems, focusedItem, selectedPath, details }`) or `null`. Preview/Details read this, so they depend on a capability rather than on Explorer specifically; any future activity that publishes a selection drives them too.
+- `on` / `once` / `emit` — app-level pub/sub. Events: `active-tab-change`, `active-activity-change`.
+- `log(category, msg, data)` — delegates to the Debug activity's logger API.
+- `activeTab`, `activeActivityId`, `activeGroupId`, `editorRoot`, `prefs`.
+
+`Workbench.vue` additionally `Object.assign`s its slice handlers (rename / move / context-menu / new-item modals / imperative ref forwarding) and app-status refs (clipboard, server connection, active job, notifications) onto the host so existing entries and status widgets reach them. **These are app internals, deliberately not part of the eventual public plugin API** (see `docs/ROADMAP.md` → Plugin system).
+
+### Collaboration: two mechanisms
+
+1. **Reactive capability pull** (Vue reactivity). A consumer reads `host.selection` or `host.api(id).<ref>` inside a computed/template and updates automatically. Used by Preview/Details (render from the current selection) and the status widgets. Best for "render from current state."
+2. **Event push** (`composables/activity/useEmitter.js` → `createEmitter`: `on`/`once`/`off`/`emit`/`clear`, with isolated subscriber errors). Each providing activity owns an emitter and exposes `on`; it `emit`s on change (Explorer emits `selection-change`; the host emits the app-level events). A subscriber does `host.api('explorer').on('selection-change', cb)`. Best for imperative reactions (prefetch, logging) and for non-Vue consumers.
+
+### Ownership examples
+
+- **Explorer** owns the selection + directory-stats context: its `setup` wraps the existing `useSelection` slice, exposes a `selection` capability and `dirStats`, and emits `selection-change`. `Workbench` sources the selection refs/handlers from `host.api('explorer')` and feeds them to the file-op / menu / keyboard slices unchanged — ownership moved, the consuming wiring did not.
+- **Preview / Details** are pure consumers — every prop reads `host.selection`, self-gating when it is `null` (e.g. on the Home tab).
+- **Debug** is a provider — its API exposes `log()`, surfaced app-wide as `host.log(...)` so any activity can push to the Debug panel.
+
+There is no workspace-schema change: the runtime tab `kind` remains the bridge between persisted tabs and the registry's tab views.
+
 ## State management
 
 No Pinia or Vuex. State lives in:
-- `Workbench.vue` `reactive`/`ref` — global app state (editor grid, selection, prefs, clipboard)
+- `Workbench.vue` `reactive`/`ref` — global app state (editor grid, prefs, clipboard); selection + directory stats now live in the **Explorer activity's API** (`host.api('explorer')`, see Activity system) and are consumed by Workbench's file-op / menu / keyboard slices
 - `useWorkspaces.js` — the persisted per-workspace model in `localStorage` (`files-workbench.workspaces`), versioned with forward migration (v1→v2 wraps the flat tabs array into a single-group leaf; v2→v3 renames panel areas to primarySidebar/secondarySidebar/panel and adds `viewContainerOrder`, `mergeGroups`, and `activeViewContainerId`; v3→v4 renames the `activity` fields to `view`; v4→v5 unifies per-container section storage into a `viewSections` map keyed by view id, with `homeViewId` on each section, replacing the old `sectionState`); serialises the editor grid, sidebar/panel layout, and explorer tree state
 - `DirectoryTab.vue` — navigation history, items list, thumbnail map
 - `DirectoryPanel.vue` — sort/filter state, layout picker state
