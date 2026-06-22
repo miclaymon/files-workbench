@@ -25,7 +25,7 @@ A desktop file manager built with Electron + Nuxt 3 (Vue 3) on the front end and
 - Context menus, clipboard (cut/copy/paste), multi-select with Shift and Ctrl/Cmd
 - Preferences panel (theme, accent color, layout defaults, explorer options)
 - Command palette (WIP)
-- Activity architecture: the UI is composed of self-contained **activities** (Explorer, Preview, Details, Debug, …) that contribute editor-tab / sidebar-panel / status-bar surfaces and collaborate through an internal API (query, capabilities, pub/sub) — the foundation for a future plugin system
+- Activity architecture: the UI is composed of self-contained **activities** (Explorer, Preview, Details, Debug, …) that contribute editor-tab / sidebar-panel / status-bar surfaces plus **commands, keybindings, and menu items**, and collaborate through a frozen internal facade (query, capabilities, pub/sub, hooks). Commands are the single source of truth that menus, keybindings, and the command palette reference; the registries are dynamic (runtime register/unregister) — the foundation for a future plugin system
 
 ## Tech stack
 

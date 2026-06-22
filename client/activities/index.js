@@ -25,24 +25,7 @@ export const ACTIVITIES = [workbench, explorer, preview, details, debug, chat]
 
 export const ACTIVITY_MAP = Object.fromEntries(ACTIVITIES.map(a => [a.id, a]))
 
-// ── Tab-kind ⇄ activity/view resolution ─────────────────────────────────────
-//
-// Editor tabs carry a runtime `kind` (e.g. 'home', 'dir'). Each tab view declares
-// the kind it renders, letting us resolve a tab to its owning activity and view.
-
-const _byKind = {}
-for (const act of ACTIVITIES) {
-  for (const [viewId, def] of Object.entries(act.tabViews ?? {})) {
-    if (def.kind) _byKind[def.kind] = { activityId: act.id, viewId }
-  }
-}
-
-/** The activity id that owns a given tab kind (defaults to the core activity). */
-export function activityOfTabKind(kind) {
-  return _byKind[kind]?.activityId ?? 'workbench'
-}
-
-/** The tab-view id registered for a given tab kind, if any. */
-export function tabViewIdForKind(kind) {
-  return _byKind[kind]?.viewId ?? null
-}
+// Tab-kind ⇄ activity/view resolution (activityOfTabKind / tabViewIdForKind) and
+// all surface lookups live in the dynamic registry (useViewRegistry.js), which
+// bootstraps from this ACTIVITIES list and also accepts plugin activities at
+// runtime through the same registerActivity() path.

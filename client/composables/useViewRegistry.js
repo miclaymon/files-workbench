@@ -1,12 +1,18 @@
-import { ACTIVITIES, ACTIVITY_MAP, activityOfTabKind, tabViewIdForKind } from '~/activities/index.js'
+import { reactive } from 'vue'
+import { ACTIVITIES, ACTIVITY_MAP } from '~/activities/index.js'
 
-// ── View / section content registry ────────────────────────────────────────────
+// ── View / section / status registry (dynamic) ──────────────────────────────────
 //
-// A flat id → entry lookup, aggregated from the per-activity definition modules
-// in `client/activities/`. Activities are the source of truth (grouped by
-// activity), but the panel system (ViewContentHost, ViewContainer, SplitView …)
-// and the editor still resolve content by a flat id, so this module flattens the
-// activities' surfaces into one map and keeps the original helper API intact.
+// A flat id → entry lookup aggregated from the per-activity definition modules in
+// `client/activities/`. Activities are the source of truth (grouped by activity);
+// the panel system (ViewContentHost, ViewContainer, SplitView …), the editor
+// (TabContentHost), and the status bar resolve content by a flat id through the
+// helpers here.
+//
+// The stores are reactive and populated through registerActivity(), so first-party
+// activities (bootstrapped below) and third-party plugins (which call the same
+// entry point at runtime via the facade) share one registration path —
+// registering or removing an activity adds/removes its surfaces live.
 //
 // Entry shape (unchanged from before the activity grouping):
 //   label      display name (also the default heading/tab label)
@@ -19,19 +25,45 @@ import { ACTIVITIES, ACTIVITY_MAP, activityOfTabKind, tabViewIdForKind } from '~
 //   on(ctx)    → object of event listeners
 //   expose     name of a Workbench ref to populate with the mounted instance
 //
-// `ctx` passed to props/on is the activity host (see useActivityHost.js) — a
-// superset of the old `viewCtx`, additionally exposing `api(id)` and `selection`.
+// `ctx` passed to props/on is the activity host (see useActivityHost.js).
 
-const REGISTRY = {}
-const STATUS_VIEWS = {}        // id → { ...def, activityId }
-const VIEW_TO_ACTIVITY = {}    // view/section id → activity id
+const REGISTRY         = reactive({})   // view / section / tab id → entry
+const STATUS_VIEWS     = reactive({})   // status id → { ...def, id, activityId }
+const VIEW_TO_ACTIVITY = reactive({})   // view / section / tab id → activity id
+const TAB_KIND         = reactive({})   // tab kind → { activityId, viewId }
+const REGISTERED       = reactive({})   // activity id → the activity def (as registered)
 
-for (const act of ACTIVITIES) {
-  for (const [id, def] of Object.entries(act.panelViews ?? {}))  { REGISTRY[id] = def; VIEW_TO_ACTIVITY[id] = act.id }
-  for (const [id, def] of Object.entries(act.sections ?? {}))    { REGISTRY[id] = def; VIEW_TO_ACTIVITY[id] = act.id }
-  for (const [id, def] of Object.entries(act.tabViews ?? {}))    { REGISTRY[id] = def; VIEW_TO_ACTIVITY[id] = act.id }
-  for (const [id, def] of Object.entries(act.statusViews ?? {})) { STATUS_VIEWS[id] = { ...def, id, activityId: act.id }; VIEW_TO_ACTIVITY[id] = act.id }
+// Ingest one activity's contributed surfaces. Returns a disposer that removes
+// them again (used by facade.activities.register for runtime/plugin activities).
+export function registerActivity(act) {
+  REGISTERED[act.id] = act
+  for (const [id, def] of Object.entries(act.panelViews ?? {})) { REGISTRY[id] = def; VIEW_TO_ACTIVITY[id] = act.id }
+  for (const [id, def] of Object.entries(act.sections ?? {}))   { REGISTRY[id] = def; VIEW_TO_ACTIVITY[id] = act.id }
+  for (const [id, def] of Object.entries(act.tabViews ?? {})) {
+    REGISTRY[id] = def
+    VIEW_TO_ACTIVITY[id] = act.id
+    if (def.kind) TAB_KIND[def.kind] = { activityId: act.id, viewId: id }
+  }
+  for (const [id, def] of Object.entries(act.statusViews ?? {})) { STATUS_VIEWS[id] = { ...def, id, activityId: act.id } }
+  return () => unregisterActivity(act.id)
 }
+
+export function unregisterActivity(id) {
+  const act = REGISTERED[id]
+  if (!act) return
+  for (const k of Object.keys(act.panelViews ?? {})) { delete REGISTRY[k]; delete VIEW_TO_ACTIVITY[k] }
+  for (const k of Object.keys(act.sections ?? {}))   { delete REGISTRY[k]; delete VIEW_TO_ACTIVITY[k] }
+  for (const [k, def] of Object.entries(act.tabViews ?? {})) {
+    delete REGISTRY[k]
+    delete VIEW_TO_ACTIVITY[k]
+    if (def.kind) delete TAB_KIND[def.kind]
+  }
+  for (const k of Object.keys(act.statusViews ?? {})) { delete STATUS_VIEWS[k] }
+  delete REGISTERED[id]
+}
+
+// Bootstrap the first-party activities through the same path plugins use.
+for (const act of ACTIVITIES) registerActivity(act)
 
 export function getViewEntry(id) {
   return REGISTRY[id] ?? null
@@ -44,13 +76,21 @@ export function activityOfView(id) {
   return VIEW_TO_ACTIVITY[id] ?? null
 }
 
+/** The activity id that owns a given tab kind (defaults to the core activity). */
+export function activityOfTabKind(kind) {
+  return TAB_KIND[kind]?.activityId ?? 'workbench'
+}
+
+/** The tab-view id registered for a given tab kind, if any. */
+export function tabViewIdForKind(kind) {
+  return TAB_KIND[kind]?.viewId ?? null
+}
+
 // Resolve an editor tab (by its runtime `kind`) to its tab-view registry entry.
 export function tabViewForKind(kind) {
   const id = tabViewIdForKind(kind)
   return id ? REGISTRY[id] : null
 }
-
-export { activityOfTabKind, tabViewIdForKind }
 
 // Status-bar widgets contributed by activities, in registration order, optionally
 // filtered by region ('left' | 'right').
@@ -60,11 +100,11 @@ export function getStatusViews(region) {
 }
 
 export function listActivities() {
-  return ACTIVITIES.map(a => ({ id: a.id, label: a.label, icon: a.icon, core: !!a.core }))
+  return Object.values(REGISTERED).map(a => ({ id: a.id, label: a.label, icon: a.icon, core: !!a.core }))
 }
 
 export function getActivity(id) {
-  return ACTIVITY_MAP[id] ?? null
+  return REGISTERED[id] ?? ACTIVITY_MAP[id] ?? null
 }
 
 // ── View capability flags ──────────────────────────────────────────────────────

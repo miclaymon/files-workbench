@@ -9,6 +9,23 @@ import ExplorerStatusWidget from '../components/workbench/shell/status/ExplorerS
 import { useSelection } from '../composables/workbench/useSelection.js'
 import { createEmitter } from '../composables/activity/useEmitter.js'
 
+const ACTIVITY_NAME = "Explorer";
+const ACTIVITY_ID = 'explorer';
+const ACTIVITY_ICON = mdiFileTree;
+const IS_FIRST_PARTY = true;
+
+const VIEWS = {
+  PANELS: [
+
+  ],
+  EDITORS: [
+
+  ],
+  STATUS: [
+
+  ],
+}
+
 // ── Explorer activity ───────────────────────────────────────────────────────
 //
 // Owns the file/directory selection context. Its API is the canonical source of
@@ -25,10 +42,10 @@ import { createEmitter } from '../composables/activity/useEmitter.js'
 // this module wraps it as a queryable + subscribable activity API so the wiring
 // is identical to before but the ownership is now explicit and modular.
 export default {
-  id: 'explorer',
-  label: 'Explorer',
-  icon: mdiFileTree,
-  builtin: true,
+  id: ACTIVITY_ID,
+  label: ACTIVITY_NAME,
+  icon: ACTIVITY_ICON,
+  builtin: IS_FIRST_PARTY,
 
   setup({ editor, services, log }) {
     // Directory stats for the active directory tab — owned here (Explorer's

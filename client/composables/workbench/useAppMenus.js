@@ -1,55 +1,83 @@
 import { ref, computed } from 'vue'
 
 // ── App menus slice ───────────────────────────────────────────────────────────
-// The File / Edit / View title-bar menus, the Settings menu, the command-palette
-// command list (flattened from those menus), and the modal open-state. This is the
-// aggregation layer that wires app-wide state into menu descriptors, so it pulls
-// from most other slices — it owns no domain logic beyond menu assembly + palette
-// flattening.
-export function useAppMenus({ fileOps, selection, editor, history, prefs, savePrefs, statusbar, explorerPanelRef, appearance, views }) {
-  const { createNewFolder, createNewFile, doUndo, doRedo, copyToClipboard, cutToClipboard, doPaste, clipboard } = fileOps
-  const { selectedItems } = selection
-  const { editorController } = editor
-  const { flashStatus } = statusbar
-  const { zenMode, centeredLayout, sidebarVisible, rightpaneVisible, statusbarVisible, bottompaneVisible } = appearance
+// Assembles the File / Edit / View title-bar menus and the Settings menu from the
+// command registry: actionable items are `{ command: id }` references resolved to
+// label / enabled / toggle-state via the registry, while structural items
+// (separators, submenus, disabled placeholders) stay literal. App-level menus also
+// merge items contributed by any activity/plugin through the menu contribution API
+// (host.facade.menus). This slice owns no behaviour — only menu assembly, the
+// modal open-state, and the preferences-save passthrough.
+export function useAppMenus({ host, history, views, savePrefs, statusbar, explorerPanelRef }) {
+  const { commands, menus } = host.facade
   const { registry: PANEL_VIEW_REGISTRY, isViewVisible, hideView, showView } = views
+  const { flashStatus } = statusbar
 
-  const fileMenuItems = computed(() => [
-    { key: 'newfolder', label: 'New Folder', action: createNewFolder },
-    { key: 'newfile',   label: 'New File',   action: createNewFile   }
-  ])
+  // Resolve one descriptor for FloatingMenu. `{ command }` items pull their label /
+  // disabled / toggle state from the registry; everything else passes through.
+  // Returns null for a command id with no registered command (so a contribution
+  // referencing a missing command is dropped rather than rendered broken).
+  function resolveItem(item) {
+    if (!item || item.separator) return item
+    if (item.command) {
+      const cmd = commands.get(item.command)
+      if (!cmd) return null
+      const label = typeof item.label === 'function' ? item.label() : (item.label ?? cmd.title)
+      return {
+        key:      item.command,
+        label,
+        icon:     item.icon ?? cmd.icon,
+        action:   () => commands.execute(item.command),
+        disabled: item.disabled ?? !commands.isEnabled(item.command),
+        type:     cmd.toggled ? 'toggle' : item.type,
+        checked:  cmd.toggled ? () => !!cmd.toggled(host) : item.checked,
+      }
+    }
+    if (item.submenu) return { ...item, submenu: item.submenu.map(resolveItem).filter(Boolean) }
+    return item
+  }
 
-  const editMenuItems = computed(() => [
-    { key: 'undo', label: `Undo${history.undoLabel.value ? ` "${history.undoLabel.value}"` : ''}`, action: doUndo, disabled: !history.canUndo.value },
-    { key: 'redo', label: `Redo${history.redoLabel.value ? ` "${history.redoLabel.value}"` : ''}`, action: doRedo, disabled: !history.canRedo.value },
+  // Resolve a base tree, then append items contributed to this menu id.
+  function buildMenu(tree, menuId) {
+    return [...tree, ...menus.items(menuId, host)].map(resolveItem).filter(Boolean)
+  }
+
+  const fileTree = [
+    { command: 'file.newFolder' },
+    { command: 'file.newFile' },
+  ]
+
+  // editTree/viewTree are functions so their dynamic labels (undo/redo) and the
+  // dynamic Views submenu are read inside the titleMenus computed and stay reactive.
+  const editTree = () => [
+    { command: 'edit.undo', label: `Undo${history.undoLabel.value ? ` "${history.undoLabel.value}"` : ''}` },
+    { command: 'edit.redo', label: `Redo${history.redoLabel.value ? ` "${history.redoLabel.value}"` : ''}` },
     { separator: true },
-    { key: 'copy',  label: 'Copy',  action: () => copyToClipboard(selectedItems.value) },
-    { key: 'cut',   label: 'Cut',   action: () => cutToClipboard(selectedItems.value)  },
-    { key: 'paste', label: 'Paste', action: doPaste, disabled: clipboard.value.count === 0 },
-  ])
+    { command: 'edit.copy' },
+    { command: 'edit.cut' },
+    { command: 'edit.paste' },
+  ]
 
-  const viewMenuItems = computed(() => [
+  const viewTree = () => [
     { key: 'appearance', label: 'Appearance', submenu: [
-      { key: 'fullscreen',     label: 'Full Screen',     type: 'toggle',
-        checked: () => !!document.fullscreenElement,
-        action:  () => { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen() } },
-      { key: 'zenMode',        label: 'Zen Mode',        type: 'toggle', checked: () => zenMode.value,        action: () => { zenMode.value        = !zenMode.value        } },
-      { key: 'centeredLayout', label: 'Centered Layout', type: 'toggle', checked: () => centeredLayout.value, action: () => { centeredLayout.value = !centeredLayout.value } },
+      { command: 'view.toggleFullScreen',     label: 'Full Screen' },
+      { command: 'view.toggleZenMode',        label: 'Zen Mode' },
+      { command: 'view.toggleCenteredLayout', label: 'Centered Layout' },
       { separator: true },
-      { key: 'menuBar',          label: 'Menu Bar',           type: 'toggle', checked: () => true,                      disabled: true },
-      { key: 'primarySidebar',   label: 'Primary Side Bar',   type: 'toggle', checked: () => sidebarVisible.value,   action: () => { sidebarVisible.value   = !sidebarVisible.value   } },
-      { key: 'secondarySidebar', label: 'Secondary Side Bar', type: 'toggle', checked: () => rightpaneVisible.value, action: () => { rightpaneVisible.value = !rightpaneVisible.value } },
-      { key: 'statusBar',        label: 'Status Bar',         type: 'toggle', checked: () => statusbarVisible.value, action: () => { statusbarVisible.value = !statusbarVisible.value } },
-      { key: 'panel',            label: 'Panel',              type: 'toggle', checked: () => bottompaneVisible.value, action: () => { bottompaneVisible.value = !bottompaneVisible.value } },
+      { key: 'menuBar', label: 'Menu Bar', type: 'toggle', checked: () => true, disabled: true },
+      { command: 'view.togglePrimarySidebar',   label: 'Primary Side Bar' },
+      { command: 'view.toggleSecondarySidebar', label: 'Secondary Side Bar' },
+      { command: 'view.toggleStatusBar',        label: 'Status Bar' },
+      { command: 'view.togglePanel',            label: 'Panel' },
       { separator: true },
-      { key: 'moveSidebar',      label: 'Move Primary Side Bar Right', disabled: true },
-      { key: 'activityBarPos',   label: 'Activity Bar Position', submenu: [
+      { key: 'moveSidebar', label: 'Move Primary Side Bar Right', disabled: true },
+      { key: 'activityBarPos', label: 'Activity Bar Position', submenu: [
         { key: 'activityDefault', label: 'Default', disabled: true },
         { key: 'activityTop',     label: 'Top',     disabled: true },
         { key: 'activityBottom',  label: 'Bottom',  disabled: true },
         { key: 'activityHidden',  label: 'Hidden',  disabled: true },
       ]},
-      { key: 'panelPos',         label: 'Panel Position', submenu: [
+      { key: 'panelPos', label: 'Panel Position', submenu: [
         { key: 'panelBottom', label: 'Bottom', disabled: true },
         { key: 'panelTop',    label: 'Top',    disabled: true },
         { key: 'panelLeft',   label: 'Left',   disabled: true },
@@ -67,21 +95,21 @@ export function useAppMenus({ fileOps, selection, editor, history, prefs, savePr
       { key: 'wordWrap', label: 'Word Wrap', type: 'toggle', checked: () => false, disabled: true },
     ]},
     { key: 'editorLayout', label: 'Editor Layout', submenu: [
-      { key: 'splitUp',    label: 'Split Up',    action: () => editorController.splitActiveGroup('top') },
-      { key: 'splitDown',  label: 'Split Down',  action: () => editorController.splitActiveGroup('bottom') },
-      { key: 'splitLeft',  label: 'Split Left',  action: () => editorController.splitActiveGroup('left') },
-      { key: 'splitRight', label: 'Split Right', action: () => editorController.splitActiveGroup('right') },
+      { command: 'editor.splitUp',    label: 'Split Up' },
+      { command: 'editor.splitDown',  label: 'Split Down' },
+      { command: 'editor.splitLeft',  label: 'Split Left' },
+      { command: 'editor.splitRight', label: 'Split Right' },
       { separator: true },
-      { key: 'single',       label: 'Single',         action: () => editorController.applyLayoutPreset('single') },
-      { key: 'twoColumns',   label: 'Two Columns',    action: () => editorController.applyLayoutPreset('twoColumns') },
-      { key: 'twoRows',      label: 'Two Rows',       action: () => editorController.applyLayoutPreset('twoRows') },
-      { key: 'threeColumns', label: 'Three Columns',  action: () => editorController.applyLayoutPreset('threeColumns') },
-      { key: 'grid',         label: 'Grid (2×2)',     action: () => editorController.applyLayoutPreset('grid') },
+      { command: 'editor.layoutSingle',       label: 'Single' },
+      { command: 'editor.layoutTwoColumns',   label: 'Two Columns' },
+      { command: 'editor.layoutTwoRows',      label: 'Two Rows' },
+      { command: 'editor.layoutThreeColumns', label: 'Three Columns' },
+      { command: 'editor.layoutGrid',         label: 'Grid (2×2)' },
       { separator: true },
       { key: 'moveNewWindow', label: 'Move Editor into New Window', disabled: true },
       { key: 'copyNewWindow', label: 'Copy Editor into New Window', disabled: true },
-    ] },
-    { key: 'alwaysShowCheckboxes', label: 'Always show checkboxes', type: 'toggle', checked: () => prefs.explorer.alwaysShowCheckboxes, action: () => { prefs.explorer.alwaysShowCheckboxes = !prefs.explorer.alwaysShowCheckboxes } },
+    ]},
+    { command: 'view.toggleAlwaysShowCheckboxes', label: 'Always show checkboxes' },
     { separator: true },
     { key: 'views', label: 'Views', submenu:
       Object.entries(PANEL_VIEW_REGISTRY).map(([id, meta]) => ({
@@ -92,59 +120,30 @@ export function useAppMenus({ fileOps, selection, editor, history, prefs, savePr
         action:  () => { isViewVisible(id) ? hideView(id) : showView(id) },
       }))
     },
-  ])
+  ]
 
-  const settingsMenuItems = computed(() => [
-    { key: 'preferences', label: 'Preferences', action: openSettingsModal },
-    { key: 'keyboard-shortcuts', label: 'Keyboard Shortcuts', action: openKeyboardShortcuts }
-  ])
+  const settingsTree = [
+    { command: 'workbench.openSettings',          label: 'Preferences' },
+    { command: 'workbench.openKeyboardShortcuts', label: 'Keyboard Shortcuts' },
+  ]
 
   // Title-bar menu strip (File / Edit / View). MenuBar owns its own open/position
-  // state; the items arrays stay computed here so they react to app state.
+  // state; the items arrays stay computed here so they react to command state.
   const titleMenus = computed(() => [
-    { key: 'file', label: 'File', items: fileMenuItems.value },
-    { key: 'edit', label: 'Edit', items: editMenuItems.value },
-    { key: 'view', label: 'View', items: viewMenuItems.value },
+    { key: 'file', label: 'File', items: buildMenu(fileTree,   'menubar/file') },
+    { key: 'edit', label: 'Edit', items: buildMenu(editTree(), 'menubar/edit') },
+    { key: 'view', label: 'View', items: buildMenu(viewTree(), 'menubar/view') },
   ])
 
-  // ── Command palette ───────────────────────────────────────────────────────────
+  const settingsMenuItems = computed(() => buildMenu(settingsTree, 'menubar/settings'))
 
-  const commandPaletteOpen        = ref(false)
-  const settingsModalOpen         = ref(false)
+  // ── Modals ────────────────────────────────────────────────────────────────────
+  const commandPaletteOpen         = ref(false)
+  const settingsModalOpen          = ref(false)
   const keyboardShortcutsModalOpen = ref(false)
 
-  function flattenMenuItems(items, category = '') {
-    const out = []
-    for (const item of items) {
-      if (item.separator || item.type === 'separator') continue
-      const path = category
-        ? (item.submenu ? `${category} > ${item.label}` : category)
-        : (item.submenu ? item.label : '')
-      if (item.submenu) {
-        out.push(...flattenMenuItems(item.submenu, path))
-      } else if (item.action && !item.disabled) {
-        out.push({
-          key:       item.key ?? item.label,
-          label:     item.label,
-          category:  path,
-          action:    item.action,
-          checkable: item.type === 'toggle',
-          checked:   item.type === 'toggle' ? !!(item.checked?.()) : false,
-        })
-      }
-    }
-    return out
-  }
-
-  const allCommands = computed(() => [
-    ...flattenMenuItems(fileMenuItems.value,     'File'),
-    ...flattenMenuItems(editMenuItems.value,     'Edit'),
-    ...flattenMenuItems(viewMenuItems.value,     'View'),
-    ...flattenMenuItems(settingsMenuItems.value, 'Settings'),
-  ])
-
-  function openCommandPalette() { commandPaletteOpen.value = true }
-  function openSettingsModal() { settingsModalOpen.value = true }
+  function openCommandPalette()    { commandPaletteOpen.value = true }
+  function openSettingsModal()     { settingsModalOpen.value = true }
   function openKeyboardShortcuts() { keyboardShortcutsModalOpen.value = true }
 
   async function savePreferences(newPrefs) {
@@ -158,7 +157,7 @@ export function useAppMenus({ fileOps, selection, editor, history, prefs, savePr
   }
 
   return {
-    titleMenus, settingsMenuItems, allCommands,
+    titleMenus, settingsMenuItems,
     commandPaletteOpen, settingsModalOpen, keyboardShortcutsModalOpen,
     openCommandPalette, openSettingsModal, openKeyboardShortcuts, savePreferences,
   }

@@ -1,6 +1,10 @@
 import { computed, watch } from 'vue'
-import { ACTIVITIES, activityOfTabKind } from '~/activities/index.js'
+import { ACTIVITIES } from '~/activities/index.js'
+import { activityOfTabKind, registerActivity, unregisterActivity } from '~/composables/useViewRegistry.js'
 import { createEmitter } from './useEmitter.js'
+import { createCommandRegistry } from './useCommandRegistry.js'
+import { createKeybindingRegistry } from './useKeybindingRegistry.js'
+import { createHookRegistry } from './useHookRegistry.js'
 
 // ── Activity host (broker) ──────────────────────────────────────────────────
 //
@@ -11,9 +15,12 @@ import { createEmitter } from './useEmitter.js'
 // activity's published `selection` capability — none of them reach across
 // activity boundaries directly.
 //
-// The same surface is what third-party plugins will eventually target, so it is
-// deliberately small: query (`api`), capability resolution (`selection`),
-// pub/sub (`on`/`emit`), and a couple of app-level conveniences (`log`).
+// The frozen `host.facade` is the public contribution + query surface third-party
+// plugins will eventually import: commands, keybindings, hooks, the menu
+// contribution API, dynamic activity registration, app-level pub/sub (`events`),
+// capability resolution (`selection`), peer-activity query (`peer`), and `log`.
+// The host itself additionally carries internal wiring (services, late-bound slice
+// handlers) that the facade deliberately hides from plugins.
 //
 // Params:
 //   editor    the editor-grid slice (active tab / group / root)
@@ -24,6 +31,7 @@ import { createEmitter } from './useEmitter.js'
 //   log       debug logger passed to activity setups
 export function useActivityHost({ editor, prefs, services = {}, log = () => {} }) {
   const apis = new Map()
+  const activityDefs = new Map()
   const appEvents = createEmitter()
 
   const activeTab        = editor.activeTab
@@ -63,11 +71,109 @@ export function useActivityHost({ editor, prefs, services = {}, log = () => {} }
     services,
   }
 
-  // Instantiate each activity's API. setup may read other activities lazily via
-  // host.api(); none do so synchronously, so map population order is safe.
-  for (const def of ACTIVITIES) {
-    apis.set(def.id, def.setup ? def.setup({ host, editor, prefs, services, log }) : {})
+  // ── Command registry + public facade ──────────────────────────────────────
+  // Commands are the single source of truth for invokable behaviour; menus,
+  // keybindings, and the palette reference them by id. getCtx() returns the host
+  // so a command's run(ctx)/when(ctx) receive the same binding context view and
+  // section actions already use — resolved lazily because the host is augmented
+  // with slice handlers only after the activities below are set up.
+  const commands = createCommandRegistry({ getCtx: () => host, log })
+  const keybindings = createKeybindingRegistry({ log })
+  const hooks = createHookRegistry({ log })
+
+  // Menu contribution API: app-level menus (the menu bar and shared context menus)
+  // collect items from any activity/plugin. Backed by the hook registry — each
+  // contribution is an ordered hook on `menu:<id>` that appends its items, and
+  // menus.items() runs them to produce the merged descriptor list. Each item is a
+  // `{ command }` reference or a literal menu descriptor the caller resolves.
+  const menus = {
+    register(menuId, contribution) {
+      return hooks.add(`menu:${menuId}`, (items, ctx) => {
+        if (contribution.when && !contribution.when(ctx)) return items
+        const extra = contribution.build ? (contribution.build(ctx) ?? [])
+                    : contribution.items ? contribution.items
+                    : contribution.command ? [{ command: contribution.command, label: contribution.label, icon: contribution.icon }]
+                    : []
+        return [...items, ...extra]
+      }, contribution.order ?? 0)
+    },
+    items(menuId, ctx) { return hooks.apply(`menu:${menuId}`, [], ctx) },
   }
+
+  // Instantiate one activity's runtime API. Surfaces (views / sections / status)
+  // are registered separately via registerActivity(); facade.activities.register
+  // does both for plugins added at runtime.
+  function instantiateActivity(def) {
+    apis.set(def.id, def.setup ? def.setup({ api: facade, host, editor, prefs, services, log }) : {})
+    activityDefs.set(def.id, def)
+  }
+
+  // The frozen public facade: the contribution + query surface handed to every
+  // activity's setup() as `api`, and the same surface third-party plugins will
+  // eventually import as the Workbench API. It exposes only registration, events,
+  // capabilities, and queries — never internal services or slice handlers.
+  const facade = Object.freeze({
+    commands: {
+      register:  commands.register,
+      execute:   commands.execute,
+      get:       commands.get,
+      list:      commands.list,
+      isEnabled: commands.isEnabled,
+    },
+    // keybindings (chord → command); the dispatcher lives in useWorkbenchKeyboard
+    keybindings: { register: keybindings.register },
+    // generic ordered hooks (transform/veto), and the menu contribution API
+    // (app-level menus + shared context menus) built on top of them
+    hooks: { add: hooks.add, apply: hooks.apply, has: hooks.has },
+    menus: { register: menus.register, items: menus.items },
+    // dynamic activity registration. First-party activities use the bootstrap
+    // below; a plugin calls register() at runtime to add an activity's API and its
+    // surfaces together, and gets a disposer that removes both.
+    activities: {
+      register(def) {
+        if (apis.has(def.id)) { log('activities', `"${def.id}" already registered`); return () => {} }
+        instantiateActivity(def)
+        const disposeSurfaces = registerActivity(def)
+        appEvents.emit('activity-register', def.id)
+        return () => {
+          appEvents.emit('activity-unregister', def.id)
+          disposeSurfaces()
+          apis.delete(def.id)
+          activityDefs.delete(def.id)
+        }
+      },
+      unregister(id) {
+        if (!apis.has(id)) return
+        appEvents.emit('activity-unregister', id)
+        unregisterActivity(id)
+        apis.delete(id)
+        activityDefs.delete(id)
+      },
+      get(id)  { return activityDefs.get(id) ?? null },
+      list()   { return [...activityDefs.values()].map(a => ({ id: a.id, label: a.label, icon: a.icon, core: !!a.core })) },
+    },
+    // app-level pub/sub
+    events: { on: appEvents.on, once: appEvents.once, emit: appEvents.emit },
+    // active activity's published selection snapshot (capability)
+    selection,
+    // query another activity's API
+    peer: api,
+    // read-only app-level context
+    query: {
+      get activeTab()        { return activeTab.value },
+      get activeActivityId() { return activeActivityId.value },
+    },
+    // push to the Debug activity's log
+    log: (...a) => api('debug')?.log?.(...a),
+  })
+  host.facade = facade
+  host.keybindings = keybindings   // internal: the keyboard dispatcher reads forChord()
+
+  // Instantiate the first-party activity APIs (their surfaces are bootstrapped in
+  // useViewRegistry at import). setup receives the public `api` (facade) plus
+  // internal wiring (host/editor/prefs/services/log); it may read other activities
+  // lazily via host.api(), and none do so synchronously, so map order is safe.
+  for (const def of ACTIVITIES) instantiateActivity(def)
 
   // Re-broadcast active-tab / active-activity changes as app-level events so
   // activities can react without watching the editor grid directly.

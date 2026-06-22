@@ -16,8 +16,11 @@ export default {
   icon: mdiBug,
   builtin: true,
 
-  setup() {
+  setup({ api }) {
     const { entries, log, clear } = useDebugLog()
+    // Activity-owned command, contributed through the same facade a plugin would
+    // use — proving registration isn't special-cased for first-party activities.
+    api.commands.register({ id: 'debug.clearLog', title: 'Clear Debug Log', category: 'Debug', run: () => clear() })
     return { entries, log, clear }
   },
 

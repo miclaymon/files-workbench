@@ -1,47 +1,50 @@
 import { onMounted, onUnmounted } from 'vue'
-import { collectLeaves } from '~/composables/useLayoutGrid.js'
 
 // ── Global keyboard shortcuts ─────────────────────────────────────────────────
-// Window-level keydown handling for the workbench: command palette, settings,
-// undo/redo, clipboard, editor split/close/focus, and trash/delete. Self-manages
-// its listener lifecycle and pulls its actions from the relevant slices.
-export function useWorkbenchKeyboard({ editor, fileOps, selection, openCommandPalette, openSettingsModal }) {
-  const { editorController, activeTab, activeGroupId, editorRoot } = editor
-  const { doUndo, doRedo, copyToClipboard, cutToClipboard, doPaste, doDelete, doTrash } = fileOps
-  const { selectedItems } = selection
+// A generic keybinding dispatcher: it normalizes each keydown into a chord string
+// and runs the command bound to that chord. Bindings and commands both live in
+// the activity host's registries (contributed by Workbench and activities), so
+// this slice owns no shortcut logic itself — it only translates keys to commands.
+//
+// Two cross-cutting rules preserved from the original hardcoded handler:
+//   • most shortcuts are ignored while typing in an input / textarea /
+//     contenteditable; a binding opts out with `allowInInput` (the command
+//     palette and settings do).
+//   • a matched binding preventDefaults even if its command is currently a no-op,
+//     so the browser's native shortcut never leaks through.
+export function useWorkbenchKeyboard({ host }) {
+  const { commands } = host.facade
+  const keybindings = host.keybindings
 
-  function focusGroupByIndex(i) {
-    const leaf = collectLeaves(editorRoot.value)[i]
-    if (leaf) editorController.setActiveGroup(leaf.id)
+  function isEditable(el) {
+    const tag = el?.tagName
+    return tag === 'INPUT' || tag === 'TEXTAREA' || !!el?.isContentEditable
+  }
+
+  // Build a canonical chord ('ctrl+shift+p', 'delete', 'ctrl+1') from the event,
+  // matching the registry's normalizeChord ordering (ctrl→alt→shift) and folding
+  // meta→ctrl so macOS Cmd shortcuts resolve to the same bindings.
+  function chordFromEvent(e) {
+    const k = e.key
+    if (!k || k === 'Control' || k === 'Shift' || k === 'Alt' || k === 'Meta') return null
+    const parts = []
+    if (e.ctrlKey || e.metaKey) parts.push('ctrl')
+    if (e.altKey) parts.push('alt')
+    if (e.shiftKey) parts.push('shift')
+    parts.push(k.toLowerCase())
+    return parts.join('+')
   }
 
   function onKeyDown(e) {
-    // Shortcuts that fire even from inputs
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'P') {
-      e.preventDefault(); openCommandPalette(); return
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key === ',') {
-      e.preventDefault(); openSettingsModal(); return
-    }
-
-    // Skip other shortcuts when typing in an input, textarea, or contenteditable
-    const tag = e.target?.tagName
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return
-
-    if (e.ctrlKey || e.metaKey) {
-      if (e.key === 'z') { e.preventDefault(); doUndo(); return }
-      if (e.key === 'y') { e.preventDefault(); doRedo(); return }
-      if (e.key === 'c') { e.preventDefault(); copyToClipboard(selectedItems.value); return }
-      if (e.key === 'x') { e.preventDefault(); cutToClipboard(selectedItems.value); return }
-      if (e.key === 'v') { e.preventDefault(); doPaste(); return }
-      if (e.key === '\\') { e.preventDefault(); editorController.splitActiveGroup('right'); return }
-      if ((e.key === 'w' || e.key === 'W') && activeTab.value) { e.preventDefault(); editorController.closeTab(activeGroupId.value, activeTab.value.id); return }
-      if (e.key >= '1' && e.key <= '9') { e.preventDefault(); focusGroupByIndex(Number(e.key) - 1); return }
-    }
-    if (e.key === 'Delete') {
+    const chord = chordFromEvent(e)
+    if (!chord) return
+    const editable = isEditable(e.target)
+    for (const b of keybindings.forChord(chord)) {
+      if (editable && !b.allowInInput) continue
+      if (b.when && !b.when(host)) continue
       e.preventDefault()
-      if (e.shiftKey) doDelete(selectedItems.value)
-      else doTrash(selectedItems.value)
+      commands.execute(b.command, ...(b.args ?? []))
+      return
     }
   }
 

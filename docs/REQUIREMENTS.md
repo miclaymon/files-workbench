@@ -64,6 +64,18 @@
 - All colors defined as CSS custom properties
 - User-defined themes via `config/themes/`
 
+## Extensibility (activities)
+
+- The workbench is composed of **activities** — self-contained feature modules that declare the surfaces they contribute (editor **tab views**, sidebar/panel **views + sections**, and **status-bar widgets**) and an optional runtime **API**
+- Activities collaborate only through an internal API, never by reaching into each other directly:
+  - **Query** another activity's API (`host.api(id)`)
+  - **Capabilities** — read the active activity's published context (e.g. the `selection` capability that Preview and Details consume) without knowing which activity produced it
+  - **Pub/sub** — subscribe to app-level events (`active-tab-change`) and per-activity events (Explorer's `selection-change`); a provider activity (Debug) can expose a service (logging) others call
+- Activities also **contribute** through the same internal facade (`host.facade`): **commands** (the single source of truth for invokable behaviour — menus, keybindings, and the command palette all reference commands by id), **keybindings**, **menu items** (appended into app-level menus by menu id, while an activity controls its own menus directly), and **hooks** (a synchronous ordered transform/veto chain the menu API is built on)
+- The command, view, panel, and status registries are **dynamic** — contributions (including whole activities, via `facade.activities.register`) can be added or removed at runtime, the basis for runtime plugin load/unload
+- Selection / directory-stats context lives in the activity that owns it (Explorer), shared via its API rather than held globally
+- First-party activities use the same internal API a third-party plugin eventually will (see Roadmap → Plugin system)
+
 ## Non-functional
 
 - Fast directory listing for large directories (thousands of files)

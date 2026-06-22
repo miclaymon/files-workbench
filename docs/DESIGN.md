@@ -49,11 +49,11 @@ Composables live in `client/composables/` and are split into three layers (Nuxt 
 | Folder | Contents |
 |---|---|
 | `composables/*.js` | Foundational services and utilities: `useWorkspaces`, `usePreferences`, `useFileOpsQueue`, `useActionHistory`, `useDebugLog`, `useLayoutGrid`, `useViewRegistry`, `useIconPack`, `useCustomIcon`, `useRpc` |
-| `composables/activity/` | Inter-activity API (see Activity system): `useEmitter` (pub/sub primitive), `useActivityHost` (the broker, provided as `viewCtx`) |
+| `composables/activity/` | Inter-activity API (see Activity system): `useEmitter` (pub/sub primitive), `useActivityHost` (the broker + frozen `facade`, provided as `viewCtx`), and the contribution registries `useCommandRegistry` / `useKeybindingRegistry` / `useHookRegistry` |
 | `composables/interaction/` | UI-behavior primitives consumed by individual components: drag systems (`useDrag`, `useRightClickDrag`, `useTreeDrag`, `useEditorDnd`, `useViewDrag`), `useClickDebounce`, `useHoverPreview`, `useSideBar`, `useStackResize` |
 | `composables/workbench/` | Workbench assembly-root slices — see Workbench shell section: `useStatusBar`, `useNotifications`, `useArchive`, `useEditorGrid`, `useViewLayout`, `useSelection`, `useFileOperations`, `useFileContextMenus`, `useAppMenus`, `useWorkbenchKeyboard` |
 
-Activity definition modules live in `client/activities/` (a sibling of `components/` and `composables/`) — one file per activity plus `index.js` (the ordered list + tab-kind→activity lookups). See the Activity system section.
+Activity definition modules live in `client/activities/` (a sibling of `components/` and `composables/`) — one file per activity plus `index.js` (the ordered activities list). Surface lookups and tab-kind→activity resolution live in the dynamic `useViewRegistry.js`. See the Activity system section.
 
 ### Workbench shell
 
@@ -65,9 +65,9 @@ Activity definition modules live in `client/activities/` (a sibling of `componen
 - `useViewLayout` — the panel/sidebar layout engine: per-container view lists, merge groups, per-view section state, every drag-driven layout mutation (transfer / merge / unmerge / section adoption), and the provided `workbenchChrome`
 - `useSelection` — current selection + explorer/directory/open/navigate handlers (consumes the editor grid). Now instantiated by the **Explorer activity** (`activities/explorer.js`), which wraps it as the `selection` capability; Workbench pulls its refs/handlers from `host.api('explorer')`
 - `useFileOperations` — create/rename/trash/delete/compress/extract/paste/move/undo + clipboard, elevation dialog, and the install prompt
-- `useFileContextMenus` — the cursor-positioned ContextMenu item lists (editor tab / background / right-drag / item)
-- `useAppMenus` — the File/Edit/View + Settings menus, command-palette command list, and modal open-state
-- `useWorkbenchKeyboard` — window-level keyboard shortcuts (self-manages its listener)
+- `useFileContextMenus` — the cursor-positioned ContextMenu item lists (editor tab / background / right-drag / item); builds owner base items and appends contributed items via `menus.items(menuId)`
+- `useAppMenus` — the File/Edit/View + Settings menus assembled from the **command registry** (`{ command }` refs + contributed items) and the modal open-state
+- `useWorkbenchKeyboard` — window-level keyboard **dispatcher** (chord → command via the keybinding registry); self-manages its listener
 
 `useWorkspaces` is the single persistence instance; Workbench keeps it and passes it to `useViewLayout` (and pulls `getInitialEditor`/`saveEditor`/`explorerContext` for the editor + host). Workbench still owns the small local appearance/maximize toggles. The `viewCtx` that registry-bound content binds against is now the **activity host** (see Activity system), which Workbench builds and `provide`s; it assigns its slice handlers onto the host once the slices are instantiated. It composes the visible chrome from `shell/` components, which stay presentational (props in, events out):
 
@@ -109,9 +109,9 @@ Every control change updates a local `localPrefs` deep copy immediately (instant
 
 ### Command palette
 
-`CommandPalette.vue` is a floating modal overlay (teleported to `<body>`) that provides fuzzy command search across all menu items. It opens via `Ctrl+Shift+P` or clicking the omnibar in the title bar.
+`CommandPalette.vue` is a floating modal overlay (teleported to `<body>`) that provides fuzzy command search. It opens via `Ctrl+Shift+P` (the `workbench.openCommandPalette` command) or clicking the omnibar in the title bar.
 
-Commands are sourced by flattening the four menu item arrays (`fileMenuItems`, `editMenuItems`, `viewMenuItems`, `settingsMenuItems`) at open time via `flattenMenuItems()`, which recurses through submenus and emits only leaf items with an `action`, skipping separators and currently-disabled items. Each command carries a `category` string built from the submenu path (e.g. `"View > Editor Layout"`) shown right-aligned in the result row. Toggle items (`type: 'toggle'`) show a checkmark when their `checked()` callback returns true.
+Commands are sourced directly from the **command registry** (`Workbench`'s `paletteCommands` computed): `commands.list()` filtered to enabled commands (`isEnabled`) that opt into the palette (`palette !== false`), sorted by `category` then title. Each entry's `action` calls `commands.execute(id)`; its `category` (e.g. `"View"`, `"Editor"`) shows right-aligned in the result row; commands with a `toggled(ctx)` predicate show a checkmark when it returns true. Because the list is derived live from the registry, commands contributed by any activity/plugin appear automatically.
 
 Fuzzy scoring ranks results: exact label match → prefix match → substring match → sequential character match → no match (excluded). Results are capped at 50 and re-ranked on every keystroke. Arrow keys navigate, Enter executes (action deferred one frame so the palette closes first), Escape dismisses. The `Ctrl+Shift+P` handler is checked before the early-return guard that skips shortcuts when an input is focused, so the palette can be opened from any context.
 
@@ -202,7 +202,7 @@ Each module default-exports a plain object:
 ```
 {
   id, label, icon, core?,                 // identity
-  setup(ctx) → api,                       // optional runtime API factory; ctx = { host, editor, prefs, services, log }
+  setup(ctx) → api,                       // optional; ctx = { api, host, editor, prefs, services, log } — register commands/keybindings/menus via api
   tabViews:    { [viewId]: { kind, label, icon, component, props(tab, ctx) } },
   panelViews:  { [viewId]: { label, icon, component?, sections?, acceptsSections?, actions?, props?, on? } },
   sections:    { [sectionId]: { label, icon, homeView, component, props(ctx), on(ctx), actions, … } },
@@ -216,7 +216,7 @@ Three **surfaces**, each rendered by id:
 - **Panel views & sections** — sidebar/panel content. Unchanged from before; `ViewContentHost.vue` + the SplitView/SplitSection hierarchy render them. The registry just sources them from activities now.
 - **Status views** — status-bar widgets. `shell/StatusBar.vue` is a host that renders the registered widgets by region (`shell/status/*`); each widget injects the host and **self-gates** (renders nothing when it has no relevant context).
 
-`useViewRegistry.js` flattens every activity's surfaces into the by-id lookups the panel system already used (`getViewEntry`, `viewActions`, `sectionActions`, …), so that subsystem needed no changes, and adds activity-aware helpers: `tabViewForKind`, `getStatusViews(region)`, `activityOfView`, `activityOfTabKind`, `listActivities`, `getActivity`.
+`useViewRegistry.js` flattens every activity's surfaces into the by-id lookups the panel system already used (`getViewEntry`, `viewActions`, `sectionActions`, …), so that subsystem needed no changes, and adds activity-aware helpers: `tabViewForKind`, `getStatusViews(region)`, `activityOfView`, `activityOfTabKind`, `listActivities`, `getActivity`. The stores are now **reactive and dynamic**: surfaces are ingested through `registerActivity(def)` / `unregisterActivity(id)` (bootstrapped from the activities list at import; plugins use the same path at runtime), so registering or removing an activity adds/removes its surfaces live.
 
 ### The activity host (broker)
 
@@ -229,6 +229,16 @@ Three **surfaces**, each rendered by id:
 - `activeTab`, `activeActivityId`, `activeGroupId`, `editorRoot`, `prefs`.
 
 `Workbench.vue` additionally `Object.assign`s its slice handlers (rename / move / context-menu / new-item modals / imperative ref forwarding) and app-status refs (clipboard, server connection, active job, notifications) onto the host so existing entries and status widgets reach them. **These are app internals, deliberately not part of the eventual public plugin API** (see `docs/ROADMAP.md` → Plugin system).
+
+### Contribution registries & the public facade
+
+The host also builds the frozen **`host.facade`** — handed to every `setup` as `api`, and the surface third-party plugins will import. It is the *contribution + query* surface, deliberately distinct from the host (`ctx`) that behaviours run against:
+
+- **Commands** (`useCommandRegistry.js`) are the **single source of truth** for invokable behaviour. `facade.commands.register({ id, title, category?, icon?, when?(ctx), toggled?(ctx), run(ctx, …args), palette? })` returns a disposer; `execute(id, …args)` runs it (no-op when `when` is false). Menus, keybindings, and the command palette all reference commands **by id** rather than embedding actions. Workbench registers the app catalog (`editor.*` / `edit.*` / `file.*` / `view.*` / `workbench.*`) where its slice handlers are in scope; activities register their own in `setup` (e.g. `debug.clearLog`).
+- **Keybindings** (`useKeybindingRegistry.js`) map a chord to a command. `facade.keybindings.register({ key, command, args?, when?, allowInInput? })`; the dispatcher (`useWorkbenchKeyboard`) normalizes each keydown to a canonical chord (`cmd`/`meta` fold to `ctrl`) and runs the bound command. `allowInInput` lets a binding (the palette, settings) fire while an input is focused.
+- **Menus** — `facade.menus.register(menuId, { command|items|build, group?, order?, when? })` + `menus.items(menuId, ctx)`. Owner-built menus (the menu bar in `useAppMenus`; the context menus in `useFileContextMenus`) assemble their **base** items directly, then append contributed items keyed by menu id (`menubar/{file,edit,view,settings}`, `editor/tab`, `directory/{item,background,right-drag}`). This is the two-tier model: an activity controls its own menus directly, while any activity/plugin can contribute options to app-level menus.
+- **Hooks** (`useHookRegistry.js`) — `facade.hooks.add(name, fn, order)` / `apply(name, value, ctx)`: a synchronous, ordered transform/veto chain (distinct from fire-and-forget events). The menu contribution API is built on it; future cancellable points (`before-rename`, …) use the same mechanism.
+- **Activities** — `facade.activities.register(def)` / `unregister(id)` / `get` / `list`: dynamic registration that wires an activity's API **and** its surfaces together. First-party activities use the startup bootstrap; a plugin calls `register` at runtime and gets a disposer that removes both.
 
 ### Collaboration: two mechanisms
 

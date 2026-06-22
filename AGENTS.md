@@ -40,7 +40,8 @@ The workbench is organized into **activities** — self-contained feature module
 ```
 {
   id, label, icon, core?,
-  setup(ctx) → api,                       // optional; ctx = { host, editor, prefs, services, log }
+  setup(ctx) → api,                       // optional; ctx = { api, host, editor, prefs, services, log }
+                                          // call api.commands/keybindings/menus/hooks.register(…) here
   tabViews:    { [viewId]: { kind, label, icon, component, props(tab, ctx) } },
   panelViews:  { [viewId]: { label, icon, component?, sections?, acceptsSections?, actions?, props?, on? } },
   sections:    { [sectionId]: { label, icon, homeView, component, props(ctx), on(ctx), actions, … } },
@@ -67,6 +68,16 @@ The workbench is organized into **activities** — self-contained feature module
 
 **Ownership:** Explorer owns the selection + dir-stats context (its `setup` wraps the existing `useSelection` slice, exposes the `selection` capability + `dirStats`, emits `selection-change`); Workbench pulls the selection refs/handlers from `host.api('explorer')` and feeds them to the file-op / menu / keyboard slices unchanged. Debug is a *provider* (exposes `log`). Preview/Details are *consumers*.
 
+**Contribution registries (`host.facade`)** — the frozen public surface handed to `setup` as `api` (and the eventual plugin import). It is the *registration/query* surface, distinct from `ctx` (the host) that a command's `run(ctx)` receives:
+- `commands.register/execute/get/list/isEnabled` — **commands are the single source of truth** for invokable behaviour. A command is `{ id, title, category?, icon?, when?(ctx), toggled?(ctx), run(ctx, …args), palette? }`. Workbench registers the app catalog (`editor.*` / `edit.*` / `file.*` / `view.*` / `workbench.*`); activities register their own (e.g. `debug.clearLog`).
+- `keybindings.register({ key, command, args?, when?, allowInInput? })` — chord → command; dispatcher is `useWorkbenchKeyboard`; `cmd`/`meta` fold to `ctrl`.
+- `menus.register(menuId, { command|items|build, group?, order?, when? })` + `menus.items(menuId, ctx)` — app-level menu contributions. Menu ids: `menubar/{file,edit,view,settings}`, `editor/tab`, `directory/{item,background,right-drag}`. Owner menus build their base items directly; contributions append.
+- `hooks.add(name, fn, order)` / `apply(name, value, ctx)` — generic ordered transform/veto chain (the menu API is built on it).
+- `activities.register(def)/unregister(id)/get/list` — dynamic activity registration (API **and** surfaces together); first-party use the startup bootstrap, plugins call this at runtime.
+- `events.on/once/emit`, `selection`, `peer(id)`, `query.{activeTab,activeActivityId}`, `log`.
+
+Menus, keybindings, and the command palette all **reference commands by id** — to add a shortcut/menu item, register or point at a command; don't hardcode an action.
+
 ## Key lib files and composables
 
 ### Lib files
@@ -92,7 +103,7 @@ The workbench is organized into **activities** — self-contained feature module
 | `useActionHistory.js` | Global undo/redo stack. `push({ label, undo, redo })` adds a reversible action. `undo()` / `redo()` execute and shift between stacks. |
 | `useDebugLog.js` | In-memory debug log shown in the Debug panel. `log(kind, msg, data)` appends; `.clear()` resets. |
 | `useLayoutGrid.js` | Pure recursive split-view grid engine. Leaves carry `{tabs[], activeTabId, tabPreviews, locked}`; branches carry `{direction, children[], sizes[]}`. Core ops: `insertLeafBeside`, `removeLeaf`, `mergeAll`, five presets. No DOM/reactivity. |
-| `useViewRegistry.js` | Flat content registry **aggregated from `client/activities/`** (grouped by activity, flattened to a by-id lookup) keyed by view/section/tab/status id. Used by `ViewContentHost` (plus `TabContentHost` and `StatusBar`) to render content by id. `props(ctx)`/`on(ctx)` receive the activity host. Helpers: `getViewEntry`, `viewActions`, `sectionActions`, `sectionHeadingShown`, `bubbledSectionActions`, `viewAllowsDuplicateSections`, `viewDataId`, `sectionDataId`, plus activity-aware `tabViewForKind`, `getStatusViews(region)`, `activityOfView`, `activityOfTabKind`, `listActivities`, `getActivity`. |
+| `useViewRegistry.js` | **Dynamic** flat content registry aggregated from `client/activities/` (grouped by activity, flattened to a by-id lookup) keyed by view/section/tab/status id. Reactive stores populated via `registerActivity(def)` / `unregisterActivity(id)` — bootstrapped from the activities list at import; plugins use the same path at runtime (so contributed surfaces appear/disappear live; `StatusBar` reads `getStatusViews` in a computed). Used by `ViewContentHost` (plus `TabContentHost` and `StatusBar`) to render content by id; `props(ctx)`/`on(ctx)` receive the activity host. Helpers: `getViewEntry`, `viewActions`, `sectionActions`, `sectionHeadingShown`, `bubbledSectionActions`, `viewAllowsDuplicateSections`, `viewDataId`, `sectionDataId`, plus activity-aware `tabViewForKind`, `getStatusViews(region)`, `activityOfView`, `activityOfTabKind`, `tabViewIdForKind`, `listActivities`, `getActivity`. |
 | `useIconPack.js` | Module-level singleton for the icon pack. Fetches `/icons/manifest` once; exposes `ensureLoaded()`, `resolveIcon(filename, isDir)`, `iconUrl(iconName)`, and `isAvailable`. All components needing pack icons call `ensureLoaded()` at mount time. |
 | `useCustomIcon.js` | Pure helper (no reactive state). `resolveCustomIcon(iconStr)` returns `null`, `{ type: 'url', url }`, or `{ type: 'folder-color', color }`. Folder-color must render as inline `<svg>` — not `<img>` — so CSS `color` applies. |
 | `useRpc.js` | Lightweight JSON-RPC helper for calling Go control-server endpoints. |
@@ -102,7 +113,10 @@ The workbench is organized into **activities** — self-contained feature module
 | File | Purpose |
 |---|---|
 | `useEmitter.js` | `createEmitter()` → tiny synchronous pub/sub (`on`/`once`/`off`/`emit`/`clear`); subscriber errors are isolated. One per providing activity API, plus one for the host's app-level events. |
-| `useActivityHost.js` | The broker. Instantiates each activity's API (calls `setup`), and exposes `api(id)`/`requireApi(id)`, the reactive `selection` capability (active activity's published selection or `null`), `on`/`once`/`emit` (app events `active-tab-change` / `active-activity-change`), `log()` (→ Debug activity), and `activeTab`/`activeActivityId`/`activeGroupId`/`editorRoot`/`prefs`. Provided as `viewCtx`. Params: `{ editor, prefs, services, log }`. |
+| `useActivityHost.js` | The broker. Instantiates each activity's API (calls `setup`) and exposes `api(id)`/`requireApi(id)`, the reactive `selection` capability, `on`/`once`/`emit` (app events `active-tab-change` / `active-activity-change` / `activity-register` / `activity-unregister`), `log()`, and `activeTab`/`activeActivityId`/`activeGroupId`/`editorRoot`/`prefs`. Also builds the frozen **`host.facade`** — the contribution surface (`commands`, `keybindings`, `menus`, `hooks`, `activities`, `events`, `selection`, `peer`, `query`, `log`) handed to each `setup` as `api` and the eventual plugin import. Provided as `viewCtx`. Params: `{ editor, prefs, services, log }`. |
+| `useCommandRegistry.js` | `createCommandRegistry({ getCtx, log })` → dynamic command store (`register`→disposer, `execute`, `get`, `list`, `isEnabled`). Commands are the single source of truth; `when`/`run` receive `ctx` (the host). |
+| `useKeybindingRegistry.js` | `createKeybindingRegistry()` → chord→command bindings (`register`→disposer, `forChord`, `list`) + `normalizeChord` (folds `cmd`/`meta`→`ctrl`, orders modifiers). |
+| `useHookRegistry.js` | `createHookRegistry()` → ordered transform/veto chain (`add`→disposer, `apply(name, value, ctx)`, `has`). Backs the menu contribution API. |
 
 ### Composables — `interaction/` (UI-behavior primitives)
 
@@ -135,8 +149,8 @@ Hand-rolled store slices instantiated by `Workbench.vue` and wired by dependency
 | `useSelection.js` | Current selection + explorer/directory/navigate handlers. Consumes the editor grid one-directionally. Exposes `updateSelectionAfterRename` and `updateSelectionAfterBatchRename` for post-rename reconciliation. Params: `{ editor, statusbar, log, fsStat, fsOpenWithSystem, isArchiveItem, uuid }`. **Now instantiated by the Explorer activity's `setup` (in `activities/explorer.js`), which wraps it as the `selection` capability + `selection-change` event and owns `dirStats`; Workbench pulls its refs/handlers from `host.api('explorer')`.** |
 | `useFileOperations.js` | Create/rename/trash/delete/compress/extract/paste/move/undo + clipboard, elevation dialog, and install prompt. `handleRenameBatch` handles the `rename-batch` event from find-replace Replace All: one optimistic `batchRenameItems` call, parallel server enqueues, per-item rollback on failure, `clearOptimisticThumbnails` after settle. Params: `{ editor, selection, statusbar, enqueue, history, log, explorerPanelRef }`. |
 | `useFileContextMenus.js` | Builds the four context-menu item arrays (editor tab / background / right-drag / item). Params: `{ editor, selection, fileOps, archive, enqueue, statusbar, fsOpenWithSystem, fsOpenTerminal, uuid }`. |
-| `useAppMenus.js` | File/Edit/View + Settings menus, command-palette command list, and modal open-state. Params: `{ fileOps, selection, editor, history, prefs, savePrefs, statusbar, explorerPanelRef, appearance, views }`. |
-| `useWorkbenchKeyboard.js` | Window-level keyboard shortcuts. Self-manages its listener via `onMounted`/`onUnmounted`. Params: `{ editor, fileOps, selection, openCommandPalette, openSettingsModal }`. |
+| `useAppMenus.js` | File/Edit/View + Settings menus **assembled from the command registry** (`{ command }` refs resolved to label / enabled / toggle-state) plus items contributed via `menus.items(menuId)`; modal open-state and the prefs-save passthrough. Params: `{ host, history, views, savePrefs, statusbar, explorerPanelRef }`. |
+| `useWorkbenchKeyboard.js` | Window-level keyboard **dispatcher**: normalizes each keydown to a chord and runs the bound command (`host.keybindings.forChord` → `commands.execute`), honoring `allowInInput`. Self-manages its listener. Params: `{ host }`. The command palette list is built in `Workbench` from `commands.list()`. |
 
 ## Nitro server routes (dev proxy workaround)
 
@@ -241,6 +255,12 @@ Tab content is registry-driven through `editor/TabContentHost.vue` (resolves a t
 
 ### Status widgets self-gate
 Each status widget (`shell/status/*`) injects the host and renders nothing when it lacks relevant context (e.g. the Explorer widget only shows on a `dir` tab; the job meter only while a job runs). `StatusBar.vue` carries no props — it just lays out `getStatusViews('left')` / `('right')`.
+
+### Commands are the source of truth (menus / keybindings / palette reference them)
+Don't hardcode an action in a menu item, keybinding switch, or the palette. Register a command (`host.facade.commands.register({ id, title, run, when?, toggled? })`) and reference it by id: menus use `{ command: 'id' }`, keybindings use `{ key, command }`, the palette lists `commands.list()`. App-level commands are the catalog in `Workbench.vue`; activity-specific ones are registered in that activity's `setup`. A command needing arguments (e.g. `editor.focusGroup`) sets `palette: false` and is invoked via a keybinding's `args`.
+
+### facade (`api`) vs ctx (host)
+Two different objects: **`api`** = `host.facade`, the frozen *contribution/registration* surface passed to `setup` and imported by future plugins (`commands`, `keybindings`, `menus`, `hooks`, `activities`, `events`, `selection`, `peer`, `query`, `log`). **`ctx`** = the host itself, the *binding context* a command's `run(ctx)` / `when(ctx)` and registry `props(ctx)` receive (carries late-bound slice handlers like `ctx.doMove`). The facade deliberately omits those internals. When adding behaviour: register through `api`; implement the behaviour against `ctx`.
 
 ## Conventions
 

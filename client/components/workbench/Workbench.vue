@@ -205,7 +205,7 @@
     <!-- Command palette -->
     <CommandPalette
       :visible="commandPaletteOpen"
-      :commands="allCommands"
+      :commands="paletteCommands"
       @close="commandPaletteOpen = false"
     />
 
@@ -227,7 +227,7 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
 import CommandPalette from './ui/CommandPalette.vue'
 import SettingsModal from './ui/SettingsModal.vue'
@@ -246,6 +246,7 @@ import { usePreferences } from '~/composables/usePreferences.js'
 import { useDebugLog } from '~/composables/useDebugLog.js'
 import { useFileOpsQueue } from '~/composables/useFileOpsQueue.js'
 import { useActionHistory } from '~/composables/useActionHistory.js'
+import { collectLeaves } from '~/composables/useLayoutGrid.js'
 import { fsStat, fsOpenWithSystem, fsOpenTerminal, fsCreateFile, fsCreateDir } from '~/lib/fs-api.js'
 
 function uuid() { return uuidv4() }
@@ -387,6 +388,7 @@ const {
   contextMenu, hideContextMenu,
   handleTabContextMenu, showBackgroundContextMenu, showRightDragDropMenu, showItemContextMenu,
 } = useFileContextMenus({
+  host,
   editor,
   selection: { selectedItems, handleOpenFromTab },
   fileOps,
@@ -496,22 +498,109 @@ provide('viewCtx', host)
 
 // App menus (File/Edit/View + Settings), command palette, and modal open-state.
 const {
-  titleMenus, settingsMenuItems, allCommands,
+  titleMenus, settingsMenuItems,
   commandPaletteOpen, settingsModalOpen, keyboardShortcutsModalOpen,
-  openCommandPalette, openSettingsModal, savePreferences,
+  openCommandPalette, openSettingsModal, openKeyboardShortcuts, savePreferences,
 } = useAppMenus({
-  fileOps,
-  selection: { selectedItems },
-  editor,
-  history, prefs, savePrefs,
+  host,
+  history,
+  views: { registry: PANEL_VIEW_REGISTRY, isViewVisible, hideView, showView },
+  savePrefs,
   statusbar: { flashStatus },
   explorerPanelRef,
-  appearance: { zenMode, centeredLayout, sidebarVisible, rightpaneVisible, statusbarVisible, bottompaneVisible },
-  views: { registry: PANEL_VIEW_REGISTRY, isViewVisible, hideView, showView },
 })
 
-// Global keyboard shortcuts (self-manages its own keydown listener).
-useWorkbenchKeyboard({ editor, fileOps, selection: { selectedItems }, openCommandPalette, openSettingsModal })
+// ── App command catalog ─────────────────────────────────────────────────────
+// The app-level commands as the single source of truth for invokable behaviour;
+// menus, keybindings, and the command palette reference these by id. They close
+// over Workbench's slice handlers (the composition root is the one place all of
+// editor / file-ops / appearance / palette are in scope); activities register
+// their own commands in setup() instead.
+for (const cmd of [
+  // Editor layout
+  { id: 'editor.splitUp',    title: 'Split Editor Up',    category: 'Editor', run: () => editorController.splitActiveGroup('top') },
+  { id: 'editor.splitDown',  title: 'Split Editor Down',  category: 'Editor', run: () => editorController.splitActiveGroup('bottom') },
+  { id: 'editor.splitLeft',  title: 'Split Editor Left',  category: 'Editor', run: () => editorController.splitActiveGroup('left') },
+  { id: 'editor.splitRight', title: 'Split Editor Right', category: 'Editor', run: () => editorController.splitActiveGroup('right') },
+  { id: 'editor.layoutSingle',       title: 'Single Column Layout', category: 'Editor', run: () => editorController.applyLayoutPreset('single') },
+  { id: 'editor.layoutTwoColumns',   title: 'Two Columns Layout',   category: 'Editor', run: () => editorController.applyLayoutPreset('twoColumns') },
+  { id: 'editor.layoutTwoRows',      title: 'Two Rows Layout',      category: 'Editor', run: () => editorController.applyLayoutPreset('twoRows') },
+  { id: 'editor.layoutThreeColumns', title: 'Three Columns Layout', category: 'Editor', run: () => editorController.applyLayoutPreset('threeColumns') },
+  { id: 'editor.layoutGrid',         title: 'Grid Layout (2×2)',    category: 'Editor', run: () => editorController.applyLayoutPreset('grid') },
+  { id: 'editor.closeActiveTab', title: 'Close Tab', category: 'Editor', when: () => !!activeTab.value, run: () => editorController.closeTab(activeGroupId.value, activeTab.value.id) },
+  // Bound to Ctrl+1…9; not a palette entry (it needs a group-index argument).
+  { id: 'editor.focusGroup', title: 'Focus Editor Group by Index', category: 'Editor', palette: false, run: (ctx, index) => { const leaf = collectLeaves(editorRoot.value)[index]; if (leaf) editorController.setActiveGroup(leaf.id) } },
+
+  // Edit — clipboard / history (gated by when())
+  { id: 'edit.undo',  title: 'Undo',  category: 'Edit', when: () => history.canUndo.value,         run: () => fileOps.doUndo() },
+  { id: 'edit.redo',  title: 'Redo',  category: 'Edit', when: () => history.canRedo.value,         run: () => fileOps.doRedo() },
+  { id: 'edit.copy',  title: 'Copy',  category: 'Edit', when: () => selectedItems.value.length > 0, run: () => fileOps.copyToClipboard(selectedItems.value) },
+  { id: 'edit.cut',   title: 'Cut',   category: 'Edit', when: () => selectedItems.value.length > 0, run: () => fileOps.cutToClipboard(selectedItems.value) },
+  { id: 'edit.paste', title: 'Paste', category: 'Edit', when: () => clipboard.value.count > 0,      run: () => fileOps.doPaste() },
+
+  // File
+  { id: 'file.newFolder', title: 'New Folder',         category: 'File', run: () => fileOps.createNewFolder() },
+  { id: 'file.newFile',   title: 'New File',           category: 'File', run: () => fileOps.createNewFile() },
+  { id: 'file.trash',     title: 'Move to Trash',      category: 'File', when: () => selectedItems.value.length > 0, run: () => fileOps.doTrash(selectedItems.value) },
+  { id: 'file.delete',    title: 'Delete Permanently', category: 'File', when: () => selectedItems.value.length > 0, run: () => fileOps.doDelete(selectedItems.value) },
+
+  // View toggles — toggled() drives the check state shown in menus and palette.
+  { id: 'view.togglePrimarySidebar',   title: 'Toggle Primary Side Bar',   category: 'View', toggled: () => sidebarVisible.value,    run: () => { sidebarVisible.value    = !sidebarVisible.value } },
+  { id: 'view.toggleSecondarySidebar', title: 'Toggle Secondary Side Bar', category: 'View', toggled: () => rightpaneVisible.value,  run: () => { rightpaneVisible.value  = !rightpaneVisible.value } },
+  { id: 'view.toggleStatusBar',        title: 'Toggle Status Bar',         category: 'View', toggled: () => statusbarVisible.value,  run: () => { statusbarVisible.value  = !statusbarVisible.value } },
+  { id: 'view.togglePanel',            title: 'Toggle Panel',              category: 'View', toggled: () => bottompaneVisible.value, run: () => { bottompaneVisible.value = !bottompaneVisible.value } },
+  { id: 'view.toggleZenMode',          title: 'Toggle Zen Mode',           category: 'View', toggled: () => zenMode.value,          run: () => { zenMode.value          = !zenMode.value } },
+  { id: 'view.toggleCenteredLayout',   title: 'Toggle Centered Layout',    category: 'View', toggled: () => centeredLayout.value,   run: () => { centeredLayout.value   = !centeredLayout.value } },
+  { id: 'view.toggleFullScreen',       title: 'Toggle Full Screen',        category: 'View', toggled: () => !!document.fullscreenElement, run: () => { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen() } },
+  { id: 'view.toggleAlwaysShowCheckboxes', title: 'Always Show Checkboxes', category: 'View', toggled: () => prefs.explorer.alwaysShowCheckboxes, run: () => { prefs.explorer.alwaysShowCheckboxes = !prefs.explorer.alwaysShowCheckboxes } },
+
+  // Workbench
+  { id: 'workbench.openCommandPalette',    title: 'Show Command Palette',    category: 'Workbench',   run: () => openCommandPalette() },
+  { id: 'workbench.openSettings',          title: 'Open Settings',           category: 'Preferences', run: () => openSettingsModal() },
+  { id: 'workbench.openKeyboardShortcuts', title: 'Open Keyboard Shortcuts', category: 'Preferences', run: () => openKeyboardShortcuts() },
+]) host.facade.commands.register(cmd)
+
+// ── Default keybindings ───────────────────────────────────────────────────────
+// Chords → command ids. The dispatcher (useWorkbenchKeyboard) resolves keydowns
+// against these; activities and plugins contribute their own through the facade.
+for (const binding of [
+  { key: 'ctrl+shift+p', command: 'workbench.openCommandPalette', allowInInput: true },
+  { key: 'ctrl+,',       command: 'workbench.openSettings',       allowInInput: true },
+  { key: 'ctrl+z', command: 'edit.undo' },
+  { key: 'ctrl+y', command: 'edit.redo' },
+  { key: 'ctrl+c', command: 'edit.copy' },
+  { key: 'ctrl+x', command: 'edit.cut' },
+  { key: 'ctrl+v', command: 'edit.paste' },
+  { key: 'ctrl+\\', command: 'editor.splitRight' },
+  { key: 'ctrl+w',  command: 'editor.closeActiveTab' },
+  { key: 'delete',       command: 'file.trash' },
+  { key: 'shift+delete', command: 'file.delete' },
+  ...Array.from({ length: 9 }, (_, i) => ({ key: `ctrl+${i + 1}`, command: 'editor.focusGroup', args: [i] })),
+]) host.facade.keybindings.register(binding)
+
+// Dev-only: expose the activity host for console inspection of the new
+// command / contribution surfaces (e.g. __wb.facade.commands.list()).
+if (import.meta.dev) window.__wb = host
+
+// Command palette list — enabled commands (minus arg-only ones), shaped for
+// CommandPalette and sorted by category then title. Derived live from the
+// registry so contributed commands appear automatically.
+const paletteCommands = computed(() =>
+  host.facade.commands.list()
+    .filter(c => c.palette !== false && host.facade.commands.isEnabled(c.id))
+    .sort((a, b) => (a.category ?? '').localeCompare(b.category ?? '') || a.title.localeCompare(b.title))
+    .map(c => ({
+      key:       c.id,
+      label:     c.title,
+      category:  c.category ?? '',
+      action:    () => host.facade.commands.execute(c.id),
+      checkable: !!c.toggled,
+      checked:   !!c.toggled?.(host),
+    }))
+)
+
+// Global keyboard shortcuts: a generic chord → command dispatcher.
+useWorkbenchKeyboard({ host })
 
 function onSashResizeEnd() {
   log('editor-layout', 'Resized editor groups', {})
