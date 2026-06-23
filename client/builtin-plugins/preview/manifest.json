@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "id": "preview",
+  "name": "Preview",
+  "version": "1.0.0",
+  "description": "Preview the selected file(s): images, video, audio, and syntax-highlighted text in the Secondary Side Bar.",
+  "author": "Files Workbench",
+  "icon": "mdiEye",
+  "main": "src/plugin.js",
+  "permissions": ["activities", "selection"]
+}

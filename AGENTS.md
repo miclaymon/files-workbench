@@ -23,17 +23,20 @@ Workbench.vue                  Root shell: titlebar, activity bar, sidebar, edit
 │           └── DirectoryTab.vue        (Explorer activity · tab view "directory") — owns fetch + nav history
 │               └── DirectoryPanel.vue       Navigation header, sort/filter state, layout switcher
 │                   └── DirectoryLayout.vue  Unified layout component — all view modes via CSS data-layout attr
-└── PreviewPanel.vue           Right panel: dispatches to per-type preview components
-    ├── preview/ImagePreview.vue
-    ├── preview/VideoPreview.vue
-    ├── preview/AudioPreview.vue
-    ├── preview/TextPreview.vue
-    └── preview/HtmlPreview.vue
+└── (Secondary Side Bar / Bottom Panel views are contributed by first-party plugins —
+     Preview / Details / Debug live under client/builtin-plugins/, see Plugin system)
+```
+
+Preview's component tree (now `client/builtin-plugins/preview/src/components/`):
+
+```
+PreviewPanel.vue               Dispatches to per-type preview components
+└── preview/{ImagePreview,VideoPreview,AudioPreview,TextPreview,HtmlPreview}.vue
 ```
 
 ## Activity system
 
-The workbench is organized into **activities** — self-contained feature modules in `client/activities/` (`workbench`, `explorer`, `preview`, `details`, `debug`, `chat`). Each declares the surfaces it contributes and, optionally, a runtime **API** for collaboration. This is also the foundation of the plugin system (see **Plugin system** below) — first-party activities use the same internal API a plugin does, narrowed by permission.
+The workbench is organized into **activities** — self-contained feature modules. The in-core ones live in `client/activities/` (`workbench`, `explorer`, `chat`); `preview`, `details`, and `debug` are now contributed by first-party **plugins** (`client/builtin-plugins/`) — they are still activities, just registered through the plugin host rather than compiled into `ACTIVITIES`. Each declares the surfaces it contributes and, optionally, a runtime **API** for collaboration. This is the foundation of the plugin system (see **Plugin system** below) — first-party activities use the same internal API a plugin does, narrowed by permission.
 
 **Activity definition** (default export of each `activities/*.js`):
 
@@ -91,7 +94,7 @@ A **plugin** is an out-of-core activity loaded at runtime through a *permission-
 - **UI model** (`client/models/ui/`): UI-agnostic classes — `Activity`, `View`, `EditorView`, `ModalView`, `PanelView`, `ViewSection`, `StatusView` — that carry metadata + a component reference (no Vue imports). `fromDefinition.js` wraps the declarative `client/activities/*.js` objects into instances; the registry stores instances. A plugin authors `new Activity(...).addView(new PanelView(...))`.
 - **Manifest + permissions** (`client/models/plugin/`): `manifest.js` (Chrome-style `manifest.json` validator), `permissions.js` (front-end `PERMISSIONS` gating facade slices, backend `HOST_PERMISSIONS` gating brokered services like `scm:read`/`scm:write`). JSON schema + example: `docs/plugins/`.
 - **Loader** (`client/composables/plugins/`): `usePluginApi.js` builds the frozen, permission-scoped `api` (UI classes + `log` + only the granted facade slices/brokers); `usePluginHost.js` loads/unloads `{ manifest, module }` pairs (dependency-ordered, lifecycle). `activate(api)` contributes and returns a disposer; `deactivate(api)` is optional.
-- **Loading**: built-ins are listed in `client/builtin-plugins/index.js` and loaded at startup in `Workbench.vue`. The archive/sandbox runtime path is not built yet — it will produce the same `{ manifest, module }` pairs the host already consumes. **Reference plugin: `client/builtin-plugins/source-control/`.**
+- **Loading**: built-ins are listed in `client/builtin-plugins/index.js` and loaded at startup in `Workbench.vue`. Current built-ins: **`source-control`** (brokers to the Go scm API — the richest reference), and **`preview`** / **`details`** / **`debug`** (pure surface contributors: selection-consuming panels in the Secondary Side Bar, and Debug's log-provider panel in the Bottom Panel). The archive/sandbox runtime path is not built yet — it will produce the same `{ manifest, module }` pairs the host already consumes.
 - **Brokered backend**: plugins never touch the filesystem/control server directly — host-permission'd services (e.g. `api.scm`) forward to the Go server (`server/v2/scm.go`) via a client broker (`client/lib/scm-api.js`, reads→data / writes→control, mock fallback when offline).
 - **Preference contributions** (`client/composables/usePreferenceSchema.js`): `api.preferences.register({ key, title, properties })` adds a section to the Settings panel (merged with the static base schema in `SettingsModal.vue`); values live under `prefs.<key>` and persist normally. `api.preferences.get(path)` reads a value.
 

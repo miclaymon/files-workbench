@@ -177,7 +177,25 @@ const sizeDisplay = computed(() => {
 
 // ── Icon / thumbnail ──────────────────────────────────────────────────────────
 
-const thumbSrc = computed(() => props.selectedItem?.thumbnail ?? null)
+// Media extensions whose thumbnail the server can render, mirroring DirectoryTab.
+const THUMB_IMAGE = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'ico', 'avif'])
+const THUMB_AV    = new Set(['mp4', 'webm', 'mkv', 'avi', 'mov', 'm4v', 'flv', 'wmv', 'ts', 'mpeg', 'mpg', 'm2ts', 'mp3', 'm4a', 'flac', 'ogg', 'opus', 'aac', 'wav', 'aiff', 'wma'])
+const THUMB_SIZE  = 256
+
+// The selection item carries a `thumbnail` only when the directory view that
+// produced it decorated one (it's a layout-side enrichment, not part of the
+// published selection contract). So we derive the URL from the path ourselves —
+// the same way Preview does — and only fall back to the carried field. This keeps
+// Details self-sufficient as a selection consumer (a thumbnail shows whether the
+// selection came from a grid, a tree, or anywhere else).
+const thumbSrc = computed(() => {
+  const path = props.selectedPath
+  if (!path || isDir.value) return null
+  if (ext.value === 'exe') return `${MEDIA_BASE}/exe_icon?path=${encodeURIComponent(path)}`
+  if (THUMB_IMAGE.has(ext.value)) return `${MEDIA_BASE}/image?path=${encodeURIComponent(path)}&size=${THUMB_SIZE}`
+  if (THUMB_AV.has(ext.value))    return `${MEDIA_BASE}/thumbnail?path=${encodeURIComponent(path)}&size=${THUMB_SIZE}`
+  return props.selectedItem?.thumbnail ?? null
+})
 
 const packIconSrc = computed(() => {
   if (packIconFailed.value) return null

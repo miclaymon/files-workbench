@@ -18,7 +18,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import MonacoEditor from '../../editor/MonacoEditor.vue'
+import MonacoEditor from '~/components/workbench/editor/MonacoEditor.vue'
 
 defineProps({
   text: { type: String, default: '' },

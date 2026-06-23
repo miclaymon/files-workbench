@@ -55,6 +55,17 @@ const DEFAULT_SECTIONS = {
   ],
 }
 
+// The container each defaulted view's sections belong to. Used to scope the
+// default-section backfill: a view's sections must seed ONLY into its own
+// container's backing state, never into every container (which would make each
+// container claim it owns that view — see getViewSections). A view the user has
+// dragged elsewhere persists its own viewSections entry, which takes precedence.
+const DEFAULT_VIEW_CONTAINER = {
+  explorer: 'primarySidebar',
+  preview:  'secondarySidebar',
+  details:  'secondarySidebar',
+}
+
 // ─── Default workspace factory ───────────────────────────────────────────────
 
 function createDefaultWorkspace({ name = 'Default' } = {}) {
@@ -545,20 +556,47 @@ export function useWorkspaces() {
     return out
   }
 
+  // The view ids actually present in a container: its standalone tabs plus any
+  // merged sub-views. Used to tell a genuinely-adopted/merged foreign view from
+  // phantom section-state left behind by the old backfill-everywhere bug.
+  function _viewsPresentIn(layout) {
+    const merges = layout?.mergeGroups ?? {}
+    return new Set([
+      ...(layout?.viewContainerOrder ?? []),
+      ...(layout?.views ?? []).map(v => v.id),
+      ...Object.keys(merges),
+      ...Object.values(merges).flat().map(sv => sv?.id).filter(Boolean),
+    ])
+  }
+
   function getViewSections(containerId) {
-    const stored = activeWorkspace.value?.layout[containerId]?.viewSections ?? {}
+    const layout = activeWorkspace.value?.layout[containerId]
+    const stored = layout?.viewSections ?? {}
+    const present = _viewsPresentIn(layout)
     const out = {}
     for (const [viewId, sections] of Object.entries(stored)) {
-      if (Array.isArray(sections) && sections.length) out[viewId] = _normalizeSections(viewId, sections)
+      if (!Array.isArray(sections) || !sections.length) continue
+      // Drop phantom section-state a foreign container accumulated from the old
+      // backfill-everywhere bug: a *defaulted* view (explorer/preview/details)
+      // whose home container isn't this one and that isn't actually present here.
+      // Plugin views and genuine adoptions (present in the container) are kept.
+      if (DEFAULT_SECTIONS[viewId]
+          && DEFAULT_VIEW_CONTAINER[viewId] !== containerId
+          && !present.has(viewId)) continue
+      out[viewId] = _normalizeSections(viewId, sections)
     }
     // The primary sidebar always has Explorer's sections.
     if (containerId === 'primarySidebar' && !out.explorer) {
       out.explorer = DEFAULT_SECTIONS.explorer.map(s => ({ ...s }))
     }
-    // Backfill any view that has declared defaults but no stored sections yet.
-    // This handles views added after workspace creation without a version bump.
+    // Backfill a view's declared default sections — but ONLY into the container
+    // that view belongs to (handles a view added after workspace creation without
+    // a version bump). Seeding into every container would pollute each container's
+    // backing section-state with foreign views, so a section dropped anywhere
+    // looks like a duplicate of one "already" in the destination and the
+    // section-adoption drop is rejected. See DEFAULT_VIEW_CONTAINER.
     for (const [viewId, defaults] of Object.entries(DEFAULT_SECTIONS)) {
-      if (!out[viewId]) {
+      if (DEFAULT_VIEW_CONTAINER[viewId] === containerId && !out[viewId]) {
         out[viewId] = defaults.map(s => ({ ...s, instanceId: `${s.id}-default` }))
       }
     }
