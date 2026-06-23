@@ -23,9 +23,10 @@ A desktop file manager built with Electron + Nuxt 3 (Vue 3) on the front end and
 - Inline file renaming in tree and directory views
 - Custom drag-and-drop with ghost element and 200 ms activation delay
 - Context menus, clipboard (cut/copy/paste), multi-select with Shift and Ctrl/Cmd
-- Preferences panel (theme, accent color, layout defaults, explorer options)
-- Command palette (WIP)
-- Activity architecture: the UI is composed of self-contained **activities** (Explorer, Preview, Details, Debug, …) that contribute editor-tab / sidebar-panel / status-bar surfaces plus **commands, keybindings, and menu items**, and collaborate through a frozen internal facade (query, capabilities, pub/sub, hooks). Commands are the single source of truth that menus, keybindings, and the command palette reference; the registries are dynamic (runtime register/unregister) — the foundation for a future plugin system
+- Preferences panel (theme, accent color, layout defaults, explorer options) assembled dynamically from a base schema plus activity/plugin-contributed sections; modal editors (Settings, Keyboard Shortcuts) with a shared titlebar (maximize / open-in-main-window)
+- Command palette with mode prefixes (`>` commands, `?` mode list, Go-to-File), per-row key chords, and recently-used; live Keyboard Shortcuts viewer driven by the command + keybinding registries
+- Activity architecture: the UI is composed of self-contained **activities** (Explorer, Preview, Details, Debug, …) that contribute editor-tab / sidebar-panel / status-bar / modal surfaces plus **commands, keybindings, and menu items**, and collaborate through a frozen internal facade (query, capabilities, pub/sub, hooks). Commands are the single source of truth; the registries are dynamic (runtime register/unregister)
+- Plugin system: out-of-core features authored against a permission-scoped Workbench API and loaded at runtime (manifest + permissions, Chrome-style). A first-party **Source Control** plugin (git changes panel, commit graph, branch status) is built entirely through it as the reference — see [`docs/PLUGINS.md`](docs/PLUGINS.md)
 
 ## Tech stack
 
@@ -81,9 +82,12 @@ files-workbench2/
 ├── client/                   Nuxt 3 SPA + Electron shell
 │   ├── assets/css/           Global CSS variables and base styles
 │   ├── activities/           First-party activity modules — each declares its tab/panel/status surfaces + runtime API (Workbench, Explorer, Preview, Details, Debug, Chat)
+│   ├── builtin-plugins/      First-party plugins loaded through the plugin host (Source Control)
+│   ├── models/               UI model classes (ui/: Activity, View, …) + plugin model (plugin/: manifest, permissions)
 │   ├── components/workbench/ All UI components
-│   ├── composables/          Vue composables in four groups:
-│   │   ├── activity/         Inter-activity API: event emitter + activity host (broker)
+│   ├── composables/          Vue composables, grouped:
+│   │   ├── activity/         Inter-activity API: event emitter + activity host (broker) + contribution registries
+│   │   ├── plugins/          Plugin loader: permission-scoped API factory + plugin host (load/unload, lifecycle)
 │   │   ├── interaction/      UI-behavior primitives (drag systems, click, hover, resize)
 │   │   ├── workbench/        Workbench assembly-root slices (editor grid, view layout, file ops, …)
 │   │   └── *.js              Foundational services (workspaces, preferences, queues, registries, …)
@@ -131,4 +135,5 @@ User-editable configuration lives in `config/`. See [`docs/DESIGN.md`](docs/DESI
 | [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) | Detailed dev environment setup |
 | [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) | Feature requirements |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Planned features and known issues |
+| [`docs/PLUGINS.md`](docs/PLUGINS.md) | Plugin authoring guide: manifest, permissions, API, contribution points |
 | [`AGENTS.md`](AGENTS.md) | Guide for AI coding agents working on this repo |

@@ -7,6 +7,6 @@
   "author": "Files Workbench",
   "icon": "mdiSourceBranch",
   "main": "src/plugin.js",
-  "permissions": ["activities", "commands", "editor", "events"],
+  "permissions": ["activities", "commands", "editor", "preferences", "events"],
   "host_permissions": ["scm:read", "scm:write"]
 }

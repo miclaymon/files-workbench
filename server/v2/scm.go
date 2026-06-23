@@ -162,7 +162,9 @@ func handleScmInfo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if st, err := runGit(root, "status", "--porcelain=v1"); err == nil {
+	// -uall expands untracked directories into individual files (so each carries a
+	// real filename, instead of git's default collapsed "dir/" entry).
+	if st, err := runGit(root, "status", "--porcelain=v1", "-uall"); err == nil {
 		info.Staged, info.Changes = parseGitStatus(st)
 	}
 	info.Log = parseGitLog(root)

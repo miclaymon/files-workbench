@@ -22,6 +22,20 @@ import { initGitData, useGitData } from './git-data.js'
 export function activate(api) {
   const { Activity, PanelView, ViewSection, EditorView, StatusView } = api
 
+  // Contribute the plugin's settings to the Settings panel (the configuration
+  // contribution point). Their values live under prefs.sourceControl.
+  api.preferences.register({
+    key: 'sourceControl',
+    title: 'Source Control',
+    properties: {
+      changesViewMode: {
+        type: 'string', enum: ['list', 'tree'], default: 'list',
+        title: 'Changes: View Mode',
+        description: 'Show changed files as a flat list or a folder tree.',
+      },
+    },
+  })
+
   // Wire the data layer to the brokered scm API and re-detect repos as the open
   // editor tabs change (a directory opened/closed may add/remove a repository).
   initGitData(api)

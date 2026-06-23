@@ -25,6 +25,7 @@ const FACADE_SLICE = {
   hooks:       (f) => ({ hooks: f.hooks }),
   modals:      (f) => ({ modals: f.modals }),
   editor:      (f) => ({ editor: f.editor }),
+  preferences: (f) => ({ preferences: f.preferences }),
   events:      (f) => ({ events: f.events }),
   selection:   (f) => ({ selection: f.selection }),
   query:       (f) => ({ query: f.query, peer: f.peer }),

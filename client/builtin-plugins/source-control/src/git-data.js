@@ -40,7 +40,14 @@ async function initRepoHere() {
   await refresh()
 }
 
-export function initGitData(api) { _api = api; refresh() }
+export function initGitData(api) {
+  _api = api
+  // Seed the runtime view mode from the contributed preference (its default until
+  // the user changes it); the section action still overrides it per session.
+  const pref = api.preferences?.get?.('sourceControl.changesViewMode')
+  if (pref === 'tree' || pref === 'list') changesViewMode.value = pref
+  refresh()
+}
 
 export function useGitData() {
   return {

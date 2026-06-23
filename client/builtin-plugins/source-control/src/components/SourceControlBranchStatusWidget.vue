@@ -28,6 +28,7 @@ function openGraph() { ctx?.facade?.commands?.execute('sourceControl.viewGitGrap
   gap: 4px;
   cursor: pointer;
   color: var(--text-muted, #ccc);
+  color: white;
   font-size: 12px;
   user-select: none;
 }

@@ -21,6 +21,7 @@ export const PERMISSIONS = Object.freeze({
   hooks:       'Add ordered transform/veto hooks into app data flows.',
   modals:      'Open, close, and contribute modal editors.',
   editor:      'Open registered editor tabs by kind.',
+  preferences: 'Contribute settings to the Settings panel and read their values.',
   events:      'Subscribe to and emit app-level events.',
   selection:   "Read the active activity's selection capability.",
   query:       'Query other activities and read app-level state.',
@@ -37,7 +38,6 @@ export const HOST_PERMISSIONS = Object.freeze({
   'scm:write':    'Mutate source-control (git) repositories: stage, commit, and init.',
   'control':      'Issue arbitrary control-server operations.',
   'clipboard':    'Read and write the workbench clipboard.',
-  'preferences':  'Read user preferences.',
 })
 
 export const PERMISSION_NAMES = Object.freeze(Object.keys(PERMISSIONS))

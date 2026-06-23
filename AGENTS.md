@@ -33,7 +33,7 @@ Workbench.vue                  Root shell: titlebar, activity bar, sidebar, edit
 
 ## Activity system
 
-The workbench is organized into **activities** — self-contained feature modules in `client/activities/` (`workbench`, `explorer`, `preview`, `details`, `debug`, `chat`). Each declares the surfaces it contributes and, optionally, a runtime **API** for collaboration. This is the foundation for a future plugin system; first-party activities use the same internal API a plugin will.
+The workbench is organized into **activities** — self-contained feature modules in `client/activities/` (`workbench`, `explorer`, `preview`, `details`, `debug`, `chat`). Each declares the surfaces it contributes and, optionally, a runtime **API** for collaboration. This is also the foundation of the plugin system (see **Plugin system** below) — first-party activities use the same internal API a plugin does, narrowed by permission.
 
 **Activity definition** (default export of each `activities/*.js`):
 
@@ -43,11 +43,14 @@ The workbench is organized into **activities** — self-contained feature module
   setup(ctx) → api,                       // optional; ctx = { api, host, editor, prefs, services, log }
                                           // call api.commands/keybindings/menus/hooks.register(…) here
   tabViews:    { [viewId]: { kind, label, icon, component, props(tab, ctx) } },
-  panelViews:  { [viewId]: { label, icon, component?, sections?, acceptsSections?, actions?, props?, on? } },
+  panelViews:  { [viewId]: { label, icon, location?, component?, sections?, acceptsSections?, actions?, props?, on? } },
   sections:    { [sectionId]: { label, icon, homeView, component, props(ctx), on(ctx), actions, … } },
   statusViews: { [id]: { region: 'left'|'right', order, component } },
+  modals:      { [id]: { label, icon, component, width?, height?, props(ctx), on(ctx), actions? } },
 }
 ```
+
+A `panelView` with `location: 'PrimarySideBar'` becomes an Activity Bar entry (the bar + primary sidebar are registry-driven, not hardcoded). `modals` are opened by id via `facade.modals.open(...)` and rendered in the shared `ui/ModalEditor.vue` chrome (Settings + Keyboard Shortcuts are modals on the Workbench activity).
 
 **Three surfaces, rendered by id:**
 - **tab views** → `editor/TabContentHost.vue` resolves a tab's runtime `kind` → tab view → component; listeners pass through via `$attrs` (so the EditorGroup → Editor → Workbench event chain is unchanged), and the mounted instance is handed back via `registerInstance` so EditorGroup keeps its imperative handle (refresh / optimistic rename).
@@ -74,9 +77,23 @@ The workbench is organized into **activities** — self-contained feature module
 - `menus.register(menuId, { command|items|build, group?, order?, when? })` + `menus.items(menuId, ctx)` — app-level menu contributions. Menu ids: `menubar/{file,edit,view,settings}`, `editor/tab`, `directory/{item,background,right-drag}`. Owner menus build their base items directly; contributions append.
 - `hooks.add(name, fn, order)` / `apply(name, value, ctx)` — generic ordered transform/veto chain (the menu API is built on it).
 - `activities.register(def)/unregister(id)/get/list` — dynamic activity registration (API **and** surfaces together); first-party use the startup bootstrap, plugins call this at runtime.
+- `modals.open(id)/close()/promote(id)/active/get/list` — modal-editor surfaces; `promote` re-presents a modal as an editor tab.
+- `editor.openTab(kind, { title, params, focusExisting })/tabs()` — open registered editor tabs by kind; read the open tabs.
+- `preferences.register({ key, title, properties })/get(path)` — contribute a Settings section + read a value (see Plugin system → preference contributions).
 - `events.on/once/emit`, `selection`, `peer(id)`, `query.{activeTab,activeActivityId}`, `log`.
 
 Menus, keybindings, and the command palette all **reference commands by id** — to add a shortcut/menu item, register or point at a command; don't hardcode an action.
+
+## Plugin system
+
+A **plugin** is an out-of-core activity loaded at runtime through a *permission-scoped* view of the same facade. First-party activities and plugins use one contribution path; plugins just get a narrowed API. **See [`docs/PLUGINS.md`](docs/PLUGINS.md) for the authoring guide.**
+
+- **UI model** (`client/models/ui/`): UI-agnostic classes — `Activity`, `View`, `EditorView`, `ModalView`, `PanelView`, `ViewSection`, `StatusView` — that carry metadata + a component reference (no Vue imports). `fromDefinition.js` wraps the declarative `client/activities/*.js` objects into instances; the registry stores instances. A plugin authors `new Activity(...).addView(new PanelView(...))`.
+- **Manifest + permissions** (`client/models/plugin/`): `manifest.js` (Chrome-style `manifest.json` validator), `permissions.js` (front-end `PERMISSIONS` gating facade slices, backend `HOST_PERMISSIONS` gating brokered services like `scm:read`/`scm:write`). JSON schema + example: `docs/plugins/`.
+- **Loader** (`client/composables/plugins/`): `usePluginApi.js` builds the frozen, permission-scoped `api` (UI classes + `log` + only the granted facade slices/brokers); `usePluginHost.js` loads/unloads `{ manifest, module }` pairs (dependency-ordered, lifecycle). `activate(api)` contributes and returns a disposer; `deactivate(api)` is optional.
+- **Loading**: built-ins are listed in `client/builtin-plugins/index.js` and loaded at startup in `Workbench.vue`. The archive/sandbox runtime path is not built yet — it will produce the same `{ manifest, module }` pairs the host already consumes. **Reference plugin: `client/builtin-plugins/source-control/`.**
+- **Brokered backend**: plugins never touch the filesystem/control server directly — host-permission'd services (e.g. `api.scm`) forward to the Go server (`server/v2/scm.go`) via a client broker (`client/lib/scm-api.js`, reads→data / writes→control, mock fallback when offline).
+- **Preference contributions** (`client/composables/usePreferenceSchema.js`): `api.preferences.register({ key, title, properties })` adds a section to the Settings panel (merged with the static base schema in `SettingsModal.vue`); values live under `prefs.<key>` and persist normally. `api.preferences.get(path)` reads a value.
 
 ## Key lib files and composables
 
@@ -88,6 +105,7 @@ Menus, keybindings, and the command palette all **reference commands by id** —
 | `lib/fs-api.js` | FS API calls: `fsStat`, `fsListDir`, `fsArchiveList`, `fsExeInfo`, read-only ops. Write ops are now routed through `useFileOpsQueue` / `sw-queue`. |
 | `lib/sw-queue.js` | Client bridge to the service worker. `swQueue.enqueue(kind, params)` adds an op; `swQueue.execute(opIds)` drains the SW queue and returns an array of Promises. Falls back to direct fetch when SW is unavailable. |
 | `lib/explorer-api.js` | Explorer tree API calls. |
+| `lib/scm-api.js` | Source-control (git) broker the plugin SCM service forwards to: `detectRepos`/`repoInfo` (reads→data server), `commit`/`init` (writes→control server), with mock fallback when the `/scm` endpoints are offline. |
 | `lib/perf-log.js` | Client-side performance timing helpers. |
 | `lib/time.js` | Notification time helpers: `isoDuration`/`humanAgo` for `<time>` relative labels, `isoDurationMs`/`humanDurationMs` for op timings, `clockTime` for absolute timestamps. |
 | `public/sw.js` | Service worker. Maintains a per-client op queue (keyed by `event.source.id`). Handles `INIT`, `ENQUEUE`, `EXECUTE`, `CLEAR` messages. `EXECUTE` fires all queued ops concurrently via fetch and replies `OP_COMPLETE`/`OP_ERROR` per op. |
@@ -103,17 +121,19 @@ Menus, keybindings, and the command palette all **reference commands by id** —
 | `useActionHistory.js` | Global undo/redo stack. `push({ label, undo, redo })` adds a reversible action. `undo()` / `redo()` execute and shift between stacks. |
 | `useDebugLog.js` | In-memory debug log shown in the Debug panel. `log(kind, msg, data)` appends; `.clear()` resets. |
 | `useLayoutGrid.js` | Pure recursive split-view grid engine. Leaves carry `{tabs[], activeTabId, tabPreviews, locked}`; branches carry `{direction, children[], sizes[]}`. Core ops: `insertLeafBeside`, `removeLeaf`, `mergeAll`, five presets. No DOM/reactivity. |
-| `useViewRegistry.js` | **Dynamic** flat content registry aggregated from `client/activities/` (grouped by activity, flattened to a by-id lookup) keyed by view/section/tab/status id. Reactive stores populated via `registerActivity(def)` / `unregisterActivity(id)` — bootstrapped from the activities list at import; plugins use the same path at runtime (so contributed surfaces appear/disappear live; `StatusBar` reads `getStatusViews` in a computed). Used by `ViewContentHost` (plus `TabContentHost` and `StatusBar`) to render content by id; `props(ctx)`/`on(ctx)` receive the activity host. Helpers: `getViewEntry`, `viewActions`, `sectionActions`, `sectionHeadingShown`, `bubbledSectionActions`, `viewAllowsDuplicateSections`, `viewDataId`, `sectionDataId`, plus activity-aware `tabViewForKind`, `getStatusViews(region)`, `activityOfView`, `activityOfTabKind`, `tabViewIdForKind`, `listActivities`, `getActivity`. |
+| `useViewRegistry.js` | **Dynamic** flat content registry aggregated from `client/activities/` (grouped by activity, flattened to a by-id lookup) keyed by view/section/tab/status id. Reactive stores populated via `registerActivity(def)` / `unregisterActivity(id)` — bootstrapped from the activities list at import; plugins use the same path at runtime (so contributed surfaces appear/disappear live; `StatusBar` reads `getStatusViews` in a computed). Used by `ViewContentHost` (plus `TabContentHost` and `StatusBar`) to render content by id; `props(ctx)`/`on(ctx)` receive the activity host. Helpers: `getViewEntry`, `viewActions`, `sectionActions`, `sectionHeadingShown`, `bubbledSectionActions`, `viewAllowsDuplicateSections`, `viewDataId`, `sectionDataId`, plus activity-aware `tabViewForKind`, `getStatusViews(region)`, `listPrimaryViews` (PrimarySideBar panels → Activity Bar), `getModal`/`listModals`, `activityOfView`, `activityOfTabKind`, `tabViewIdForKind`, `listActivities`, `getActivity`. |
 | `useIconPack.js` | Module-level singleton for the icon pack. Fetches `/icons/manifest` once; exposes `ensureLoaded()`, `resolveIcon(filename, isDir)`, `iconUrl(iconName)`, and `isAvailable`. All components needing pack icons call `ensureLoaded()` at mount time. |
 | `useCustomIcon.js` | Pure helper (no reactive state). `resolveCustomIcon(iconStr)` returns `null`, `{ type: 'url', url }`, or `{ type: 'folder-color', color }`. Folder-color must render as inline `<svg>` — not `<img>` — so CSS `color` applies. |
 | `useRpc.js` | Lightweight JSON-RPC helper for calling Go control-server endpoints. |
+| `useDirectoryFileTree.js` | Builds a renderable file tree (tree or flat list) from a flat set of `{ path }` items, mirroring the Explorer tree's `childrenByPath`/`_expandKey`/declared-section model + icon-pack icons. Used by the Source Control changes view; reusable by any surface with a flat path set. |
+| `usePreferenceSchema.js` | Registry of preference **sections** contributed by activities/plugins (`registerPreferences({ key, title, properties })`); `SettingsModal` merges them with the static base schema. Backs `facade.preferences`. |
 
 ### Composables — `activity/` (inter-activity API)
 
 | File | Purpose |
 |---|---|
 | `useEmitter.js` | `createEmitter()` → tiny synchronous pub/sub (`on`/`once`/`off`/`emit`/`clear`); subscriber errors are isolated. One per providing activity API, plus one for the host's app-level events. |
-| `useActivityHost.js` | The broker. Instantiates each activity's API (calls `setup`) and exposes `api(id)`/`requireApi(id)`, the reactive `selection` capability, `on`/`once`/`emit` (app events `active-tab-change` / `active-activity-change` / `activity-register` / `activity-unregister`), `log()`, and `activeTab`/`activeActivityId`/`activeGroupId`/`editorRoot`/`prefs`. Also builds the frozen **`host.facade`** — the contribution surface (`commands`, `keybindings`, `menus`, `hooks`, `activities`, `events`, `selection`, `peer`, `query`, `log`) handed to each `setup` as `api` and the eventual plugin import. Provided as `viewCtx`. Params: `{ editor, prefs, services, log }`. |
+| `useActivityHost.js` | The broker. Instantiates each activity's API (calls `setup`) and exposes `api(id)`/`requireApi(id)`, the reactive `selection` capability, `on`/`once`/`emit` (app events `active-tab-change` / `active-activity-change` / `activity-register` / `activity-unregister`), `log()`, and `activeTab`/`activeActivityId`/`activeGroupId`/`editorRoot`/`prefs`. Also builds the frozen **`host.facade`** — the contribution surface (`commands`, `keybindings`, `menus`, `hooks`, `activities`, `modals`, `editor`, `preferences`, `events`, `selection`, `peer`, `query`, `log`) handed to each `setup` as `api` and the plugin import (narrowed per permission for plugins). Provided as `viewCtx`. Params: `{ editor, prefs, services, log }`. |
 | `useCommandRegistry.js` | `createCommandRegistry({ getCtx, log })` → dynamic command store (`register`→disposer, `execute`, `get`, `list`, `isEnabled`). Commands are the single source of truth; `when`/`run` receive `ctx` (the host). |
 | `useKeybindingRegistry.js` | `createKeybindingRegistry()` → chord→command bindings (`register`→disposer, `forChord`, `list`) + `normalizeChord` (folds `cmd`/`meta`→`ctrl`, orders modifiers). |
 | `useHookRegistry.js` | `createHookRegistry()` → ordered transform/veto chain (`add`→disposer, `apply(name, value, ctx)`, `has`). Backs the menu contribution API. |
@@ -175,7 +195,8 @@ The Go process starts **two independent servers**: a read-only data server (port
 | `explorer.go` | `handleExplorer`, `handleExplorerRoot`, `handleExplorerHome`, `handleExplorerDrives`, `handleExplorerCategories` |
 | `media.go` | `handleMediaImage`, `handleMediaThumbnail`, `handleMediaPreview`, `handleMediaPreviewText`, `handleMediaMetadata`, `handleMediaArtwork`, `handleMediaCapabilities` |
 | `thumbnail.go` | `resizeImage`, `videoThumbnail` (ffmpeg), `audioThumbnail` (ffmpeg), disk-based thumbnail cache |
-| `preferences.go` | `handlePreferencesGet`, `handlePreferencesPut`, `handlePreferencesSchema` |
+| `preferences.go` | `handlePreferencesGet`, `handlePreferencesPut` (writes the prefs JSON verbatim — no schema strip), `handlePreferencesSchema` |
+| `scm.go` | Source control (git via the `git` CLI): `handleScmDetect` (repo discovery from open paths — ancestor/sibling/child), `handleScmInfo` (branch/ahead-behind/status/log), `handleScmCommit`, `handleScmInit`. detect/info on the data server, commit/init on control. The client reaches these only through the broker (`lib/scm-api.js`) behind the `scm:read`/`scm:write` plugin permissions. |
 | `blacklist.go` | Path exclusion rules loaded from server-side config |
 | `plugins.go` | Plugin loader; `loadPlugins()` reads `config/plugins/*/plugin.json`; `iconTheme` struct with `resolve()`, `resolveOpen()`, `has()`, `pick()`; `activeIconTheme` global |
 | `icons.go` | `handleIconsManifest` — returns icon lookup tables; `handleIconsSvg` — serves SVG by definition name (404 returns `image/svg+xml` Content-Type to prevent ORB errors while firing `@error`) |
@@ -260,7 +281,7 @@ Each status widget (`shell/status/*`) injects the host and renders nothing when 
 Don't hardcode an action in a menu item, keybinding switch, or the palette. Register a command (`host.facade.commands.register({ id, title, run, when?, toggled? })`) and reference it by id: menus use `{ command: 'id' }`, keybindings use `{ key, command }`, the palette lists `commands.list()`. App-level commands are the catalog in `Workbench.vue`; activity-specific ones are registered in that activity's `setup`. A command needing arguments (e.g. `editor.focusGroup`) sets `palette: false` and is invoked via a keybinding's `args`.
 
 ### facade (`api`) vs ctx (host)
-Two different objects: **`api`** = `host.facade`, the frozen *contribution/registration* surface passed to `setup` and imported by future plugins (`commands`, `keybindings`, `menus`, `hooks`, `activities`, `events`, `selection`, `peer`, `query`, `log`). **`ctx`** = the host itself, the *binding context* a command's `run(ctx)` / `when(ctx)` and registry `props(ctx)` receive (carries late-bound slice handlers like `ctx.doMove`). The facade deliberately omits those internals. When adding behaviour: register through `api`; implement the behaviour against `ctx`.
+Two different objects: **`api`** = `host.facade`, the frozen *contribution/registration* surface passed to `setup` and imported by plugins (`commands`, `keybindings`, `menus`, `hooks`, `activities`, `modals`, `editor`, `preferences`, `events`, `selection`, `peer`, `query`, `log`). **`ctx`** = the host itself, the *binding context* a command's `run(ctx)` / `when(ctx)` and registry `props(ctx)` receive (carries late-bound slice handlers like `ctx.doMove`). The facade deliberately omits those internals. When adding behaviour: register through `api`; implement the behaviour against `ctx`.
 
 ## Conventions
 

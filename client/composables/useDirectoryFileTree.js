@@ -53,10 +53,11 @@ export function useDirectoryFileTree({ items, mode } = {}) {
       seenDir.add(dirPath)
     }
     for (const it of flatItems.value) {
-      const segs = it.path.split('/')
+      const path = String(it.path).replace(/\/+$/, '')   // strip trailing slash (untracked dirs)
+      const segs = path.split('/')
       const parent = segs.slice(0, -1).join('/')
       ensureDir(parent)
-      ;(map[parent] ??= []).push({ ...it, name: segs[segs.length - 1], type: 'file' })
+      ;(map[parent] ??= []).push({ ...it, path, name: segs[segs.length - 1], type: 'file' })
     }
     for (const key of Object.keys(map)) {
       map[key].sort((a, b) =>
@@ -86,9 +87,10 @@ export function useDirectoryFileTree({ items, mode } = {}) {
   const listNodes = computed(() => [...flatItems.value]
     .sort((a, b) => a.path.localeCompare(b.path))
     .map((it) => {
-      const segs = it.path.split('/')
+      const path = String(it.path).replace(/\/+$/, '')
+      const segs = path.split('/')
       return {
-        ...it, key: it.path, _expandKey: it.path, name: segs[segs.length - 1], type: 'file',
+        ...it, path, key: path, _expandKey: path, name: segs[segs.length - 1], type: 'file',
         icon: iconName(segs[segs.length - 1], false), dir: segs.slice(0, -1).join('/'), children: [],
       }
     }))

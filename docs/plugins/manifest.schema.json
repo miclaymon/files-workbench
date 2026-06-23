@@ -36,7 +36,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["activities", "commands", "keybindings", "menus", "hooks", "modals", "editor", "events", "selection", "query"]
+        "enum": ["activities", "commands", "keybindings", "menus", "hooks", "modals", "editor", "preferences", "events", "selection", "query"]
       },
       "uniqueItems": true
     },
@@ -45,7 +45,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["fs:read", "fs:write", "scm:read", "scm:write", "control", "clipboard", "preferences"]
+        "enum": ["fs:read", "fs:write", "scm:read", "scm:write", "control", "clipboard"]
       },
       "uniqueItems": true
     },

@@ -2,6 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { ACTIVITIES } from '~/activities/index.js'
 import { activityOfTabKind, registerActivity, unregisterActivity, getModal, listModals } from '~/composables/useViewRegistry.js'
 import { collectLeaves } from '~/composables/useLayoutGrid.js'
+import { registerPreferences } from '~/composables/usePreferenceSchema.js'
 import { createEmitter } from './useEmitter.js'
 import { createCommandRegistry } from './useCommandRegistry.js'
 import { createKeybindingRegistry } from './useKeybindingRegistry.js'
@@ -185,6 +186,11 @@ export function useActivityHost({ editor, prefs, services = {}, log = () => {} }
     modals: { open: modals.open, close: modals.close, promote: modals.promote, active: activeModalId, get: getModal, list: listModals },
     // editor capability: open registered editor tabs by kind; read open tabs
     editor: { openTab: editorApi.openTab, tabs: editorApi.tabs },
+    // preferences: contribute a settings section (schema) + read a value by path
+    preferences: {
+      register: registerPreferences,
+      get: (path) => String(path).split('.').reduce((o, k) => o?.[k], prefs),
+    },
     // dynamic activity registration. First-party activities use the bootstrap
     // below; a plugin calls register() at runtime to add an activity's API and its
     // surfaces together, and gets a disposer that removes both.

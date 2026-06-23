@@ -134,6 +134,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, inject, useAttrs } from 'vue'
 import schemaData from '#preferences-schema'
+import { contributedSchemaProperties } from '~/composables/usePreferenceSchema.js'
 
 // Works in both presentations of the same EditorView. As a modal, ModalHost binds
 // `prefs` in and a `save` listener out (Workbench.js modal def). As a promoted
@@ -173,7 +174,10 @@ onMounted(async () => {
 // ── Value helpers ─────────────────────────────────────────────────────────────
 
 function getVal(path) {
-  return path.split('.').reduce((o, k) => o?.[k], localPrefs.value)
+  // Fall back to the schema default so contributed settings (not present in the
+  // user's prefs until changed) render at their declared default.
+  const v = path.split('.').reduce((o, k) => o?.[k], localPrefs.value)
+  return v !== undefined ? v : getDefault(path)
 }
 
 function getDefault(path) {
@@ -191,13 +195,17 @@ let _saveTimer = null
 const saveStatus = ref('')
 
 function setVal(path, value) {
-  const parts  = path.split('.')
-  const last   = parts.pop()
-  const target = parts.reduce((o, k) => o?.[k], localPrefs.value)
-  if (target != null) {
-    target[last] = value
-    scheduleSave()
+  const parts = path.split('.')
+  const last  = parts.pop()
+  // Create intermediate namespaces so a contributed section's first write
+  // (e.g. sourceControl.changesViewMode) doesn't no-op.
+  let target = localPrefs.value
+  for (const k of parts) {
+    if (target[k] == null || typeof target[k] !== 'object') target[k] = {}
+    target = target[k]
   }
+  target[last] = value
+  scheduleSave()
 }
 
 function scheduleSave() {
@@ -254,8 +262,12 @@ function extractDefaults(schema, path = '') {
   return out
 }
 
+// The static base schema merged with sections contributed by activities/plugins
+// (the configuration contribution point), so their settings render here too.
+const schemaProps = computed(() => ({ ...(schemaData?.properties ?? {}), ...contributedSchemaProperties() }))
+
 const defaults = computed(() => {
-  const flat = extractDefaults(schemaData)
+  const flat = extractDefaults({ properties: schemaProps.value })
   // Reconstruct nested object from flat paths
   const out = {}
   for (const [path, val] of Object.entries(flat)) {
@@ -271,11 +283,12 @@ const defaults = computed(() => {
 })
 
 const sections = computed(() => {
-  if (!schemaData?.properties) return []
+  const props = schemaProps.value
+  if (!Object.keys(props).length) return []
   const result = []
   const generalItems = []
 
-  for (const [key, prop] of Object.entries(schemaData.properties)) {
+  for (const [key, prop] of Object.entries(props)) {
     if (prop.type === 'array') continue
 
     if (prop.type === 'object' && prop.properties) {

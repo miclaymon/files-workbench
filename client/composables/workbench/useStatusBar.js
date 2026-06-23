@@ -7,7 +7,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 export function useStatusBar() {
   const serverConnected = ref(true)
   const dirStats = ref({ count: 0, totalSize: 0 })
-  const status = ref({ left: 'Ready', right: 'Connected' })
+  const status = ref({ /*left: 'Ready', right: 'Connected'*/ })
 
   const statusRight = computed(() => serverConnected.value ? 'Connected' : 'Disconnected')
 
@@ -23,7 +23,7 @@ export function useStatusBar() {
   // Show a transient message on the left status line, reverting to "Ready".
   function flashStatus(message, ms = 2000) {
     status.value.left = message
-    setTimeout(() => { status.value.left = 'Ready' }, ms)
+    // setTimeout(() => { status.value.left = 'Ready' }, ms)
   }
 
   // ── Server connection ping ────────────────────────────────────────────────

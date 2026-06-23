@@ -38,7 +38,7 @@ All workbench components live under `client/components/workbench/` and are group
 | `directory/` | `DirectoryPanel`, `DirectoryLayout`, all `Directory*Layout` variants, `DirectoryBreadcrumb`, `DirectoryHoverPreview`, `AudioPlayer`, `VideoPlayer` |
 | `explorer/` | `ExplorerPanel`, `ExplorerTree`, `TreeList`, `TreeItem`, `OpenEditorsView` |
 | `views/` | `PreviewPanel`, `DetailsPanel`, `ChatPanel`, `DebugPanel`; `preview/` subfolder for preview sub-components |
-| `ui/` | `FloatingMenu`, `ContextMenu`, `Tooltip`, `CommandPalette`, `SettingsModal`, `KeyboardShortcutsModal` |
+| `ui/` | `FloatingMenu`, `ContextMenu`, `Tooltip`, `CommandPalette`, `ModalEditor` (shared modal chrome), `ModalHost` (renders the active registered modal), `SettingsModal`, `KeyboardShortcutsModal` |
 
 `Workbench.vue` lives at the root of `components/workbench/`.
 
@@ -48,12 +48,13 @@ Composables live in `client/composables/` and are split into three layers (Nuxt 
 
 | Folder | Contents |
 |---|---|
-| `composables/*.js` | Foundational services and utilities: `useWorkspaces`, `usePreferences`, `useFileOpsQueue`, `useActionHistory`, `useDebugLog`, `useLayoutGrid`, `useViewRegistry`, `useIconPack`, `useCustomIcon`, `useRpc` |
+| `composables/*.js` | Foundational services and utilities: `useWorkspaces`, `usePreferences`, `useFileOpsQueue`, `useActionHistory`, `useDebugLog`, `useLayoutGrid`, `useViewRegistry`, `usePreferenceSchema` (contributed Settings sections), `useDirectoryFileTree` (file-tree builder), `useIconPack`, `useCustomIcon`, `useRpc` |
 | `composables/activity/` | Inter-activity API (see Activity system): `useEmitter` (pub/sub primitive), `useActivityHost` (the broker + frozen `facade`, provided as `viewCtx`), and the contribution registries `useCommandRegistry` / `useKeybindingRegistry` / `useHookRegistry` |
+| `composables/plugins/` | Plugin loader (see Plugin system): `usePluginApi` (builds the frozen, permission-scoped plugin API) and `usePluginHost` (loads/unloads `{ manifest, module }` pairs, dependency-ordered, with lifecycle) |
 | `composables/interaction/` | UI-behavior primitives consumed by individual components: drag systems (`useDrag`, `useRightClickDrag`, `useTreeDrag`, `useEditorDnd`, `useViewDrag`), `useClickDebounce`, `useHoverPreview`, `useSideBar`, `useStackResize` |
 | `composables/workbench/` | Workbench assembly-root slices — see Workbench shell section: `useStatusBar`, `useNotifications`, `useArchive`, `useEditorGrid`, `useViewLayout`, `useSelection`, `useFileOperations`, `useFileContextMenus`, `useAppMenus`, `useWorkbenchKeyboard` |
 
-Activity definition modules live in `client/activities/` (a sibling of `components/` and `composables/`) — one file per activity plus `index.js` (the ordered activities list). Surface lookups and tab-kind→activity resolution live in the dynamic `useViewRegistry.js`. See the Activity system section.
+Activity definition modules live in `client/activities/` (a sibling of `components/` and `composables/`) — one file per activity plus `index.js` (the ordered activities list). Surface lookups and tab-kind→activity resolution live in the dynamic `useViewRegistry.js`. The UI **model classes** these are wrapped into (`Activity`, `View`, …) live in `client/models/ui/`, and the plugin model (manifest validator, permissions) in `client/models/plugin/`. First-party plugins live in `client/builtin-plugins/`. See the Activity system and Plugin system sections.
 
 ### Workbench shell
 
@@ -72,8 +73,8 @@ Activity definition modules live in `client/activities/` (a sibling of `componen
 `useWorkspaces` is the single persistence instance; Workbench keeps it and passes it to `useViewLayout` (and pulls `getInitialEditor`/`saveEditor`/`explorerContext` for the editor + host). Workbench still owns the small local appearance/maximize toggles. The `viewCtx` that registry-bound content binds against is now the **activity host** (see Activity system), which Workbench builds and `provide`s; it assigns its slice handlers onto the host once the slices are instantiated. It composes the visible chrome from `shell/` components, which stay presentational (props in, events out):
 
 - `TitleBar` (`shell/`) — brand + `MenuBar` (File/Edit/View, each `{ key, label, items }`; the items arrays stay computed in `Workbench`), `AppHistory` (global back/forward — a placeholder, distinct from a tab's navigation history and from undo/redo), `CommandCenter` (the omnibar → command palette), and Electron window controls. `MenuBar` and `ActivityBar` own their own dropdown open/position state locally.
-- `ActivityBar` (`shell/`) — explorer/search/storage switcher + the Settings gear (which owns its own menu, fed `settingsMenuItems`); emits `toggle-view`.
-- `PrimarySideBar` (`shell/`) — the left pane: a non-droppable `ViewContainer` whose Explorer view hosts the Open Editors + Places sections, plus a Search placeholder; switches on the active primary view
+- `ActivityBar` (`shell/`) — primary-view switcher, now **registry-driven**: it renders an icon per `listPrimaryViews()` entry (panels with `location: 'PrimarySideBar'`, e.g. Explorer + the Source Control plugin) so a plugin's activity appears automatically, plus the Settings gear (which owns its own menu, fed `settingsMenuItems`); emits `toggle-view`.
+- `PrimarySideBar` (`shell/`) — the left pane: a non-droppable `ViewContainer` showing the single active primary view (Explorer's Open Editors + Places sections, or any other registered `PrimarySideBar` panel); switches on the active primary view chosen in the Activity Bar
 - `Editor` (`editor/`) — the recursive split grid of editor groups; receives `viewRoot`/`activeGroupId`/`maximizedGroupId`/`prefs` and a `registerGroup` ref-callback prop (the `useEditorGrid` slice owns the EditorGroup instance registry it uses for imperative refresh/rename), and re-emits every EditorGroup event up unchanged
 - `SecondarySideBar` + `BottomPanel` (`shell/`) — the two movable, droppable panes, each wrapping a tabbed `ViewContainer` (see ViewContainer panel system) plus its maximize/hide actions
 - All floating UI (context menus, right-drag drop menus, command palette, settings modal, keyboard shortcuts modal)
@@ -93,27 +94,21 @@ Each leaf carries two per-group flags: `tabPreviews` (default `true`) — when `
 
 Tabs support preview mode (`mode: 'peek'`, italic, one reused slot per group; promoted to `'normal'` on double-click or navigation), sticky pinning (`pinned`, grouped to the front with a pin affordance), horizontal-scroll overflow with a dropdown, and region-aware drag (see Drag and drop). View ▸ Editor Layout offers split up/down/left/right and presets (Single, Two Columns, Two Rows, Three Columns, Grid 2×2). Keyboard: `Ctrl+\` split right, `Ctrl+1..9` focus group, `Ctrl+W` close tab (Electron only — browser intercepts), `Ctrl+,` open Settings, `Ctrl+Shift+P` open Command Palette.
 
-### Settings modal
+### Modal editors (Settings, Keyboard Shortcuts)
 
-`SettingsModal.vue` is a full-screen modal overlay (teleported to `<body>`) styled after VS Code's Settings editor. Layout: a search bar spanning the top, a fixed-width left sidebar listing sections, and a scrollable main area with sticky section headings.
+Modals are a **registered surface**: an activity contributes a `ModalView` (id, title, icon, body component, optional context actions), `facade.modals.open(id)` makes it active, and `ui/ModalHost.vue` renders the active one inside the shared `ui/ModalEditor.vue` chrome. `ModalEditor` is the reusable shell — a titlebar with icon + title on the left and a permanent **Open-in-Main-Window / Maximize / Close** trio (plus context actions) on the right; Esc closes via a capture-phase listener. *Open in Main Window* `promote`s the modal to an editor tab (the same `EditorView` presented as a tab). Settings and Keyboard Shortcuts are modals declared on the **Workbench** activity (their `.vue` files are body-only; the host supplies the chrome).
 
-Sections are derived at runtime from `preferences.schema.json` (imported via the `#preferences-schema` alias). Top-level scalar properties form a **General** section; top-level `type: object` properties each become their own named section (Explorer, Preview Panel, Cache, …). Properties marked `x-devOnly` are hidden unless Developer Mode is on.
+`SettingsModal.vue` is styled after VS Code's Settings editor: a top search bar, a left sidebar listing sections, and a scrollable main area with sticky headings. Sections are derived from the **merge** of the static base schema (`preferences.schema.json` via the `#preferences-schema` alias) and **contributed** sections — activities/plugins call `api.preferences.register({ key, title, properties })` (registry: `usePreferenceSchema.js`), so their settings appear automatically. Top-level scalars form a **General** section; `type: object` properties (base or contributed) each become a named section; `x-devOnly` properties hide unless Developer Mode is on. `getVal` falls back to the schema default (so a contributed setting renders before it's set) and `setVal` creates intermediate namespaces (so a contributed section's first write persists). Each change updates a `localPrefs` deep copy and schedules a 300 ms-debounced `savePrefs` (no manual Save); a modified-from-default setting shows a blue dot; a brief `✓ Saved` appears after each write. Opens via `Ctrl+,` or Settings ▸ Preferences.
 
-Every control change updates a local `localPrefs` deep copy immediately (instant UI feedback) and schedules an auto-save via a 300 ms debounce that calls `savePrefs` from `usePreferences`. There is no manual Save button. Settings that differ from their schema default show a small blue dot. A brief `✓ Saved` confirmation appears in the bottom-right corner after each successful write.
-
-`SettingsModal` opens via `Ctrl+,` (checked before the input-focus guard so it works from any context) or Settings ▸ Preferences.
-
-### Keyboard shortcuts modal
-
-`KeyboardShortcutsModal.vue` is a read-only reference modal styled after VS Code's Keyboard Shortcuts editor. It shows all current shortcuts in a grouped table with **Command / Keybinding / When / Source** columns. `<kbd>` elements render each key token with a depressed-border style. The search bar filters across command name, key text, and when-context. Opens via Settings ▸ Keyboard Shortcuts.
+`KeyboardShortcutsModal.vue` is a read-only reference table (**Command / Keybinding / When / Source** columns, `<kbd>` chips, search filtering) built from the **live** command + keybinding registries — one row per command×binding, grouped by category, unbound commands shown with no chord. Opens via Settings ▸ Keyboard Shortcuts.
 
 ### Command palette
 
-`CommandPalette.vue` is a floating modal overlay (teleported to `<body>`) that provides fuzzy command search. It opens via `Ctrl+Shift+P` (the `workbench.openCommandPalette` command) or clicking the omnibar in the title bar.
+`CommandPalette.vue` is a floating modal (teleported to `<body>`) driven by a **mode-prefix** architecture: a leading prefix selects a mode — `>` Show and Run Commands (wired), `?` the mode list, empty = Go to File (stub). The title-bar omnibar opens the **home view** (mode list + results); `Ctrl+P` opens Go to File; `Ctrl+Shift+P` opens `>` commands. New modes (file/symbol search) drop into the same provider model without UI changes.
 
-Commands are sourced directly from the **command registry** (`Workbench`'s `paletteCommands` computed): `commands.list()` filtered to enabled commands (`isEnabled`) that opt into the palette (`palette !== false`), sorted by `category` then title. Each entry's `action` calls `commands.execute(id)`; its `category` (e.g. `"View"`, `"Editor"`) shows right-aligned in the result row; commands with a `toggled(ctx)` predicate show a checkmark when it returns true. Because the list is derived live from the registry, commands contributed by any activity/plugin appear automatically.
+In commands mode the items come from the **command registry** (`Workbench`'s `paletteCommands`): `commands.list()` filtered to enabled commands that opt in (`palette !== false`), each annotated with its **bound chord** (reverse lookup via `keybindings.forCommand`) and a `toggled` checkmark; with an empty query they split into **recently used** (persisted to localStorage) + **other commands**. So commands contributed by any activity/plugin appear automatically with their shortcut.
 
-Fuzzy scoring ranks results: exact label match → prefix match → substring match → sequential character match → no match (excluded). Results are capped at 50 and re-ranked on every keystroke. Arrow keys navigate, Enter executes (action deferred one frame so the palette closes first), Escape dismisses. The `Ctrl+Shift+P` handler is checked before the early-return guard that skips shortcuts when an input is focused, so the palette can be opened from any context.
+Fuzzy scoring ranks results: exact → prefix → substring → sequential character match → excluded. Arrow keys navigate, Enter executes (deferred one frame so the palette closes first), Escape dismisses. The open handlers fire before the input-focus guard, so the palette opens from any context.
 
 ### ViewContainer panel system
 
@@ -159,7 +154,7 @@ A View's own self-section (`id === viewId`) can't be dragged out at all; **locke
 
 **View management**: `PANEL_VIEW_REGISTRY` maps view IDs to icons, labels, and display-only shortcut hints. `VIEW_DEFAULT_CONTAINER` maps each ID to its home container. `isViewVisible` checks all containers and merge groups; `addView(id, preferredCid)` places a missing view back in a preferred or default container; `recoverMissingViews` (called on `onMounted`) restores any views lost due to corrupted workspace state, skipping those in `hiddenViews`. A runtime `viewLastContainer` map remembers each view's most recent container so that re-showing a hidden view returns it home rather than defaulting to the registry default.
 
-Note: the **Activity Bar** (`.activitybar`, the icon-only strip with Explorer/Search/Storage/Settings) is a distinct, separate VS Code concept from the views described above — it switches which view container is shown in the primary sidebar and is unaffected by this naming.
+Note: the **Activity Bar** (`.activitybar`, the icon-only strip) is a distinct, separate VS Code concept from the views described above — it switches which view container is shown in the primary sidebar. Its entries are registry-driven (`listPrimaryViews()`: panels with `location: 'PrimarySideBar'`), so registering a `PrimarySideBar` panel (first-party or plugin) adds an icon automatically.
 
 ### Context menu
 
@@ -193,7 +188,7 @@ This means adding a new event in a leaf component requires threading it through 
 
 ## Activity system
 
-The workbench is organized into **activities** — self-contained feature modules in `client/activities/` (`workbench`, `explorer`, `preview`, `details`, `debug`, `chat`). An activity declares the **surfaces** it contributes and, optionally, a runtime **API** that other activities query or subscribe to. This modularizes each activity's context and is the foundation for a future third-party plugin system: first-party activities use the same internal API a plugin eventually will.
+The workbench is organized into **activities** — self-contained feature modules in `client/activities/` (`workbench`, `explorer`, `preview`, `details`, `debug`, `chat`). An activity declares the **surfaces** it contributes and, optionally, a runtime **API** that other activities query or subscribe to. This modularizes each activity's context and is the foundation of the plugin system (see Plugin system below): first-party activities use the same internal API a plugin does, narrowed by permission.
 
 ### Activity definition
 
@@ -239,6 +234,9 @@ The host also builds the frozen **`host.facade`** — handed to every `setup` as
 - **Menus** — `facade.menus.register(menuId, { command|items|build, group?, order?, when? })` + `menus.items(menuId, ctx)`. Owner-built menus (the menu bar in `useAppMenus`; the context menus in `useFileContextMenus`) assemble their **base** items directly, then append contributed items keyed by menu id (`menubar/{file,edit,view,settings}`, `editor/tab`, `directory/{item,background,right-drag}`). This is the two-tier model: an activity controls its own menus directly, while any activity/plugin can contribute options to app-level menus.
 - **Hooks** (`useHookRegistry.js`) — `facade.hooks.add(name, fn, order)` / `apply(name, value, ctx)`: a synchronous, ordered transform/veto chain (distinct from fire-and-forget events). The menu contribution API is built on it; future cancellable points (`before-rename`, …) use the same mechanism.
 - **Activities** — `facade.activities.register(def)` / `unregister(id)` / `get` / `list`: dynamic registration that wires an activity's API **and** its surfaces together. First-party activities use the startup bootstrap; a plugin calls `register` at runtime and gets a disposer that removes both.
+- **Modals** — `facade.modals.open(id)` / `close()` / `promote(id)` / `active` / `get` / `list`: modal-editor surfaces (a `ModalView` contributed by an activity). `promote` re-presents the modal as an editor tab (see Modal editors above). Settings and Keyboard Shortcuts are modals on the Workbench activity.
+- **Editor** — `facade.editor.openTab(kind, { title, params, focusExisting })` / `tabs()`: open a registered editor tab by kind (focusing an existing one of that kind, or pinning per-tab `params`), and read the open tabs.
+- **Preferences** — `facade.preferences.register({ key, title, properties })` / `get(path)`: contribute a Settings section (merged into the panel by `SettingsModal`, registry in `usePreferenceSchema.js`) and read a value. Contributed values live under `prefs.<key>` and persist normally.
 
 ### Collaboration: two mechanisms
 
@@ -252,6 +250,18 @@ The host also builds the frozen **`host.facade`** — handed to every `setup` as
 - **Debug** is a provider — its API exposes `log()`, surfaced app-wide as `host.log(...)` so any activity can push to the Debug panel.
 
 There is no workspace-schema change: the runtime tab `kind` remains the bridge between persisted tabs and the registry's tab views.
+
+## Plugin system
+
+A **plugin** is an out-of-core activity loaded at runtime through a *permission-scoped* view of the same facade — first-party activities and plugins share one contribution path; a plugin just gets a narrowed API. The authoring guide is [`docs/PLUGINS.md`](PLUGINS.md); the architecture:
+
+- **UI model** (`client/models/ui/`) — UI-agnostic classes (`Activity`, `View`, `EditorView`, `ModalView`, `PanelView`, `ViewSection`, `StatusView`) that carry metadata + a component reference, no Vue imports. `fromDefinition.js` wraps the declarative `client/activities/*.js` objects into instances, so first-party activities keep their authoring shape while `useViewRegistry` operates on instances; a plugin constructs them directly (`new Activity(...).addView(new PanelView(...))`).
+- **Manifest + permissions** (`client/models/plugin/`) — `manifest.js` validates a Chrome-style `manifest.json` (id/version/main/permissions/host_permissions/dependencies). `permissions.js` defines two tiers: front-end `PERMISSIONS` each gating a facade slice, and backend `HOST_PERMISSIONS` each gating a brokered service. Unknown permissions are ignored with a warning (forward-compatible).
+- **Loader** (`client/composables/plugins/`) — `usePluginApi.js` builds the frozen `api` handed to `activate`: the UI model classes + `log` always, plus exactly the facade slices and brokered services the declared permissions grant. `usePluginHost.js` loads/unloads `{ manifest, module }` pairs (dependency-ordered, with disposers). `activate(api)` contributes and returns a disposer; `deactivate(api)` is optional.
+- **Loading** — built-ins are listed in `client/builtin-plugins/index.js` and loaded at startup in `Workbench.vue`. The archive/sandbox runtime (`.zip`/`.vsix` → extract → import `src/plugin.js` sandboxed) is planned and will produce the same `{ manifest, module }` pairs.
+- **Brokered backend** — plugins never touch the filesystem/control server directly. A host-permission'd service (e.g. `api.scm`, gated by `scm:read`/`scm:write`) forwards to a client broker (`client/lib/scm-api.js`) that calls the Go server's `/scm` endpoints (`server/v2/scm.go`: git detect/info/commit/init), reads→data and writes→control, with a mock fallback when the endpoints are offline.
+
+The reference is the first-party **Source Control** plugin (`client/builtin-plugins/source-control/`): a `PrimarySideBar` panel with Repositories / Changes / Graph view sections, a Git Graph editor tab (repo pinned at open time via tab `params`), a branch status widget, commands + a section action, a contributed preference, and the `scm:*` git backend — all through the permission-scoped API.
 
 ## State management
 
@@ -424,6 +434,7 @@ Functional areas:
 - **media** — thumbnails (image resize via `golang.org/x/image`; video frame and audio artwork extraction via ffmpeg), file metadata, raw file serving
 - **icons** — serve icon pack manifest (`/icons/manifest`) and individual SVG icons by definition name (`/icons/svg?name=…`)
 - **preferences** — read and write user preferences JSON, serve the preferences JSON Schema
+- **scm** — source control via the `git` CLI: detect repositories reachable from open paths, report branch/ahead-behind/status/log, commit, init (`server/v2/scm.go`); reached from the client only through the SCM broker behind the `scm:*` plugin permissions
 - **perf** — client-side performance log ingestion
 
 Thumbnail generation is handled by `thumbnail.go` and results are stored in a disk-based cache keyed by file path, size, and type. `blacklist.go` loads path exclusion rules from a server-side config file rather than URL parameters.
