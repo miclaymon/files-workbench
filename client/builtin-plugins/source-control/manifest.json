@@ -1,0 +1,12 @@
+{
+  "manifest_version": 1,
+  "id": "source-control",
+  "name": "Source Control",
+  "version": "1.0.0",
+  "description": "Git source control: a changes panel, a commit-graph editor tab, and a branch status widget.",
+  "author": "Files Workbench",
+  "icon": "mdiSourceBranch",
+  "main": "src/plugin.js",
+  "permissions": ["activities", "commands", "editor", "events"],
+  "host_permissions": ["scm:read", "scm:write"]
+}

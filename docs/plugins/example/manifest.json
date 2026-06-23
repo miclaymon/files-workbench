@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "id": "hello-world",
+  "name": "Hello World",
+  "version": "1.0.0",
+  "description": "Example plugin: contributes a sidebar panel, a command, a keybinding, and a left status widget.",
+  "author": "Files Workbench",
+  "icon": "mdiHandWave",
+  "main": "src/plugin.js",
+  "permissions": ["activities", "commands", "keybindings"]
+}

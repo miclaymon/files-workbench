@@ -1,6 +1,6 @@
 import { ref, computed, watch } from 'vue'
-import { mdiMessage, mdiEye, mdiInformation, mdiBug, mdiFileTree } from '@mdi/js'
-import { getViewEntry, viewAllowsDuplicateSections } from '~/composables/useViewRegistry.js'
+import { mdiMessage, mdiEye, mdiInformation, mdiBug } from '@mdi/js'
+import { getViewEntry, viewAllowsDuplicateSections, listPrimaryViews } from '~/composables/useViewRegistry.js'
 
 // ── View layout slice ─────────────────────────────────────────────────────────
 // The whole panel/sidebar layout engine: per-container view-id lists, merge groups
@@ -22,8 +22,9 @@ export function useViewLayout({ workspaces, prefs, savePrefs }) {
     getViewSections, saveViewSections,
   } = workspaces
 
-  // Primary sidebar view container definitions
-  const primarySidebarViews = [{ id: 'explorer', icon: mdiFileTree, label: 'Explorer' }]
+  // Primary sidebar entries (the Activity Bar): the registry's PrimarySideBar
+  // panels, so plugin-contributed activities appear automatically.
+  const primarySidebarViews = computed(() => listPrimaryViews())
 
   // Per-view section state for each container (the SplitSectionArea level). The
   // primary sidebar's Explorer view owns Places + Open Editors; the movable
@@ -35,6 +36,31 @@ export function useViewLayout({ workspaces, prefs, savePrefs }) {
   watch(() => JSON.stringify(primaryViewSections.value),   () => saveViewSections('primarySidebar',   primaryViewSections.value))
   watch(() => JSON.stringify(secondaryViewSections.value), () => saveViewSections('secondarySidebar', secondaryViewSections.value))
   watch(() => JSON.stringify(panelViewSections.value),     () => saveViewSections('panel',             panelViewSections.value))
+
+  // Seed declared sections for any primary view lacking saved state (e.g. a
+  // plugin's activity, which the workspace-default seed doesn't cover) into the
+  // reactive state — so its sections become real, draggable/mergeable instances
+  // like Explorer's, not just display-derived. Runs now and whenever a new primary
+  // view appears (a plugin loads after this composable is created).
+  let _seedSeq = 0
+  watch(primarySidebarViews, (views) => {
+    let changed = false
+    const next = { ...primaryViewSections.value }
+    for (const v of views) {
+      if (next[v.id]) continue
+      const declared = getViewEntry(v.id)?.sections
+      if (!declared?.length) continue
+      next[v.id] = declared.map(sid => ({
+        id:         sid,
+        homeViewId: getViewEntry(sid)?.homeView ?? v.id,
+        collapsed:  false,
+        size:       1,
+        instanceId: `${sid}-${++_seedSeq}`,
+      }))
+      changed = true
+    }
+    if (changed) primaryViewSections.value = next
+  }, { immediate: true })
 
   // Icon registry for well-known panel views
   // `shortcut` strings are display-only hints in the header context menu; the

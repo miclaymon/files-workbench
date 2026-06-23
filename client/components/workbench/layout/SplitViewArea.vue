@@ -63,9 +63,24 @@ const { activeDrag } = useViewDrag()
 function labelFor(view) { return getViewEntry(view.id)?.label ?? view.id }
 function iconFor(view)  { return getViewEntry(view.id)?.icon ?? '' }
 
-// A View's sections, or a single implicit self-section (its own content, no heading).
+// A View's sections to render: saved layout state if present; otherwise the
+// View's *declared* sections from the registry (so a dynamically-registered view —
+// e.g. a plugin's — shows its sections without needing a workspace-default seed);
+// failing that, a single implicit self-section (the View's own content, no heading).
 function sectionsFor(viewId) {
-  return props.viewSections[viewId] ?? [{ id: viewId, homeViewId: viewId, collapsed: false, size: 1 }]
+  const saved = props.viewSections[viewId]
+  if (saved) return saved
+  const declared = getViewEntry(viewId)?.sections
+  if (declared?.length) {
+    return declared.map(sid => ({
+      id:         sid,
+      homeViewId: getViewEntry(sid)?.homeView ?? viewId,
+      collapsed:  false,
+      size:       1,
+      instanceId: `${sid}-default`,
+    }))
+  }
+  return [{ id: viewId, homeViewId: viewId, collapsed: false, size: 1 }]
 }
 
 function onToggle(i, collapsed) {

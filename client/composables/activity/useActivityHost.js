@@ -1,6 +1,7 @@
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ACTIVITIES } from '~/activities/index.js'
-import { activityOfTabKind, registerActivity, unregisterActivity } from '~/composables/useViewRegistry.js'
+import { activityOfTabKind, registerActivity, unregisterActivity, getModal, listModals } from '~/composables/useViewRegistry.js'
+import { collectLeaves } from '~/composables/useLayoutGrid.js'
 import { createEmitter } from './useEmitter.js'
 import { createCommandRegistry } from './useCommandRegistry.js'
 import { createKeybindingRegistry } from './useKeybindingRegistry.js'
@@ -81,6 +82,59 @@ export function useActivityHost({ editor, prefs, services = {}, log = () => {} }
   const keybindings = createKeybindingRegistry({ log })
   const hooks = createHookRegistry({ log })
 
+  // Editor capability: open editor tabs by kind. Focuses an existing tab of that
+  // kind instead of duplicating (Settings, Git Graph, … are singletons); the tab
+  // body resolves through the registry (tabViewForKind). Lets activities/plugins
+  // contribute editor tabs without reaching into the editor-grid slice directly.
+  const editorApi = {
+    // `params` is opaque per-tab context fixed at open time (e.g. the Git Graph's
+    // repo) — the tab view reads it via props(tab, ctx). With focusExisting:false
+    // each call opens a distinct tab (so two repos get two Git Graph tabs).
+    openTab(kind, { title, params = null, focusExisting = true } = {}) {
+      if (focusExisting) {
+        const existing = editor.findTabByKind(kind)
+        if (existing) { editor.focusTab(existing.groupId, existing.tab.id); return existing.tab.id }
+      }
+      const id = services.uuid()
+      const tab = {
+        id, kind, title: title ?? kind,
+        mode: 'normal', pinned: false, selectedItems: [], focusedItem: null, selectedPath: '', path: '',
+      }
+      if (params) tab.params = params
+      editor.addTabToActiveGroup(tab)
+      return id
+    },
+    // A read-only snapshot of every open tab across all groups (id/kind/title/path)
+    // — lets an activity/plugin reason about what's open (e.g. which directories,
+    // for repo detection) without reaching into the editor-grid slice.
+    tabs() {
+      return collectLeaves(editorRoot.value).flatMap(leaf =>
+        (leaf.tabs ?? []).map(t => ({ id: t.id, kind: t.kind, title: t.title, path: t.path ?? '' })))
+    },
+  }
+
+  // Modal controller: a single active-modal id. Modals are activity-contributed
+  // ModalView surfaces (Settings, Keyboard Shortcuts, …); ModalHost renders the
+  // active one in the ModalEditor shell. open/close drive it; commands and menus
+  // open a modal by id instead of toggling a per-modal ref.
+  const activeModalId = ref(null)
+  const modals = {
+    open(id) { if (getModal(id)) activeModalId.value = id; else log('modals', `no such modal "${id}"`) },
+    close() { activeModalId.value = null },
+    // Promote a modal to a real editor tab ("Open in Main Window"): present the
+    // same ModalView as a tab (its `kind` resolves the body via the registry),
+    // then close the modal.
+    promote(id) {
+      const view = getModal(id)
+      if (!view?.kind) { log('modals', `modal "${id}" is not promotable`); return }
+      editorApi.openTab(view.kind, { title: view.label })
+      modals.close()
+    },
+    active: activeModalId,
+    get: getModal,
+    list: listModals,
+  }
+
   // Menu contribution API: app-level menus (the menu bar and shared context menus)
   // collect items from any activity/plugin. Backed by the hook registry — each
   // contribution is an ordered hook on `menu:<id>` that appends its items, and
@@ -127,6 +181,10 @@ export function useActivityHost({ editor, prefs, services = {}, log = () => {} }
     // (app-level menus + shared context menus) built on top of them
     hooks: { add: hooks.add, apply: hooks.apply, has: hooks.has },
     menus: { register: menus.register, items: menus.items },
+    // modal surfaces (open/close/promote by id; `active` is a readonly ref of the open id)
+    modals: { open: modals.open, close: modals.close, promote: modals.promote, active: activeModalId, get: getModal, list: listModals },
+    // editor capability: open registered editor tabs by kind; read open tabs
+    editor: { openTab: editorApi.openTab, tabs: editorApi.tabs },
     // dynamic activity registration. First-party activities use the bootstrap
     // below; a plugin calls register() at runtime to add an activity's API and its
     // surfaces together, and gets a disposer that removes both.

@@ -138,13 +138,14 @@ export function useAppMenus({ host, history, views, savePrefs, statusbar, explor
   const settingsMenuItems = computed(() => buildMenu(settingsTree, 'menubar/settings'))
 
   // ── Modals ────────────────────────────────────────────────────────────────────
-  const commandPaletteOpen         = ref(false)
-  const settingsModalOpen          = ref(false)
-  const keyboardShortcutsModalOpen = ref(false)
+  // The command palette keeps its own open-state ref; Settings and Keyboard
+  // Shortcuts are registered ModalView surfaces opened by id through the modal
+  // controller (host.facade.modals), rendered by ModalHost.
+  const commandPaletteOpen = ref(false)
 
   function openCommandPalette()    { commandPaletteOpen.value = true }
-  function openSettingsModal()     { settingsModalOpen.value = true }
-  function openKeyboardShortcuts() { keyboardShortcutsModalOpen.value = true }
+  function openSettingsModal()     { host.facade.modals.open('settings') }
+  function openKeyboardShortcuts() { host.facade.modals.open('keyboardShortcuts') }
 
   async function savePreferences(newPrefs) {
     try {
@@ -158,7 +159,7 @@ export function useAppMenus({ host, history, views, savePrefs, statusbar, explor
 
   return {
     titleMenus, settingsMenuItems,
-    commandPaletteOpen, settingsModalOpen, keyboardShortcutsModalOpen,
+    commandPaletteOpen,
     openCommandPalette, openSettingsModal, openKeyboardShortcuts, savePreferences,
   }
 }

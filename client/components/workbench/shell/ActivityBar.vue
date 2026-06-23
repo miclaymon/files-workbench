@@ -1,14 +1,16 @@
 <template>
   <div class="activitybar">
     <div class="activitybar-top">
-      <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activePrimaryView === 'explorer' }" title="Explorer" @click="$emit('toggle-view', 'explorer')">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiFileTree" /></svg>
-      </a>
-      <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activePrimaryView === 'search' }" title="Search" @click="$emit('toggle-view', 'search')">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiMagnify" /></svg>
-      </a>
-      <a href="javascript:void(0)" class="activitybar-icon" :class="{ active: activePrimaryView === 'storage' }" title="Storage" @click="$emit('toggle-view', 'storage')">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiHarddisk" /></svg>
+      <a
+        v-for="view in views"
+        :key="view.id"
+        href="javascript:void(0)"
+        class="activitybar-icon"
+        :class="{ active: activePrimaryView === view.id }"
+        :title="view.label"
+        @click="$emit('toggle-view', view.id)"
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path :d="view.icon" /></svg>
       </a>
     </div>
     <div class="activitybar-bottom">
@@ -22,13 +24,15 @@
 
 <script setup>
 import { ref } from 'vue'
-import { mdiFileTree, mdiMagnify, mdiHarddisk, mdiCog } from '@mdi/js'
+import { mdiCog } from '@mdi/js'
 import FloatingMenu from '../ui/FloatingMenu.vue'
 
-// The icon-only Activity Bar that switches the primary sidebar view. The
-// switch itself is delegated upward (`toggle-view`); the Settings gear owns its
-// own dropdown locally, positioned to the right of the button.
+// The icon-only Activity Bar that switches the primary sidebar view. Entries are
+// the registry's primary-side-bar panels (`views`), so a plugin contributing a
+// PrimarySideBar activity appears here automatically. The switch is delegated
+// upward (`toggle-view`); the Settings gear owns its own dropdown locally.
 defineProps({
+  views:             { type: Array,  default: () => [] },
   activePrimaryView: { type: String, default: 'explorer' },
   settingsMenuItems: { type: Array,  default: () => [] },
 })

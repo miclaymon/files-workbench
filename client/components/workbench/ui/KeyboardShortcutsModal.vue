@@ -1,11 +1,5 @@
 <template>
-  <ModalEditor
-    :visible="visible"
-    title="Keyboard Shortcuts"
-    :icon="mdiKeyboardOutline"
-    :actions="modalActions"
-    @close="$emit('close')"
-  >
+  <div class="ks-root">
     <!-- Top search bar -->
     <div class="ks-search-row">
       <svg class="ks-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
@@ -58,47 +52,33 @@
         </div>
       </template>
     </div>
-  </ModalEditor>
+  </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick } from 'vue'
-import { mdiKeyboardOutline, mdiCodeJson } from '@mdi/js'
+import { ref, computed, onMounted, nextTick, inject } from 'vue'
 import { formatChord } from '~/composables/activity/useKeybindingRegistry.js'
-import ModalEditor from './ModalEditor.vue'
 
 // Read-only viewer over the live command + keybinding registries. Every command
 // is listed (grouped by its category); a command with multiple bindings produces
 // one row per binding (e.g. Focus Editor Group → Ctrl+1…9), an unbound command a
 // single row with no keybinding — mirroring VS Code's full keybindings list.
+// Works in both presentations of the same EditorView: ModalHost binds `host` in;
+// as a promoted editor tab it isn't bound, so we fall back to `viewCtx` (the host).
 const props = defineProps({
-  visible: { type: Boolean, required: true },
-  host:    { type: Object,  required: true },
+  host: { type: Object, default: null },
 })
-defineEmits(['close'])
+// Honor the `host` prop only when it really is the host (ModalHost binds it). In a
+// promoted tab, TabContentHost's props hook passes the tab object instead, so fall
+// back to the injected host.
+const ctx = (props.host?.facade ? props.host : null) ?? inject('viewCtx', null)
 
 const searchRef  = ref(null)
 const searchQuery = ref('')
 
-// Context action shown in the modal titlebar. Disabled until keybindings are
-// file-backed and a code-editor tab kind exists (both later phases) — opening a
-// JSON file that doesn't yet drive the registry would be misleading.
-// TODO: wire "Open Keyboard Shortcuts (JSON)" once keybindings load from
-// config/keybindings/*.json AND a code-editor tab kind exists (see TODO.md).
-const modalActions = [{
-  key:      'json',
-  icon:     mdiCodeJson,
-  title:    'Open Keyboard Shortcuts (JSON) — available once keybindings are file-backed',
-  disabled: true,
-  run:      () => {},
-}]
-
-watch(() => props.visible, async (v) => {
-  if (v) {
-    searchQuery.value = ''
-    await nextTick()
-    searchRef.value?.focus()
-  }
+onMounted(async () => {
+  await nextTick()
+  searchRef.value?.focus()
 })
 
 // ── Live rows from the registries ─────────────────────────────────────────────
@@ -106,7 +86,7 @@ watch(() => props.visible, async (v) => {
 // array of display tokens. `when` flags conditionally-enabled commands (our
 // predicate `when()` can't be stringified, so we show a generic marker).
 const rows = computed(() => {
-  const { commands, keybindings } = props.host.facade
+  const { commands, keybindings } = ctx.facade
   const out = []
   for (const cmd of commands.list()) {
     const binds = keybindings.forCommand(cmd.id)
@@ -151,6 +131,13 @@ const filteredGroups = computed(() => {
 </script>
 
 <style scoped>
+.ks-root {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 /* ── Search row ────────────────────────────────────────────────────────────── */
 .ks-search-row {
   display: flex;

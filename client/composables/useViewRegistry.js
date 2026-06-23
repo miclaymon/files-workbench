@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import { ACTIVITIES, ACTIVITY_MAP } from '~/activities/index.js'
+import { activityFromDefinition } from '~/models/ui/index.js'
 
 // ── View / section / status registry (dynamic) ──────────────────────────────────
 //
@@ -27,40 +28,68 @@ import { ACTIVITIES, ACTIVITY_MAP } from '~/activities/index.js'
 //
 // `ctx` passed to props/on is the activity host (see useActivityHost.js).
 
-const REGISTRY         = reactive({})   // view / section / tab id → entry
-const STATUS_VIEWS     = reactive({})   // status id → { ...def, id, activityId }
+const REGISTRY         = reactive({})   // view / section / tab id → View instance
+const STATUS_VIEWS     = reactive({})   // status id → StatusView instance (activityId stamped)
+const MODALS           = reactive({})   // modal id → ModalView instance (activityId stamped)
 const VIEW_TO_ACTIVITY = reactive({})   // view / section / tab id → activity id
 const TAB_KIND         = reactive({})   // tab kind → { activityId, viewId }
-const REGISTERED       = reactive({})   // activity id → the activity def (as registered)
+const REGISTERED       = reactive({})   // activity id → Activity instance
 
-// Ingest one activity's contributed surfaces. Returns a disposer that removes
-// them again (used by facade.activities.register for runtime/plugin activities).
-export function registerActivity(act) {
-  REGISTERED[act.id] = act
-  for (const [id, def] of Object.entries(act.panelViews ?? {})) { REGISTRY[id] = def; VIEW_TO_ACTIVITY[id] = act.id }
-  for (const [id, def] of Object.entries(act.sections ?? {}))   { REGISTRY[id] = def; VIEW_TO_ACTIVITY[id] = act.id }
-  for (const [id, def] of Object.entries(act.tabViews ?? {})) {
-    REGISTRY[id] = def
-    VIEW_TO_ACTIVITY[id] = act.id
-    if (def.kind) TAB_KIND[def.kind] = { activityId: act.id, viewId: id }
+// Place a single view into the flat stores by its surface type.
+function ingestView(activityId, view) {
+  if (view.surface === 'status') {
+    view.activityId = activityId
+    STATUS_VIEWS[view.id] = view
+    return
   }
-  for (const [id, def] of Object.entries(act.statusViews ?? {})) { STATUS_VIEWS[id] = { ...def, id, activityId: act.id } }
-  return () => unregisterActivity(act.id)
+  if (view.surface === 'modal') {
+    view.activityId = activityId
+    MODALS[view.id] = view
+    VIEW_TO_ACTIVITY[view.id] = activityId
+    // A promotable modal (one with a tab `kind`) is also resolvable as a tab view,
+    // so "Open in Main Window" can render the same body component in the grid — it
+    // lives in MODALS *and* REGISTRY/TAB_KIND simultaneously.
+    if (view.kind) {
+      REGISTRY[view.id] = view
+      TAB_KIND[view.kind] = { activityId, viewId: view.id }
+    }
+    return
+  }
+  REGISTRY[view.id] = view
+  VIEW_TO_ACTIVITY[view.id] = activityId
+  if (view.surface === 'editor' && view.kind) TAB_KIND[view.kind] = { activityId, viewId: view.id }
+}
+
+// Ingest one activity's contributed surfaces. Accepts an Activity instance (how a
+// plugin authors) or a declarative definition (first-party, wrapped here). Returns
+// a disposer that removes them again (used by facade.activities.register).
+export function registerActivity(actOrDef) {
+  const activity = activityFromDefinition(actOrDef)
+  REGISTERED[activity.id] = activity
+  for (const view of activity.views.values()) ingestView(activity.id, view)
+  return () => unregisterActivity(activity.id)
 }
 
 export function unregisterActivity(id) {
-  const act = REGISTERED[id]
-  if (!act) return
-  for (const k of Object.keys(act.panelViews ?? {})) { delete REGISTRY[k]; delete VIEW_TO_ACTIVITY[k] }
-  for (const k of Object.keys(act.sections ?? {}))   { delete REGISTRY[k]; delete VIEW_TO_ACTIVITY[k] }
-  for (const [k, def] of Object.entries(act.tabViews ?? {})) {
-    delete REGISTRY[k]
-    delete VIEW_TO_ACTIVITY[k]
-    if (def.kind) delete TAB_KIND[def.kind]
+  const activity = REGISTERED[id]
+  if (!activity) return
+  for (const view of activity.views.values()) {
+    if (view.surface === 'status') { delete STATUS_VIEWS[view.id]; continue }
+    if (view.surface === 'modal')  {
+      delete MODALS[view.id]; delete VIEW_TO_ACTIVITY[view.id]
+      if (view.kind) { delete REGISTRY[view.id]; delete TAB_KIND[view.kind] }
+      continue
+    }
+    delete REGISTRY[view.id]
+    delete VIEW_TO_ACTIVITY[view.id]
+    if (view.surface === 'editor' && view.kind) delete TAB_KIND[view.kind]
   }
-  for (const k of Object.keys(act.statusViews ?? {})) { delete STATUS_VIEWS[k] }
   delete REGISTERED[id]
 }
+
+// Modal views contributed by activities, looked up / listed by the modal host.
+export function getModal(id) { return MODALS[id] ?? null }
+export function listModals() { return Object.values(MODALS) }
 
 // Bootstrap the first-party activities through the same path plugins use.
 for (const act of ACTIVITIES) registerActivity(act)
@@ -100,11 +129,19 @@ export function getStatusViews(region) {
 }
 
 export function listActivities() {
-  return Object.values(REGISTERED).map(a => ({ id: a.id, label: a.label, icon: a.icon, core: !!a.core }))
+  return Object.values(REGISTERED).map(a => ({ id: a.id, label: a.label, icon: a.icon, core: !!a.builtin }))
+}
+
+// Panel views destined for the primary side bar (the Activity Bar entries), in
+// registration order — Explorer first, then any plugin-contributed activities.
+export function listPrimaryViews() {
+  return Object.values(REGISTRY)
+    .filter(v => v.surface === 'panel' && v.location === 'PrimarySideBar')
+    .map(v => ({ id: v.id, icon: v.icon, label: v.label }))
 }
 
 export function getActivity(id) {
-  return REGISTERED[id] ?? ACTIVITY_MAP[id] ?? null
+  return REGISTERED[id] ?? (ACTIVITY_MAP[id] ? activityFromDefinition(ACTIVITY_MAP[id]) : null)
 }
 
 // ── View capability flags ──────────────────────────────────────────────────────

@@ -9,6 +9,7 @@
 
       <!-- Activity Bar -->
       <ActivityBar
+        :views="primarySidebarViews"
         :activePrimaryView="activePrimaryView"
         :settingsMenuItems="settingsMenuItems"
         @toggle-view="togglePrimaryView"
@@ -211,20 +212,9 @@
       @close="commandPaletteOpen = false"
     />
 
-    <!-- Settings modal -->
-    <SettingsModal
-      :visible="settingsModalOpen"
-      :prefs="prefs"
-      @close="settingsModalOpen = false"
-      @save="savePreferences"
-    />
-
-    <!-- Keyboard shortcuts modal -->
-    <KeyboardShortcutsModal
-      :visible="keyboardShortcutsModalOpen"
-      :host="host"
-      @close="keyboardShortcutsModalOpen = false"
-    />
+    <!-- Modal surfaces (Settings, Keyboard Shortcuts, …) — the active registered
+         ModalView rendered in the shared ModalEditor chrome -->
+    <ModalHost :host="host" />
 
   </div>
 </template>
@@ -233,13 +223,14 @@
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
 import CommandPalette from './ui/CommandPalette.vue'
-import SettingsModal from './ui/SettingsModal.vue'
-import KeyboardShortcutsModal from './ui/KeyboardShortcutsModal.vue'
+import ModalHost from './ui/ModalHost.vue'
 import { useEditorGrid } from '~/composables/workbench/useEditorGrid.js'
 import { useStatusBar } from '~/composables/workbench/useStatusBar.js'
 import { useNotifications } from '~/composables/workbench/useNotifications.js'
 import { useActivityHost } from '~/composables/activity/useActivityHost.js'
 import { formatChord } from '~/composables/activity/useKeybindingRegistry.js'
+import { createPluginHost } from '~/composables/plugins/usePluginHost.js'
+import { BUILTIN_PLUGINS } from '~/builtin-plugins/index.js'
 import { useArchive } from '~/composables/workbench/useArchive.js'
 import { useFileOperations } from '~/composables/workbench/useFileOperations.js'
 import { useFileContextMenus } from '~/composables/workbench/useFileContextMenus.js'
@@ -503,7 +494,7 @@ provide('viewCtx', host)
 // App menus (File/Edit/View + Settings), command palette, and modal open-state.
 const {
   titleMenus, settingsMenuItems,
-  commandPaletteOpen, settingsModalOpen, keyboardShortcutsModalOpen,
+  commandPaletteOpen,
   openCommandPalette, openSettingsModal, openKeyboardShortcuts, savePreferences,
 } = useAppMenus({
   host,
@@ -513,6 +504,10 @@ const {
   statusbar: { flashStatus },
   explorerPanelRef,
 })
+
+// The Settings modal binds `save` to this through the host (see Workbench.js modal
+// def → on: ctx => ({ save: ctx.savePreferences })).
+host.savePreferences = savePreferences
 
 // The palette opens into a mode by prefilling its prefix: '>' for commands
 // (Ctrl+Shift+P), '' for Go to File quick-open (Ctrl+P). `home` (title-bar
@@ -629,6 +624,13 @@ const paletteModes = [
   { prefix: '',  name: 'Go to File',            placeholder: 'Search files by name', empty: 'File search is not available yet', listable: true, keys: ['Ctrl', 'P'],          items: () => [] },
   { prefix: '>', name: 'Show and Run Commands', placeholder: 'Type a command name…', empty: 'No matching commands', recents: true, listable: true, keys: ['Ctrl', 'Shift', 'P'], items: () => paletteCommandItems.value },
 ]
+
+// First-party plugins, loaded through the plugin host (the same path third-party
+// archives will use). They contribute their activity/panel/editor/status surfaces
+// purely through the permission-scoped public API — nothing compiled in.
+const pluginHost = createPluginHost({ host, log })
+pluginHost.loadAll(BUILTIN_PLUGINS)
+if (import.meta.dev) window.__plugins = pluginHost
 
 // Global keyboard shortcuts: a generic chord → command dispatcher.
 useWorkbenchKeyboard({ host })

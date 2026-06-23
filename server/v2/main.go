@@ -121,6 +121,10 @@ func registerDataRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+apiPrefix+"/preferences/schema", handlePreferencesSchema)
 	mux.HandleFunc("GET "+apiPrefix+"/preferences", handlePreferencesGet)
 
+	// Source control — reads
+	mux.HandleFunc("POST "+apiPrefix+"/scm/detect", handleScmDetect)
+	mux.HandleFunc("GET "+apiPrefix+"/scm/info", handleScmInfo)
+
 	// Icon packs
 	mux.HandleFunc("GET "+apiPrefix+"/icons/manifest", handleIconsManifest)
 	mux.HandleFunc("GET "+apiPrefix+"/icons/svg", handleIconsSvg)
@@ -149,6 +153,10 @@ func registerControlRoutes(mux *http.ServeMux) {
 
 	// Preferences — writes
 	mux.HandleFunc("PUT "+apiPrefix+"/preferences", handlePreferencesPut)
+
+	// Source control — writes
+	mux.HandleFunc("POST "+apiPrefix+"/scm/commit", handleScmCommit)
+	mux.HandleFunc("POST "+apiPrefix+"/scm/init", handleScmInit)
 
 	// Perf logging
 	mux.HandleFunc("POST "+apiPrefix+"/perf", handlePerf)

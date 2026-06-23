@@ -1,13 +1,5 @@
 <template>
-  <ModalEditor
-    :visible="visible"
-    title="Settings"
-    :icon="mdiCog"
-    width="min(960px, 90vw)"
-    height="min(700px, 88vh)"
-    @close="$emit('close')"
-  >
-    <div class="sm-root">
+  <div class="sm-root">
 
       <!-- Top search bar -->
       <div class="sm-search-row">
@@ -136,37 +128,46 @@
         <div v-if="saveStatus" class="sm-save-status">{{ saveStatus }}</div>
       </Transition>
 
-    </div>
-  </ModalEditor>
+  </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
-import { mdiCog } from '@mdi/js'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted, inject, useAttrs } from 'vue'
 import schemaData from '#preferences-schema'
-import ModalEditor from './ModalEditor.vue'
 
+// Works in both presentations of the same EditorView. As a modal, ModalHost binds
+// `prefs` in and a `save` listener out (Workbench.js modal def). As a promoted
+// editor tab, neither is bound, so we fall back to the host (`viewCtx`): prefs from
+// `viewCtx.prefs`, and saving through `viewCtx.savePreferences`.
 const props = defineProps({
-  visible: { type: Boolean, required: true },
-  prefs:   { type: Object,  required: true },
+  prefs: { type: Object, default: null },
 })
-const emit = defineEmits(['close', 'save'])
+const emit = defineEmits(['save'])
+
+const viewCtx = inject('viewCtx', null)
+const attrs = useAttrs()
+const sourcePrefs = computed(() => props.prefs ?? viewCtx?.prefs ?? {})
+
+// Persist edited prefs: through the modal's `save` listener when bound, else (as a
+// promoted tab, where none is) straight to the host's savePreferences.
+function persist(p) {
+  if (attrs.onSave) emit('save', p)
+  else viewCtx?.savePreferences?.(p)
+}
 
 // ── Local prefs copy ──────────────────────────────────────────────────────────
 
-const localPrefs = ref(JSON.parse(JSON.stringify(props.prefs)))
+const localPrefs = ref(JSON.parse(JSON.stringify(sourcePrefs.value)))
 
-watch(() => props.prefs, (p) => {
+watch(sourcePrefs, (p) => {
   localPrefs.value = JSON.parse(JSON.stringify(p))
 }, { deep: true })
 
-watch(() => props.visible, async (v) => {
-  if (v) {
-    searchQuery.value  = ''
-    activeSection.value = visibleSections.value[0]?.key ?? ''
-    await nextTick()
-    searchRef.value?.focus()
-  }
+onMounted(async () => {
+  searchQuery.value   = ''
+  activeSection.value = visibleSections.value[0]?.key ?? ''
+  await nextTick()
+  searchRef.value?.focus()
 })
 
 // ── Value helpers ─────────────────────────────────────────────────────────────
@@ -202,7 +203,7 @@ function setVal(path, value) {
 function scheduleSave() {
   clearTimeout(_saveTimer)
   _saveTimer = setTimeout(async () => {
-    await emit('save', localPrefs.value)
+    await persist(localPrefs.value)
     saveStatus.value = '✓ Saved'
     clearTimeout(_statusTimer)
     _statusTimer = setTimeout(() => { saveStatus.value = '' }, 1500)

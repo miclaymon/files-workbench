@@ -37,8 +37,8 @@
               <!-- Permanent modal-editor actions -->
               <button
                 class="me-action"
-                disabled
-                title="Open in Main Window — opens this as an editor tab (available after the editor-surface rework)"
+                title="Open in Main Window — open this as an editor tab"
+                @click="$emit('open-in-window')"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiOpenInNew" /></svg>
               </button>
@@ -75,8 +75,8 @@ import { mdiClose, mdiArrowExpand, mdiArrowCollapse, mdiOpenInNew } from '@mdi/j
 // type (2a) will register its content here; for now modals adopt it directly.
 //
 // `actions` are context-specific buttons (each { key, icon, title, disabled?, run })
-// rendered left of the permanent trio. Open-in-Window is stubbed until modals can
-// be promoted to editor tabs.
+// rendered left of the permanent trio. Open-in-Window emits `open-in-window` for
+// the host to promote this modal to an editor tab.
 const props = defineProps({
   visible: { type: Boolean, required: true },
   title:   { type: String,  default: '' },
@@ -85,7 +85,7 @@ const props = defineProps({
   width:   { type: String,  default: 'min(860px, 90vw)' },
   height:  { type: String,  default: 'min(640px, 88vh)' },
 })
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'open-in-window'])
 
 const maximized = ref(false)
 

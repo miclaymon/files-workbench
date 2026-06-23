@@ -1,9 +1,12 @@
 <template>
   <div v-if="visible" ref="paneRef" class="sidebar" :style="{ width: width + 'px' }">
+    <!-- The primary sidebar shows ONE registered view at a time (the Activity Bar
+         switches it), so only the active view is handed to the container — never a
+         tab strip. Content is resolved through the registry (ViewContentHost). -->
     <ViewContainer
-      v-if="activeView === 'explorer'"
+      v-if="activeViewTab"
       containerId="primarySidebar"
-      :views="views"
+      :views="[activeViewTab]"
       :modelValue="activeView"
       :viewSections="viewSections"
       :droppable="false"
@@ -13,23 +16,22 @@
       @section-move="$emit('section-move', $event)"
       @view-reabsorb="$emit('view-reabsorb', $event)"
     />
-    <!-- view/section content is rendered via the registry (ViewContentHost) -->
-    <div v-else-if="activeView === 'search'" class="sidebar-placeholder">
-      Search panel coming soon…
+    <div v-else class="sidebar-placeholder">
+      No view selected.
     </div>
   </div>
   <div v-if="visible" class="resize-handle resize-handle--col" @mousedown="onResize" />
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import ViewContainer from '../layout/ViewContainer.vue'
 import { useSideBar } from '../../composables/interaction/useSideBar.js'
 
 // The primary side bar (left). Unlike the movable panels it is non-droppable,
 // never merges views, and switches its content by the active primary view
-// (Explorer / Search). Logic stays in Workbench; this just owns the pane chrome
-// + edge resize and forwards ViewContainer events.
+// (Explorer, Source Control, …) chosen in the Activity Bar. Logic stays in
+// Workbench; this just owns the pane chrome + edge resize and forwards events.
 const props = defineProps({
   visible:      { type: Boolean, default: true },
   width:        { type: Number,  default: 240 },
@@ -37,6 +39,9 @@ const props = defineProps({
   activeView:   { type: String,  default: 'explorer' },
   viewSections: { type: Object,  default: () => ({}) },
 })
+
+// The descriptor for the active view, or null if it isn't a known primary view.
+const activeViewTab = computed(() => props.views.find(v => v.id === props.activeView) ?? null)
 const emit = defineEmits(['update:width', 'update:activeView', 'update:viewSections', 'transfer', 'section-move', 'view-reabsorb'])
 
 const paneRef = ref(null)

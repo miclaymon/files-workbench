@@ -133,6 +133,7 @@ export default {
     explorer: {
       label: 'Explorer',
       icon: mdiFileTree,
+      location: 'PrimarySideBar',
       sections: ['places', 'openEditors'],
     },
   },
