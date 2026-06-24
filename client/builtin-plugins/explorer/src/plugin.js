@@ -1,57 +1,41 @@
 import { markRaw, ref, computed, watch } from 'vue'
-import { mdiFileTree, mdiEye, mdiEyeOff, mdiFolderMultiple, mdiFileDocumentMultiple, mdiRefresh, mdiFilePlusOutline, mdiFolderPlusOutline, mdiCollapseAll, mdiExpandAll } from '@mdi/js'
+import {
+  mdiFileTree, mdiEye, mdiEyeOff, mdiFolderMultiple, mdiFileDocumentMultiple,
+  mdiRefresh, mdiFilePlusOutline, mdiFolderPlusOutline, mdiCollapseAll, mdiExpandAll,
+} from '@mdi/js'
 
-import ExplorerPanel        from '../components/workbench/explorer/ExplorerPanel.vue'
-import OpenEditorsView      from '../components/workbench/explorer/OpenEditorsView.vue'
-import DirectoryTab         from '../components/workbench/editor/DirectoryTab.vue'
-import ExplorerStatusWidget from '../components/workbench/shell/status/ExplorerStatusWidget.vue'
+import ExplorerPanel   from '~/components/workbench/explorer/ExplorerPanel.vue'
+import OpenEditorsView from '~/components/workbench/explorer/OpenEditorsView.vue'
+import DirectoryTab         from '~/components/workbench/editor/DirectoryTab.vue'
+import ExplorerStatusWidget from '~/components/workbench/shell/status/ExplorerStatusWidget.vue'
 
-import { useSelection } from '../composables/workbench/useSelection.js'
-import { createEmitter } from '../composables/activity/useEmitter.js'
+import { useSelection } from '~/composables/workbench/useSelection.js'
+import { createEmitter } from '~/composables/activity/useEmitter.js'
 
-const ACTIVITY_NAME = "Explorer";
-const ACTIVITY_ID = 'explorer';
-const ACTIVITY_ICON = mdiFileTree;
-const IS_FIRST_PARTY = true;
-
-const VIEWS = {
-  PANELS: [
-
-  ],
-  EDITORS: [
-
-  ],
-  STATUS: [
-
-  ],
-}
-
-// ── Explorer activity ───────────────────────────────────────────────────────
+// Explorer plugin entry. The most central first-party plugin: it owns the
+// file/directory selection context and contributes the core file-browsing
+// surfaces — all through the same plugin host + permission-scoped api the other
+// plugins use (no longer compiled into ACTIVITIES).
 //
-// Owns the file/directory selection context. Its API is the canonical source of
-// "what is selected" for collaborating activities: Preview and Details read it
-// through `host.selection` (which resolves to the active activity's selection
-// capability), and any activity can subscribe to `selection-change`.
+// Privileged first-party: its activity `setup` receives the internal wiring every
+// activity setup gets (editor grid, app services, log), because it wraps the
+// useSelection slice and publishes the `selection` capability that Preview /
+// Details / status widgets read through host.selection. Workbench pulls the same
+// selection refs/handlers out of host.api('explorer') exactly as before — which is
+// why the plugin must load before those slices are built (see Workbench.vue).
 //
-// Surfaces contributed:
-//   tabViews    directory   — the navigable directory view (DirectoryTab)
-//   panelViews  explorer    — the sidebar tree, owning the Places + Open Editors sections
-//   statusViews dirStats, selection, clipboard — left-aligned status widgets
-//
-// The selection state itself is produced by the existing `useSelection` slice;
-// this module wraps it as a queryable + subscribable activity API so the wiring
-// is identical to before but the ownership is now explicit and modular.
-export default {
-  id: ACTIVITY_ID,
-  label: ACTIVITY_NAME,
-  icon: ACTIVITY_ICON,
-  builtin: IS_FIRST_PARTY,
+// Surfaces:
+//   tabView    directory   — the navigable directory editor (kind 'dir')
+//   panelView  explorer    — the PrimarySideBar tree, owning Places + Open Editors
+//   sections   places, openEditors
+//   statusView explorerStatus — left-aligned dir-stats/selection widget
+export function activate(api) {
+  const { Activity, EditorView, PanelView, ViewSection, StatusView } = api
 
-  setup({ editor, services, log }) {
-    // Directory stats for the active directory tab — owned here (Explorer's
-    // context) rather than in the status bar, and published over the API so the
-    // status widget and any other activity can read it. useSelection resets it
-    // when the active tab isn't a directory.
+  // The activity API surface — identical to the former Explorer activity's setup,
+  // wrapping useSelection and publishing the selection capability. Receives the
+  // host's internal wiring (editor/services/log) via instantiateActivity.
+  function setup({ editor, services, log }) {
     const dirStats = ref({ count: 0, totalSize: 0 })
 
     const sel = useSelection({
@@ -102,14 +86,11 @@ export default {
       // names are available to existing consumers unchanged.
       ...sel,
     }
-  },
+  }
 
-  statusViews: {
-    explorerStatus: { region: 'left', order: 0, component: markRaw(ExplorerStatusWidget) },
-  },
-
-  tabViews: {
-    directory: {
+  const activity = new Activity({ id: api.manifest.id, label: 'Explorer', icon: mdiFileTree, builtin: true, setup })
+    .addView(new EditorView({
+      id: 'directory',
       kind: 'dir',
       label: 'Directory',
       icon: mdiFolderMultiple,
@@ -126,20 +107,16 @@ export default {
         focusedItem:        tab.focusedItem ?? null,
         prefs:              ctx.prefs.explorer,
       }),
-    },
-  },
-
-  panelViews: {
-    explorer: {
+    }))
+    .addView(new PanelView({
+      id: 'explorer',
       label: 'Explorer',
       icon: mdiFileTree,
       location: 'PrimarySideBar',
       sections: ['places', 'openEditors'],
-    },
-  },
-
-  sections: {
-    places: {
+    }))
+    .addView(new ViewSection({
+      id: 'places',
       label: 'Places',
       icon: mdiFolderMultiple,
       homeView: 'explorer',
@@ -170,7 +147,6 @@ export default {
         showCheckboxes:     ctx.prefs.explorer.alwaysShowCheckboxes,
         showFiles:          ctx.prefs.explorer.showFiles ?? false,
         showHiddenFiles:    ctx.prefs.explorer.showHiddenFiles ?? false,
-        isTreeView:         true,
         excludedCategories: ctx.prefs.excludedCategories,
         indentScale:        ctx.prefs.explorer.indentScale ?? 1.0,
         explorerState:      ctx.explorerContext.value,
@@ -183,9 +159,9 @@ export default {
         move:           ({ items, destPath }) => ctx.doMove?.(items, destPath),
         'state-change': (...a) => ctx.updateExplorerContext?.(...a),
       }),
-    },
-
-    openEditors: {
+    }))
+    .addView(new ViewSection({
+      id: 'openEditors',
       label: 'Open Editors',
       icon: mdiFileDocumentMultiple,
       homeView: 'explorer',
@@ -194,6 +170,10 @@ export default {
         editorRoot:    ctx.editorRoot.value,
         activeGroupId: ctx.activeGroupId.value,
       }),
-    },
-  },
+    }))
+    .addView(new StatusView({ id: 'explorerStatus', region: 'left', order: 0, component: markRaw(ExplorerStatusWidget) }))
+
+  return api.activities.register(activity)
 }
+
+export function deactivate() {}

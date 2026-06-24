@@ -7,6 +7,7 @@
     <DirectoryPanel
       ref="directoryPanelRef"
       :items="itemsWithThumbnails"
+      :dir-sizes="dirSizes"
       :selectedItems="props.selectedItems"
       :focusedItem="props.focusedItem"
       :layout="prefs.layout ?? 'grid'"
@@ -32,9 +33,9 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, shallowReactive, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, reactive, shallowReactive, onMounted, onUnmounted } from 'vue'
 import { MEDIA_BASE } from '~/lib/api-config.js'
-import { fsStat, fsListDir, fsArchiveList, fsExeInfo } from '~/lib/fs-api.js'
+import { fsStat, fsListDir, fsDirSize, fsArchiveList, fsExeInfo } from '~/lib/fs-api.js'
 import { perfStart, perfMark, perfFlush } from '~/lib/perf-log.js'
 
 const ARCHIVE_EXTS = ['.zip', '.tar', '.tar.gz', '.tar.bz2', '.tgz', '.tbz2', '.7z', '.rar', '.gz', '.bz2', '.xz', '.tar.xz']
@@ -67,6 +68,12 @@ const archiveInfo = computed(() => {
 // Internal fetch state
 const items = ref([])
 const loading = ref(false)
+// Async directory sizes kept OFF the items array, keyed by path:
+//   path → { size, files, loading }
+// Storing them on the items would make the `itemsWithThumbnails` spread recompute
+// every item (new identities → grid flicker, thumbnail churn). A separate reactive
+// map lets each <DirSizeCell> track only its own key and re-render in isolation.
+const dirSizes = reactive({})
 let _gen = 0
 // Stable per-item identity, assigned at fetch time and preserved across renames so
 // the directory grid's v-for key never changes for an existing item. Without this,
@@ -82,6 +89,7 @@ async function fetchItems(path) {
   _ctrl = ctrl
   loading.value = true
   items.value = []
+  for (const k of Object.keys(dirSizes)) delete dirSizes[k]
   emit('stats', { count: 0, totalSize: 0 })
 
   try {
@@ -101,22 +109,22 @@ async function fetchItems(path) {
           return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
         })
     } else {
-      // Normal filesystem path
+      // Phase 1: fetch listing without dir sizes — renders immediately
       const excl = (props.excludedCategories ?? ['System']).join(',')
       const showHidden = props.prefs?.showHiddenFiles ?? false
       perfStart(`list_dir:${path}`)
       perfMark('mount')
-      const result = await fsListDir(path, { includeMetadata: true, includeDirSize: true, showHidden, excludeCategories: excl, signal: ctrl.signal })
+      const result = await fsListDir(path, { includeMetadata: true, showHidden, excludeCategories: excl, signal: ctrl.signal })
       if (gen !== _gen) return
       items.value = (result.items ?? []).map(item => ({ ...item, _id: ++_uid }))
+      seedDirSizePlaceholders()
     }
-    const totalSize = items.value.reduce((sum, i) => sum + (i.size ?? 0), 0)
-    emit('stats', { count: items.value.length, totalSize })
+    emitStats()
   } catch {
     if (!ctrl.signal.aborted) items.value = []
   } finally {
     if (_ctrl === ctrl) {
-      _ctrl = null
+      // Keep _ctrl live through phase 2 so the next navigation can abort it.
       loading.value = false
     }
   }
@@ -124,7 +132,58 @@ async function fetchItems(path) {
   if (!archiveInfo.value) {
     perfMark('items-ready')
     perfFlush()
+    // Phase 2: backfill directory sizes concurrently (shimmer shows while pending)
+    await fetchDirSizes(gen, ctrl)
   }
+
+  if (_ctrl === ctrl) _ctrl = null
+}
+
+// Emit directory stats: file sizes are known up front, directory sizes are folded
+// in from `dirSizes` as they resolve.
+function emitStats() {
+  let total = 0
+  for (const it of items.value) {
+    total += it.kind === 'dir' ? (dirSizes[it.path]?.size ?? 0) : (it.size ?? 0)
+  }
+  emit('stats', { count: items.value.length, totalSize: total })
+}
+
+// Mark the current directories as pending (the previous directory's entries were
+// already cleared on reset) so their cells show the shimmer immediately, before
+// phase 2 begins fetching.
+function seedDirSizePlaceholders() {
+  for (const it of items.value) {
+    if (it.kind === 'dir') dirSizes[it.path] = { size: null, files: null, loading: true }
+  }
+}
+
+// Resolve directory sizes in the background, capped at DIRS_CONCURRENCY in-flight
+// requests. Each result updates only its own `dirSizes` entry, so only that one
+// <DirSizeCell> re-renders — the item objects (and thus the grid rows) are untouched.
+const DIRS_CONCURRENCY = 4
+
+async function fetchDirSizes(gen, ctrl) {
+  const dirPaths = items.value.filter(i => i.kind === 'dir').map(i => i.path)
+  if (!dirPaths.length) return
+  let idx = 0
+  async function worker() {
+    while (idx < dirPaths.length) {
+      if (gen !== _gen) return
+      const path = dirPaths[idx++]
+      try {
+        const { size, files } = await fsDirSize(path, ctrl.signal)
+        if (gen !== _gen) return
+        dirSizes[path] = { size, files, loading: false }
+        emitStats()
+      } catch {
+        // Aborted or network error — clear the pending flag so the cell stops
+        // shimmering (falls back to '—') instead of spinning forever.
+        if (gen === _gen && dirSizes[path]) dirSizes[path] = { ...dirSizes[path], loading: false }
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(DIRS_CONCURRENCY, dirPaths.length) }, worker))
 }
 
 watch(() => props.path, (newPath) => { fetchItems(newPath) })

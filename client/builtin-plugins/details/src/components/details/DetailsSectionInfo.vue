@@ -197,6 +197,11 @@ const thumbSrc = computed(() => {
   return props.selectedItem?.thumbnail ?? null
 })
 
+// Reset the load/fade flags only when the image URL itself changes — NOT when the
+// async `details` arrives a tick later (its kind change would otherwise re-hide an
+// already-loaded thumbnail, since the unchanged <img> src never re-fires @load).
+watch(thumbSrc, () => { thumbLoaded.value = false; thumbFailed.value = false })
+
 const packIconSrc = computed(() => {
   if (packIconFailed.value) return null
   const item = props.selectedItem
@@ -225,8 +230,6 @@ watch(
   async ([path, kind]) => {
     meta.value       = null
     dirSize.value    = null
-    thumbLoaded.value    = false
-    thumbFailed.value    = false
     packIconFailed.value = false
     isRenaming.value = false
     if (!path) return

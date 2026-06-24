@@ -120,6 +120,9 @@ const shouldShowChildren = computed(() =>
 )
 
 const iconPath = computed(() => {
+  // A node may pin its own MDI icon (virtual roots: Root/Home/Drives) — used as the
+  // icon when it has no custom or icon-pack image.
+  if (props.node.mdiPath) return props.node.mdiPath
   switch (props.node.type) {
     case 'root':
     case 'drive': return mdiHarddisk

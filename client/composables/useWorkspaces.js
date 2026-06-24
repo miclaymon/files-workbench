@@ -534,14 +534,17 @@ export function useWorkspaces() {
   }
 
   function _normalizeSections(viewId, sections) {
-    const out = sections.map(s => {
+    const out = sections.flatMap(s => {
+      // Drop 'placesNew' — the temporary composable-vs-original comparison section
+      // that was merged into 'places' and no longer has a registered component.
+      if (s.id === 'placesNew') return []
       // Rename 'folders' → 'places' for any data written before that rename.
       const r = s.id === 'folders'
         ? { ...s, id: 'places', title: s.title === 'Folders' ? 'Places' : s.title }
         : { ...s }
       r.homeViewId = _homeOf(viewId, r)
       if (!r.instanceId) r.instanceId = uuidv4()
-      return r
+      return [r]
     })
     // Explorer invariant: Places stays locked (essential — can't be hidden or
     // pulled out of Explorer). Its position is no longer forced; the user may

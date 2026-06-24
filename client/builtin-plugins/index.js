@@ -1,3 +1,5 @@
+import explorerManifest from './explorer/manifest.json'
+import * as explorerModule from './explorer/src/plugin.js'
 import sourceControlManifest from './source-control/manifest.json'
 import * as sourceControlModule from './source-control/src/plugin.js'
 import previewManifest from './preview/manifest.json'
@@ -12,9 +14,13 @@ import * as debugModule from './debug/src/plugin.js'
 // each is a { manifest, module } pair. They are NOT in client/activities/: they
 // drive the workbench only through the public plugin API, proving that path.
 //
-// Preview / Details / Debug are pure surface contributors (panels in the Secondary
-// Side Bar / Bottom Panel); Source Control additionally brokers to the Go scm API.
+// Explorer is the privileged first-party plugin: it owns the selection capability
+// the rest of the workbench consumes, so it loads first (Workbench pulls its API
+// synchronously). Preview / Details / Debug are pure surface contributors (panels
+// in the Secondary Side Bar / Bottom Panel); Source Control additionally brokers
+// to the Go scm API.
 export const BUILTIN_PLUGINS = [
+  { manifest: explorerManifest, module: explorerModule },
   { manifest: sourceControlManifest, module: sourceControlModule },
   { manifest: previewManifest, module: previewModule },
   { manifest: detailsManifest, module: detailsModule },

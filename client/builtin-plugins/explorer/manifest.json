@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "id": "explorer",
+  "name": "Explorer",
+  "version": "1.0.0",
+  "description": "The file explorer: the directory tree (Places), Open Editors, the navigable directory editor tab, and the selection capability the rest of the workbench consumes.",
+  "author": "Files Workbench",
+  "icon": "mdiFileTree",
+  "main": "src/plugin.js",
+  "permissions": ["activities"]
+}

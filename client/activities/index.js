@@ -1,5 +1,4 @@
 import WorkbenchActivity from './Workbench.js'
-import ExplorerActivity  from './Explorer.js'
 import ChatActivity      from './Chat.js'
 
 // ── Activity registry ───────────────────────────────────────────────────────
@@ -18,10 +17,11 @@ import ChatActivity      from './Chat.js'
 //   panelViews?  { [viewId]: { label, icon, component?, sections?, actions?, props?, on?, ... } }
 //   sections?    { [sectionId]: { label, icon, homeView, component, props?, on?, actions?, ... } }
 //   statusViews? { [id]: { region, component, order? } }
-// Preview, Details, and Debug are no longer here — they load through the plugin
-// host as first-party plugins (client/builtin-plugins/), contributing their panels
-// the same way a third-party plugin would. See BUILTIN_PLUGINS.
-export const ACTIVITIES = [WorkbenchActivity, ExplorerActivity, ChatActivity]
+// Explorer, Preview, Details, and Debug are no longer here — they load through the
+// plugin host as first-party plugins (client/builtin-plugins/), contributing their
+// surfaces the same way a third-party plugin would. See BUILTIN_PLUGINS. Only the
+// core Workbench shell (and the placeholder Chat) remain compiled-in activities.
+export const ACTIVITIES = [WorkbenchActivity, ChatActivity]
 
 export const ACTIVITY_MAP = Object.fromEntries(ACTIVITIES.map(a => [a.id, a]))
 

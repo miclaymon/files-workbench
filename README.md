@@ -81,8 +81,8 @@ npm run dev:v2
 files-workbench2/
 ├── client/                   Nuxt 3 SPA + Electron shell
 │   ├── assets/css/           Global CSS variables and base styles
-│   ├── activities/           First-party activity modules — each declares its tab/panel/status surfaces + runtime API (Workbench, Explorer, Preview, Details, Debug, Chat)
-│   ├── builtin-plugins/      First-party plugins loaded through the plugin host (Source Control)
+│   ├── activities/           First-party activity modules — each declares its tab/panel/status surfaces + runtime API (Workbench, Chat)
+│   ├── builtin-plugins/      First-party plugins loaded through the plugin host (Explorer, Source Control, Preview, Details, Debug)
 │   ├── models/               UI model classes (ui/: Activity, View, …) + plugin model (plugin/: manifest, permissions)
 │   ├── components/workbench/ All UI components
 │   ├── composables/          Vue composables, grouped:

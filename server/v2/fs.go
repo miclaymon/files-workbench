@@ -20,6 +20,52 @@ import (
 	"unicode/utf8"
 )
 
+// ── dir-size cache ────────────────────────────────────────────────────────────
+// getDirSize returns the cached byte total for path if the entry is younger
+// than dirSizeTTL; otherwise it walks the tree, stores the result, and returns
+// it. Handlers for mutations call invalidateDirSize so the next request re-walks.
+//
+// Long-term plan: replace with an incremental background index.
+
+const dirSizeTTL = 5 * time.Minute
+
+type dirSizeEntry struct {
+	size  int64
+	files int64
+	at    time.Time
+}
+
+var dirSizeCache sync.Map // path → dirSizeEntry
+
+func getDirSize(path string) (size, files int64) {
+	if v, ok := dirSizeCache.Load(path); ok {
+		e := v.(dirSizeEntry)
+		if time.Since(e.at) < dirSizeTTL {
+			return e.size, e.files
+		}
+	}
+	filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() {
+			size += info.Size()
+			files++
+		}
+		return nil
+	})
+	dirSizeCache.Store(path, dirSizeEntry{size: size, files: files, at: time.Now()})
+	return
+}
+
+// invalidateDirSize drops the cache entry for each path and its immediate
+// parent so the next size request re-walks the affected subtree.
+func invalidateDirSize(paths ...string) {
+	for _, p := range paths {
+		dirSizeCache.Delete(p)
+		dirSizeCache.Delete(filepath.Dir(p))
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 func handleFsStat(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Query().Get("path")
 	if path == "" {
@@ -117,14 +163,8 @@ func handleFsListDir(w http.ResponseWriter, r *http.Request) {
 				defer wg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
-				var total int64
-				filepath.Walk(dirPath, func(_ string, info os.FileInfo, err error) error {
-					if err == nil && !info.IsDir() {
-						total += info.Size()
-					}
-					return nil
-				})
-				item["size"] = total
+				size, _ := getDirSize(dirPath)
+				item["size"] = size
 			}(m, p)
 		}
 		wg.Wait()
@@ -250,15 +290,8 @@ func handleFsDirSize(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusForbidden, "Path is blacklisted")
 		return
 	}
-	var total, files int64
-	filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
-		if err == nil && !info.IsDir() {
-			total += info.Size()
-			files++
-		}
-		return nil
-	})
-	jsonOK(w, map[string]any{"size": total, "files": files})
+	size, files := getDirSize(path)
+	jsonOK(w, map[string]any{"size": size, "files": files})
 }
 
 func handleFsPreview(w http.ResponseWriter, r *http.Request) {
@@ -452,6 +485,7 @@ func handleFsCreateFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.Close()
+	invalidateDirSize(body.Path)
 	jsonOK(w, map[string]string{"path": body.Path})
 }
 
@@ -473,6 +507,7 @@ func handleFsCreateDir(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	invalidateDirSize(body.Path)
 	jsonOK(w, map[string]string{"path": body.Path})
 }
 
@@ -532,6 +567,7 @@ func handleFsRename(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	invalidateDirSize(body.Path, newPath)
 	jsonOK(w, map[string]string{"path": newPath, "old_path": body.Path})
 }
 
@@ -576,6 +612,11 @@ func handleFsMove(w http.ResponseWriter, r *http.Request) {
 		}
 		moved = append(moved, map[string]string{"old_path": src, "path": dst})
 	}
+	toInvalidate := make([]string, 0, len(moved)*2)
+	for _, m := range moved {
+		toInvalidate = append(toInvalidate, m["old_path"], m["path"])
+	}
+	invalidateDirSize(toInvalidate...)
 	jsonOK(w, map[string]any{"moved": moved})
 }
 
@@ -615,6 +656,11 @@ func handleFsCopy(w http.ResponseWriter, r *http.Request) {
 		}
 		copied = append(copied, map[string]string{"old_path": src, "path": dst})
 	}
+	toInvalidateCopy := make([]string, 0, len(copied))
+	for _, c := range copied {
+		toInvalidateCopy = append(toInvalidateCopy, c["path"])
+	}
+	invalidateDirSize(toInvalidateCopy...)
 	jsonOK(w, map[string]any{"copied": copied})
 }
 
@@ -653,6 +699,7 @@ func handleFsDelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	invalidateDirSize(body.Paths...)
 	jsonOK(w, map[string]any{"deleted": body.Paths})
 }
 
@@ -683,6 +730,7 @@ func handleFsDeleteElevated(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	invalidateDirSize(body.Paths...)
 	jsonOK(w, map[string]any{"deleted": body.Paths})
 }
 
@@ -725,6 +773,7 @@ func handleFsTrash(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	invalidateDirSize(body.Paths...)
 	jsonOK(w, map[string]any{"trashed": body.Paths})
 }
 
@@ -755,6 +804,7 @@ func handleFsTrashElevated(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	invalidateDirSize(body.Paths...)
 	jsonOK(w, map[string]any{"trashed": body.Paths})
 }
 

@@ -91,7 +91,9 @@ export function useSelection({ editor, statusbar, log, fsStat, fsOpenWithSystem,
       selectedItems.value = payload.selectedItems
       focusedItem.value = payload.focusedItem ?? null
       const path = payload.focusedItem?.path ?? payload.selectedItems[0]?.path
-      if (path) selectedPath.value = path
+      // Clear (not just skip) when the selection empties, so consumers like Details
+      // reset instead of showing the previously-selected item.
+      selectedPath.value = path ?? ''
       if (activeTab.value) {
         activeTab.value.selectedItems = payload.selectedItems
         activeTab.value.focusedItem = payload.focusedItem ?? null

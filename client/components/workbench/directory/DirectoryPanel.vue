@@ -86,6 +86,7 @@
     <component
       :is="currentLayout"
       :items="processedItems"
+      :dir-sizes="dirSizes"
       :selectedItems="localSelectedItems"
       :focusedItem="localFocusedItem"
       :alwaysShowCheckboxes="alwaysShowCheckboxes"
@@ -218,6 +219,8 @@ const props = defineProps({
   currentPath: { type: String, default: '' },
   navigationHistory: { type: Object, default: () => ({ previous: [], next: [] }) },
   changeTabPath: { type: Function, default: null },
+  // path → { size, files, loading } for directories; async from DirectoryTab.
+  dirSizes: { type: Object, default: () => ({}) },
 })
 
 const emit = defineEmits(['select', 'focus', 'contextmenu', 'background-contextmenu', 'right-drag-drop', 'navigate', 'navigate-up', 'navigate-previous', 'navigate-next', 'update:layout', 'rename', 'rename-batch', 'copy', 'cut', 'paste'])
@@ -422,8 +425,12 @@ const processedItems = computed(() => {
         const nb = b.name?.toLowerCase() ?? ''
         return dir * na.localeCompare(nb)
       }
-      case 'size':
-        return dir * ((a.size ?? -1) - (b.size ?? -1))
+      case 'size': {
+        // Directories' sizes live in the async map; files carry their own.
+        const as = a.kind === 'dir' ? (props.dirSizes[a.path]?.size ?? -1) : (a.size ?? -1)
+        const bs = b.kind === 'dir' ? (props.dirSizes[b.path]?.size ?? -1) : (b.size ?? -1)
+        return dir * (as - bs)
+      }
       case 'type': {
         const ea = a.name.split('.').pop()?.toLowerCase() ?? ''
         const eb = b.name.split('.').pop()?.toLowerCase() ?? ''

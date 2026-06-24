@@ -3,112 +3,103 @@
     <div v-if="loading" class="state-message">Loading…</div>
     <div v-else-if="error" class="state-message error">
       <div>{{ error }}</div>
-      <button @click="loadRootItems">Retry</button>
+      <button @click="loadRoots">Retry</button>
     </div>
-    <ExplorerTree
-      ref="treeRef"
-      v-else-if="isTreeView"
-      :items="items"
-      :selectedPaths="highlightedPaths"
-      :showCheckboxes="showCheckboxes"
-      :showHiddenFiles="showHiddenFiles"
-      :clipboardData="clipboardData"
-      :excludedCategories="excludedCategories"
-      :showFiles="showFiles"
-      :indentScale="indentScale"
-      :explorerState="explorerState"
-      @select="$emit('select', $event)"
-      @open="$emit('dblclick', $event)"
-      @contextmenu="$emit('contextmenu', $event)"
-      @toggleSelect="$emit('toggleSelect', $event)"
-      @selectAll="$emit('selectAll', $event)"
-      @paste="$emit('paste', $event)"
-      @rename="$emit('rename', $event)"
-      @move="$emit('move', $event)"
-      @state-change="$emit('state-change', $event)"
-    />
-    <div v-else class="state-message">Flat list view not yet implemented.</div>
+    <div v-else class="explorer-tree">
+      <TreeList
+        :items="nodes"
+        :selectedPaths="highlightedPaths"
+        :expanded="expanded"
+        :showIcons="true"
+        :indentScale="indentScale"
+        @select="$emit('select', $event)"
+        @dblclick="$emit('dblclick', $event)"
+        @toggleExpand="toggleExpand"
+        @rename="$emit('rename', $event)"
+      />
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import ExplorerTree from './ExplorerTree.vue'
-import { explorerRoot, explorerHome, explorerDrives } from '~/lib/explorer-api.js'
+// Explorer Places panel — composable-driven folder tree using useDirectoryFileTree.
+// Loads virtual roots (Root/Home/Drives) then lazily fetches children on expand.
+// Tree logic (lazy fetch, expand state, caching, soft-refresh) lives in the composable.
+import { ref, computed, watch, onMounted } from 'vue'
+import TreeList from './TreeList.vue'
+import { explorerList } from '~/lib/explorer-api.js'
+import { loadExplorerRoots } from '~/lib/explorer-roots.js'
+import { useDirectoryFileTree } from '~/composables/useDirectoryFileTree.js'
+import { useTreeDrag } from '~/composables/interaction/useTreeDrag.js'
 
 const props = defineProps({
   selectedPath:       { type: String,  default: '' },
-  showIcons:          { type: Boolean, default: true },
   showHiddenFiles:    { type: Boolean, default: false },
   showFiles:          { type: Boolean, default: false },
   showCheckboxes:     { type: Boolean, default: false },
-  isTreeView:         { type: Boolean, default: true },
-  clipboardData:      { type: Object,  default: null },
   excludedCategories: { type: Array,   default: () => ['System'] },
   indentScale:        { type: Number,  default: 1.0 },
   explorerState:      { type: Object,  default: null },
 })
+const emit = defineEmits(['select', 'dblclick', 'contextmenu', 'rename', 'move', 'state-change'])
 
-const emit = defineEmits(['select', 'dblclick', 'contextmenu', 'toggleSelect', 'selectAll', 'paste', 'rename', 'move', 'state-change'])
+const loading   = ref(false)
+const error     = ref('')
+const rootItems = ref([])
+const highlightedPaths = computed(() => (props.selectedPath ? new Set([props.selectedPath]) : new Set()))
 
-const treeRef        = ref(null)
-const loading        = ref(false)
-const error          = ref('')
-const rootItems      = ref([])
-const highlightedPaths = computed(() => props.selectedPath ? new Set([props.selectedPath]) : new Set())
+// Lazy children fetch — same visibility flags the panel was given, so the hidden /
+// show-files toggles apply through the whole tree (matching the original).
+function loadChildren(path) {
+  return explorerList({
+    root: path,
+    excludeCategories: (props.excludedCategories ?? ['System']).join(','),
+    showFiles:  props.showFiles ?? false,
+    showHidden: props.showHiddenFiles ?? false,
+    includeMetadata: false,
+  }).then(r => r.items ?? []).catch(() => [])
+}
 
-const items = computed(() => rootItems.value)
+const { nodes, expanded, toggleExpand, reloadDir, reloadAll, expandRoots, collapseAll, state } =
+  useDirectoryFileTree({
+    items: rootItems,
+    mode: 'tree',
+    loadChildren,
+    lazyDepth: 1,
+    initialState: props.explorerState,
+  })
 
-const platform = (typeof window !== 'undefined' && window.electron?.platform) ?? 'linux'
+// Persist expand/cache state up to the workspace, like the original tree.
+watch(state, (s) => emit('state-change', s))
 
-async function loadRootItems() {
+// Re-list all cached directories when visibility prefs change.
+// Roots themselves don't change; only their children do, which reloadAll refreshes.
+watch(() => [props.showHiddenFiles, props.showFiles], () => reloadAll())
+
+// Drag-move support: a node dropped on a directory bubbles up as a move.
+useTreeDrag({ onDrop: ({ dragged, target }) => emit('move', { items: [dragged], destPath: target.path }) })
+
+async function loadRoots() {
   try {
-    loading.value = true
-    error.value   = ''
-
-    const showHidden        = props.showHiddenFiles ?? false
-    const showFiles         = props.showFiles ?? false
-    const excludeCategories = (props.excludedCategories ?? ['System']).join(',')
-
-    const tasks = [
-      platform !== 'win32'
-        ? explorerRoot({ showHidden, showFiles, excludeCategories, includeMetadata: false })
-        : Promise.reject(new Error('not applicable')),
-      explorerHome({ showHidden, showFiles, excludeCategories, includeMetadata: false }),
-      explorerDrives({ showHidden, showFiles, excludeCategories }),
-    ]
-
-    const [rootResult, homeResult, drivesResult] = await Promise.allSettled(tasks)
-
-    const roots = []
-    if (platform !== 'win32' && rootResult.status === 'fulfilled' && rootResult.value?.root) {
-      roots.push({ ...rootResult.value.root, _preloadedItems: rootResult.value.items ?? [] })
-    }
-    if (homeResult.status === 'fulfilled' && homeResult.value?.root) {
-      roots.push({ ...homeResult.value.root, _preloadedItems: homeResult.value.items ?? [] })
-    }
-    if (drivesResult.status === 'fulfilled' && drivesResult.value?.root && drivesResult.value.items?.length > 0) {
-      roots.push({ ...drivesResult.value.root, _preloadedItems: drivesResult.value.items })
-    }
-
-    rootItems.value = roots
-  } catch (err) {
-    error.value = String(err?.message ?? 'Failed to load')
+    loading.value = true; error.value = ''
+    rootItems.value = await loadExplorerRoots({
+      showHidden: props.showHiddenFiles ?? false,
+      showFiles:  props.showFiles ?? false,
+      excludeCategories: (props.excludedCategories ?? ['System']).join(','),
+    })
+  } catch (e) {
+    error.value = String(e?.message ?? 'Failed to load')
   } finally {
     loading.value = false
   }
 }
 
-onMounted(loadRootItems)
-defineExpose({
-  refresh:     loadRootItems,
-  reloadDir:   (dir) => treeRef.value?.reloadDir(dir),
-  collapseAll: ()    => treeRef.value?.collapseAll(),
-  expandRoots: ()    => treeRef.value?.expandRoots(),
-})
+onMounted(loadRoots)
+defineExpose({ refresh: loadRoots, reloadDir, reloadAll, collapseAll, expandRoots })
 </script>
 
 <style scoped>
+/* Explorer Places panel layout. */
 .explorer-panel {
   display: flex;
   flex-direction: column;
@@ -118,6 +109,10 @@ defineExpose({
   overflow-x: hidden;
   height: 100%;
 }
+.explorer-tree { height: 100%; display: flex; flex-direction: column; }
+.explorer-tree :deep(.tree) { padding-block-end: 1rem; }
+.explorer-tree:hover :deep(.ig) { background: rgba(255,255,255,0.1); }
+.explorer-tree:hover :deep(.tree-item:hover .ig:last-of-type) { background: rgba(255,255,255,0.32); }
 
 .state-message {
   display: flex;

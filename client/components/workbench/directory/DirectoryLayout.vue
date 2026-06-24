@@ -124,7 +124,7 @@
         <div class="dl-body">
           <span class="dl-name" :title="dir.customization?.comment || undefined">{{ itemDisplayName(dir) }}</span>
           <div class="dl-meta">
-            <span class="dl-size">{{ dir.size != null ? formatBytes(dir.size) : '…' }}</span>
+            <span class="dl-size"><DirSizeCell :item="dir" :dir-sizes="dirSizes" /></span>
             <span class="dl-date">{{ dir.modified ? formatDate(dir.modified) : '' }}</span>
           </div>
         </div>
@@ -240,7 +240,7 @@
           <span
             class="dl-size"
             :class="{ 'dl-col--hidden': layout === 'details' && !visibleColumns.has('size') }"
-          >{{ item.size != null ? formatBytes(item.size) : (item.kind === 'dir' ? '…' : '—') }}</span>
+          ><DirSizeCell :item="item" :dir-sizes="dirSizes" /></span>
           <span
             class="dl-date"
             :class="{ 'dl-col--hidden': layout === 'details' && !visibleColumns.has('date') }"
@@ -305,7 +305,7 @@
     <!-- Item hover tooltip — fixed, populated async for extra metadata -->
     <div v-if="ttVisible && ttItem" class="dl-tooltip" :style="ttStyle">
       <div class="dl-tt-row"><span class="dl-tt-key">Type</span><span>{{ itemTypeLabel(ttItem) }}</span></div>
-      <div v-if="ttItem.size != null" class="dl-tt-row"><span class="dl-tt-key">Size</span><span>{{ formatBytes(ttItem.size) }}</span></div>
+      <div v-if="ttSizeDisplay" class="dl-tt-row"><span class="dl-tt-key">Size</span><span>{{ ttSizeDisplay }}</span></div>
       <div v-if="ttItem.modified" class="dl-tt-row"><span class="dl-tt-key">Modified</span><span>{{ formatDateLong(ttItem.modified) }}</span></div>
       <div v-if="ttMeta" class="dl-tt-row"><span class="dl-tt-key">Resolution</span><span>{{ ttMeta.w }} × {{ ttMeta.h }}</span></div>
     </div>
@@ -325,6 +325,7 @@ import { resolveCustomIcon } from '~/composables/useCustomIcon.js'
 import { fsListDir, fsArchiveList } from '~/lib/fs-api.js'
 import { MEDIA_BASE } from '~/lib/api-config.js'
 import DirectoryFindWidget from './DirectoryFindWidget.vue'
+import DirSizeCell from './DirSizeCell.vue'
 
 const MEDIA_EXTS = new Set([
   'png','jpg','jpeg','webp','gif','bmp','ico','avif',
@@ -372,6 +373,9 @@ const props = defineProps({
   sortDir: { type: String, default: 'asc' },
   filterText: { type: String, default: '' },
   filterActive: { type: Boolean, default: false },
+  // path → { size, files, loading } for directories, computed asynchronously and
+  // owned by DirectoryTab. Files carry their own `size` from the listing.
+  dirSizes: { type: Object, default: () => ({}) },
 })
 
 const emit = defineEmits(['select', 'focus', 'contextmenu', 'background-contextmenu', 'right-drag-drop', 'navigate', 'rename', 'rename-batch', 'zoom-change', 'sort-change', 'filter-change', 'filter-click', 'copy', 'cut', 'paste'])
@@ -538,8 +542,10 @@ function doFindReplaceAll(replaceWith) {
 }
 
 // ── Info widget ───────────────────────────────────────────────────────────────
-const totalSize    = computed(() => props.items.reduce((s, i) => s + (i.size ?? 0), 0))
-const selectedSize = computed(() => props.selectedItems.reduce((s, i) => s + (i.size ?? 0), 0))
+const totalSize    = computed(() => props.items.reduce((s, i) =>
+  s + (i.kind === 'dir' ? (props.dirSizes[i.path]?.size ?? 0) : (i.size ?? 0)), 0))
+const selectedSize = computed(() => props.selectedItems.reduce((s, i) =>
+  s + (i.kind === 'dir' ? (props.dirSizes[i.path]?.size ?? 0) : (i.size ?? 0)), 0))
 
 const infoText = computed(() => {
   const c = props.items.length
@@ -556,6 +562,13 @@ const infoText = computed(() => {
 
 // ── Item hover tooltip ────────────────────────────────────────────────────────
 const ttItem    = ref(null)
+// Size row for the hovered item — directories read the async map, files their own.
+const ttSizeDisplay = computed(() => {
+  const it = ttItem.value
+  if (!it) return ''
+  const sz = it.kind === 'dir' ? props.dirSizes[it.path]?.size : it.size
+  return sz != null ? formatBytes(sz) : ''
+})
 const ttPos     = ref({ x: 0, y: 0 })
 const ttVisible = ref(false)
 const ttMeta    = ref(null)

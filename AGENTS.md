@@ -12,10 +12,9 @@ Instructions for AI coding agents (Claude Code, etc.) working in this repository
 
 ```
 Workbench.vue                  Root shell: titlebar, activity bar, sidebar, editor grid, panels
-├── ExplorerPanel.vue          Sidebar left panel
-│   └── ExplorerTree.vue
-│       └── TreeList.vue
-│           └── TreeItem.vue   Recursive tree node
+├── ExplorerPanel.vue          Sidebar left panel (composable-driven via useDirectoryFileTree lazy mode)
+│   └── TreeList.vue
+│       └── TreeItem.vue       Recursive tree node
 ├── GridView.vue               Recursive editor split-grid (Sash.vue resize handles between siblings)
 │   └── EditorGroup.vue        Editor group: tab strip + active tab content (DropOverlay.vue shows drop zones)
 │       └── TabContentHost.vue Resolves the active tab's `kind` → registered tab view (editor twin of ViewContentHost)
@@ -36,7 +35,7 @@ PreviewPanel.vue               Dispatches to per-type preview components
 
 ## Activity system
 
-The workbench is organized into **activities** — self-contained feature modules. The in-core ones live in `client/activities/` (`workbench`, `explorer`, `chat`); `preview`, `details`, and `debug` are now contributed by first-party **plugins** (`client/builtin-plugins/`) — they are still activities, just registered through the plugin host rather than compiled into `ACTIVITIES`. Each declares the surfaces it contributes and, optionally, a runtime **API** for collaboration. This is the foundation of the plugin system (see **Plugin system** below) — first-party activities use the same internal API a plugin does, narrowed by permission.
+The workbench is organized into **activities** — self-contained feature modules. The in-core ones live in `client/activities/` (`workbench`, `chat`); `explorer`, `preview`, `details`, and `debug` are contributed by first-party **plugins** (`client/builtin-plugins/`) — they are still activities, just registered through the plugin host rather than compiled into `ACTIVITIES`. Each declares the surfaces it contributes and, optionally, a runtime **API** for collaboration. This is the foundation of the plugin system (see **Plugin system** below) — first-party activities use the same internal API a plugin does, narrowed by permission.
 
 **Activity definition** (default export of each `activities/*.js`):
 
@@ -94,7 +93,7 @@ A **plugin** is an out-of-core activity loaded at runtime through a *permission-
 - **UI model** (`client/models/ui/`): UI-agnostic classes — `Activity`, `View`, `EditorView`, `ModalView`, `PanelView`, `ViewSection`, `StatusView` — that carry metadata + a component reference (no Vue imports). `fromDefinition.js` wraps the declarative `client/activities/*.js` objects into instances; the registry stores instances. A plugin authors `new Activity(...).addView(new PanelView(...))`.
 - **Manifest + permissions** (`client/models/plugin/`): `manifest.js` (Chrome-style `manifest.json` validator), `permissions.js` (front-end `PERMISSIONS` gating facade slices, backend `HOST_PERMISSIONS` gating brokered services like `scm:read`/`scm:write`). JSON schema + example: `docs/plugins/`.
 - **Loader** (`client/composables/plugins/`): `usePluginApi.js` builds the frozen, permission-scoped `api` (UI classes + `log` + only the granted facade slices/brokers); `usePluginHost.js` loads/unloads `{ manifest, module }` pairs (dependency-ordered, lifecycle). `activate(api)` contributes and returns a disposer; `deactivate(api)` is optional.
-- **Loading**: built-ins are listed in `client/builtin-plugins/index.js` and loaded at startup in `Workbench.vue`. Current built-ins: **`source-control`** (brokers to the Go scm API — the richest reference), and **`preview`** / **`details`** / **`debug`** (pure surface contributors: selection-consuming panels in the Secondary Side Bar, and Debug's log-provider panel in the Bottom Panel). The archive/sandbox runtime path is not built yet — it will produce the same `{ manifest, module }` pairs the host already consumes.
+- **Loading**: built-ins are listed in `client/builtin-plugins/index.js` and loaded at startup in `Workbench.vue`. Current built-ins: **`explorer`** (the file-tree + directory-tab + selection-capability plugin — must load first so Workbench can pull its selection refs before the other slices initialise), **`source-control`** (brokers to the Go scm API — the richest surface reference), and **`preview`** / **`details`** / **`debug`** (pure surface contributors: selection-consuming panels in the Secondary Side Bar, and Debug's log-provider panel in the Bottom Panel). The archive/sandbox runtime path is not built yet — it will produce the same `{ manifest, module }` pairs the host already consumes.
 - **Brokered backend**: plugins never touch the filesystem/control server directly — host-permission'd services (e.g. `api.scm`) forward to the Go server (`server/v2/scm.go`) via a client broker (`client/lib/scm-api.js`, reads→data / writes→control, mock fallback when offline).
 - **Preference contributions** (`client/composables/usePreferenceSchema.js`): `api.preferences.register({ key, title, properties })` adds a section to the Settings panel (merged with the static base schema in `SettingsModal.vue`); values live under `prefs.<key>` and persist normally. `api.preferences.get(path)` reads a value.
 
@@ -128,7 +127,7 @@ A **plugin** is an out-of-core activity loaded at runtime through a *permission-
 | `useIconPack.js` | Module-level singleton for the icon pack. Fetches `/icons/manifest` once; exposes `ensureLoaded()`, `resolveIcon(filename, isDir)`, `iconUrl(iconName)`, and `isAvailable`. All components needing pack icons call `ensureLoaded()` at mount time. |
 | `useCustomIcon.js` | Pure helper (no reactive state). `resolveCustomIcon(iconStr)` returns `null`, `{ type: 'url', url }`, or `{ type: 'folder-color', color }`. Folder-color must render as inline `<svg>` — not `<img>` — so CSS `color` applies. |
 | `useRpc.js` | Lightweight JSON-RPC helper for calling Go control-server endpoints. |
-| `useDirectoryFileTree.js` | Builds a renderable file tree (tree or flat list) from a flat set of `{ path }` items, mirroring the Explorer tree's `childrenByPath`/`_expandKey`/declared-section model + icon-pack icons. Used by the Source Control changes view; reusable by any surface with a flat path set. |
+| `useDirectoryFileTree.js` | Builds a renderable file tree (tree or flat list) from a directory path set. Two modes: **lazy** (ExplorerPanel — virtual roots, per-path child cache, soft-refresh via `reloadDir`/`reloadAll`, expanded state persisted to workspace) and **eager** (Source Control changes view — flat `{ path }` set rendered as a tree). Handles icon-pack icons and the `mdiPath` priority override for virtual root nodes. |
 | `usePreferenceSchema.js` | Registry of preference **sections** contributed by activities/plugins (`registerPreferences({ key, title, properties })`); `SettingsModal` merges them with the static base schema. Backs `facade.preferences`. |
 
 ### Composables — `activity/` (inter-activity API)
@@ -169,7 +168,7 @@ Hand-rolled store slices instantiated by `Workbench.vue` and wired by dependency
 | `useArchive.js` | Archive-file detection (`isArchiveItem`, `ARCHIVE_EXTS`, `getArchiveExt`) and host capabilities (`archiveCaps`, `platform`) *(leaf)*. |
 | `useEditorGrid.js` | Editor split-grid model, every structural mutation, and the provided `editorController`. Deliberately selection-free. Params: `{ log, getInitialEditor, saveEditor }`. |
 | `useViewLayout.js` | Panel/sidebar layout engine: per-container view lists, merge groups, per-view section state, all drag-driven layout mutations, and the provided `workbenchChrome`. Params: `{ workspaces, prefs, savePrefs }`. |
-| `useSelection.js` | Current selection + explorer/directory/navigate handlers. Consumes the editor grid one-directionally. Exposes `updateSelectionAfterRename` and `updateSelectionAfterBatchRename` for post-rename reconciliation. Params: `{ editor, statusbar, log, fsStat, fsOpenWithSystem, isArchiveItem, uuid }`. **Now instantiated by the Explorer activity's `setup` (in `activities/explorer.js`), which wraps it as the `selection` capability + `selection-change` event and owns `dirStats`; Workbench pulls its refs/handlers from `host.api('explorer')`.** |
+| `useSelection.js` | Current selection + explorer/directory/navigate handlers. Consumes the editor grid one-directionally. Exposes `updateSelectionAfterRename` and `updateSelectionAfterBatchRename` for post-rename reconciliation. Params: `{ editor, statusbar, log, fsStat, fsOpenWithSystem, isArchiveItem, uuid }`. **Instantiated by the Explorer plugin's `setup` (in `client/builtin-plugins/explorer/src/plugin.js`), which wraps it as the `selection` capability + `selection-change` event and owns `dirStats`; Workbench pulls its refs/handlers from `host.api('explorer')`.** |
 | `useFileOperations.js` | Create/rename/trash/delete/compress/extract/paste/move/undo + clipboard, elevation dialog, and install prompt. `handleRenameBatch` handles the `rename-batch` event from find-replace Replace All: one optimistic `batchRenameItems` call, parallel server enqueues, per-item rollback on failure, `clearOptimisticThumbnails` after settle. Params: `{ editor, selection, statusbar, enqueue, history, log, explorerPanelRef }`. |
 | `useFileContextMenus.js` | Builds the four context-menu item arrays (editor tab / background / right-drag / item). Params: `{ editor, selection, fileOps, archive, enqueue, statusbar, fsOpenWithSystem, fsOpenTerminal, uuid }`. |
 | `useAppMenus.js` | File/Edit/View + Settings menus **assembled from the command registry** (`{ command }` refs resolved to label / enabled / toggle-state) plus items contributed via `menus.items(menuId)`; modal open-state and the prefs-save passthrough. Params: `{ host, history, views, savePrefs, statusbar, explorerPanelRef }`. |
@@ -191,7 +190,7 @@ The Go process starts **two independent servers**: a read-only data server (port
 | File | Key handlers |
 |---|---|
 | `main.go` | `registerDataRoutes` / `registerControlRoutes`, CORS middleware, dual-server startup with `sync.WaitGroup` |
-| `fs.go` | `handleFsStat`, `handleFsListDir`, `handleFsPreview`, `handleFsCreateFile`, `handleFsCreateDir`, `handleFsWriteFile`, `handleFsOpenWithSystem`, `handleFsOpenTerminal`, `handleFsRename`, `handleFsMove`, `handleFsCopy`, `handleFsDelete`, `handleFsDeleteElevated`, `handleFsTrash`, `handleFsTrashElevated`, `handleFsCompress`, `handleFsDecompress`. Files with archive extensions get `kind: "archive"` in listing responses. `handleFsOpenTerminal` walks a list of known terminal emulators (`x-terminal-emulator`, `gnome-terminal`, `konsole`, `kitty`, `alacritty`, etc.) and launches the first one found; uses macOS `osascript` / Windows Terminal fallback on other platforms. |
+| `fs.go` | `handleFsStat`, `handleFsListDir`, `handleFsPreview`, `handleFsCreateFile`, `handleFsCreateDir`, `handleFsWriteFile`, `handleFsOpenWithSystem`, `handleFsOpenTerminal`, `handleFsRename`, `handleFsMove`, `handleFsCopy`, `handleFsDelete`, `handleFsDeleteElevated`, `handleFsTrash`, `handleFsTrashElevated`, `handleFsCompress`, `handleFsDecompress`, `handleFsDirSize`. Files with archive extensions get `kind: "archive"` in listing responses. `handleFsOpenTerminal` walks a list of known terminal emulators (`x-terminal-emulator`, `gnome-terminal`, `konsole`, `kitty`, `alacritty`, etc.) and launches the first one found; uses macOS `osascript` / Windows Terminal fallback on other platforms. `handleFsDirSize` serves `GET /_api/v2/fs/dir_size?path=…`; backed by `getDirSize(path)` (a `sync.Map` cache with 5-min TTL that walks on miss) and `invalidateDirSize(paths…)` (evicts path + immediate parent, called by all write handlers). |
 | `archive.go` | `handleFsArchiveLs` — lists archive contents as virtual directory entries. `handleArchiveCapabilities` — reports which tools (7z, unrar) are available. Supports ZIP, TAR/TAR.GZ/TAR.BZ2/TAR.XZ, 7Z (via `7z l -slt`), RAR (via `unrar lt`). `filterArchiveEntries` synthesizes implied directory nodes for archives that omit them. |
 | `exe.go` | `handleMediaExeIcon` — extracts the best-resolution icon from a Windows PE `.rsrc` section (PNG direct or DIB wrapped in a minimal ICO). `handleMediaExeInfo` — parses `VS_VERSIONINFO` to return `{ name, publisher, version, description }`. |
 | `permissions.go` | `isProtectedPath` — blocks operations on critical OS paths (root, /etc, /sys, etc.). `requiresElevation` — detects whether a path needs sudo/admin and returns the elevation method (`sudo_password` on Linux/macOS, `uac` on Windows). |
@@ -208,9 +207,16 @@ The Go process starts **two independent servers**: a read-only data server (port
 
 ## Known gotchas
 
-### Directory size is computed server-side per page
+### Directory size loading is two-phase and async
 
-`list_dir` accepts `includeDirSize=true`. Sizes are computed **after pagination** using one goroutine per directory item on the current page (semaphore caps concurrency at 8). Scoping to the page means at most `PAGE_SIZE` (16) walks per request. The client passes `includeDirSize: true` from `DirectoryTab` and uses `item.size` directly — no separate `dir_size` requests.
+`list_dir` does **not** walk directories for sizes. Sizes are loaded separately via `GET /_api/v2/fs/dir_size?path=…` in a two-phase flow inside `DirectoryTab`:
+
+- **Phase 1** — `fetchItems()` renders the directory listing immediately; every directory shows no size until phase 2 completes.
+- **Phase 2** — after phase 1, `DirectoryTab` fires concurrent `/fs/dir_size` requests (4 workers) filling a `dirSizes = reactive({})` map keyed by path. `DirectoryPanel` passes `dirSizes` as a prop; `DirectoryLayout` renders `DirSizeCell.vue` per directory item, reading only `dirSizes[item.path]` — so only that one cell re-renders when its size resolves (not the whole list). `DirSizeCell` shows a shimmer skeleton while loading.
+
+**Server-side cache**: `getDirSize(path)` uses a `sync.Map` with a 5-min TTL (walks on miss). `invalidateDirSize(paths…)` evicts the path and its immediate parent; all mutating handlers (`rename`, `move`, `copy`, `delete`, `trash`, `create`) call it after success. `handleFsDirSize` serves `GET /_api/v2/fs/dir_size`.
+
+Do not add `includeDirSize: true` to `fsListDir` calls — the separate endpoint + reactive map pattern is intentional for granular updates.
 
 ### Icon rendering priority (directories)
 

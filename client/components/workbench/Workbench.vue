@@ -349,9 +349,20 @@ const host = useActivityHost({
   log,
 })
 
-// Selection now lives in the Explorer activity. Pull the same refs/handlers the
-// rest of the app consumes (file ops, context menus, keyboard) from its API —
-// selection ownership moved, but the consuming wiring is unchanged.
+// First-party plugins, loaded through the plugin host (the same path third-party
+// archives will use). They contribute their activity/panel/editor/status surfaces
+// purely through the permission-scoped public API — nothing compiled in. Loaded
+// here (right after the host) rather than later because Explorer is now one of
+// them and owns the selection API the file-op / menu / keyboard slices below
+// consume synchronously — it must be registered before host.requireApi('explorer').
+const pluginHost = createPluginHost({ host, log })
+pluginHost.loadAll(BUILTIN_PLUGINS)
+if (import.meta.dev) window.__plugins = pluginHost
+
+// Selection now lives in the Explorer activity (a first-party plugin). Pull the
+// same refs/handlers the rest of the app consumes (file ops, context menus,
+// keyboard) from its API — selection ownership moved, but the consuming wiring is
+// unchanged.
 const explorerApi = host.requireApi('explorer')
 const {
   selectedPath, selectedItems, focusedItem, selectedDetails,
@@ -481,7 +492,9 @@ Object.assign(host, {
   handleExplorerSelect: handleExplorerSelectAndTrack, handleDoubleClick, showItemContextMenu,
   handleRename, doMove, updateExplorerContext,
   // imperative ref forwarding (e.g. explorerPanelRef.refresh())
-  setRef(name, el) { if (name === 'explorerPanelRef') explorerPanelRef.value = el },
+  setRef(name, el) {
+    if (name === 'explorerPanelRef') explorerPanelRef.value = el
+  },
   refreshExplorer:     () => explorerPanelRef.value?.refresh(),
   reloadExplorerDir:   (dir) => explorerPanelRef.value?.reloadDir(dir),
   showNewFileModal:    () => _openNewItemModal('file'),
@@ -624,13 +637,6 @@ const paletteModes = [
   { prefix: '',  name: 'Go to File',            placeholder: 'Search files by name', empty: 'File search is not available yet', listable: true, keys: ['Ctrl', 'P'],          items: () => [] },
   { prefix: '>', name: 'Show and Run Commands', placeholder: 'Type a command name…', empty: 'No matching commands', recents: true, listable: true, keys: ['Ctrl', 'Shift', 'P'], items: () => paletteCommandItems.value },
 ]
-
-// First-party plugins, loaded through the plugin host (the same path third-party
-// archives will use). They contribute their activity/panel/editor/status surfaces
-// purely through the permission-scoped public API — nothing compiled in.
-const pluginHost = createPluginHost({ host, log })
-pluginHost.loadAll(BUILTIN_PLUGINS)
-if (import.meta.dev) window.__plugins = pluginHost
 
 // Global keyboard shortcuts: a generic chord → command dispatcher.
 useWorkbenchKeyboard({ host })

@@ -43,21 +43,49 @@ export function useViewLayout({ workspaces, prefs, savePrefs }) {
   // like Explorer's, not just display-derived. Runs now and whenever a new primary
   // view appears (a plugin loads after this composable is created).
   let _seedSeq = 0
+  // True if a section id currently lives in a movable container (Secondary Side Bar
+  // or Bottom Panel) — i.e. the user adopted it there. Used so the primary-sidebar
+  // reconcile below doesn't re-add (duplicate) a section that was moved out.
+  const _placedInMovableContainer = (sid) => {
+    const scan = (map) => Object.values(map ?? {}).some(arr => arr?.some?.(s => s.id === sid))
+    return scan(secondaryViewSections.value) || scan(panelViewSections.value)
+  }
+  const _makeSection = (sid, viewId) => ({
+    id:         sid,
+    homeViewId: getViewEntry(sid)?.homeView ?? viewId,
+    collapsed:  false,
+    size:       1,
+    instanceId: `${sid}-${++_seedSeq}`,
+  })
   watch(primarySidebarViews, (views) => {
     let changed = false
     const next = { ...primaryViewSections.value }
     for (const v of views) {
-      if (next[v.id]) continue
       const declared = getViewEntry(v.id)?.sections
       if (!declared?.length) continue
-      next[v.id] = declared.map(sid => ({
-        id:         sid,
-        homeViewId: getViewEntry(sid)?.homeView ?? v.id,
-        collapsed:  false,
-        size:       1,
-        instanceId: `${sid}-${++_seedSeq}`,
-      }))
-      changed = true
+      let list = next[v.id]
+      if (!list) {
+        next[v.id] = declared.map(sid => _makeSection(sid, v.id))
+        changed = true
+        continue
+      }
+      // Reconcile: insert any declared section missing from saved state right after
+      // its declared predecessor — so a section added to a panel after the workspace
+      // was created (e.g. Places (New)) appears in its declared spot, without
+      // reordering the user's existing sections or their adopted foreign ones. A
+      // declared section the user has dragged into another container is left there
+      // (don't re-add it here — that would duplicate it).
+      const have = new Set(list.map(s => s.id))
+      let mutated = false
+      declared.forEach((sid, i) => {
+        if (have.has(sid) || _placedInMovableContainer(sid)) return
+        const predIdx = i > 0 ? list.findIndex(s => s.id === declared[i - 1]) : -1
+        const at = predIdx >= 0 ? predIdx + 1 : list.length
+        list = [...list.slice(0, at), _makeSection(sid, v.id), ...list.slice(at)]
+        have.add(sid)
+        mutated = true
+      })
+      if (mutated) { next[v.id] = list; changed = true }
     }
     if (changed) primaryViewSections.value = next
   }, { immediate: true })

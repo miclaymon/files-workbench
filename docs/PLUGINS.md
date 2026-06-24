@@ -4,8 +4,8 @@ Files Workbench is built around an internal contribution system: every first-par
 feature (Explorer, Preview, Details, …) is an **activity** that contributes its UI
 and behaviour through a public **Workbench API**. A **plugin** is the same thing,
 authored outside the core and loaded at runtime through a **permission-scoped**
-view of that API. Source Control is a first-party plugin built this way as the
-reference implementation.
+view of that API. Explorer and Source Control are first-party plugins built this way
+as reference implementations.
 
 > **Status.** Plugins today are loaded as compiled-in *built-ins*
 > (`client/builtin-plugins/`). The archive/sandbox path described under
@@ -47,8 +47,11 @@ export function deactivate() {}
 ```
 
 A complete, runnable reference lives in [`docs/plugins/example/`](plugins/example/);
-the production reference is the Source Control plugin in
-[`client/builtin-plugins/source-control/`](../client/builtin-plugins/source-control/).
+the production references are the Explorer plugin (`client/builtin-plugins/explorer/`) —
+the most central built-in, contributing the Places tree, Open Editors, directory tab,
+and selection capability — and the Source Control plugin
+([`client/builtin-plugins/source-control/`](../client/builtin-plugins/source-control/)),
+which exercises the brokered backend (`api.scm`) and contributed preferences.
 
 ---
 
@@ -214,7 +217,20 @@ permission-scoped API, and calls `activate`.
 
 ---
 
-## Worked example: Source Control
+## Worked examples
+
+### Explorer
+
+[`client/builtin-plugins/explorer/`](../client/builtin-plugins/explorer/) is the
+most central built-in: a `PrimarySideBar` panel with **Places** (composable-driven
+lazy file tree via `useDirectoryFileTree`) and **Open Editors** sections, a
+**directory editor tab** (kind `dir`), and an **Explorer status widget** (left-aligned
+dir-stats / selection). Its `setup` wraps `useSelection`, publishes the `selection`
+**capability** that Preview/Details and status widgets consume, and emits
+`selection-change`. It must load before Workbench's own slices so those can pull the
+selection refs from `host.api('explorer')`.
+
+### Source Control
 
 [`client/builtin-plugins/source-control/`](../client/builtin-plugins/source-control/)
 exercises the whole surface: a `PrimarySideBar` panel with Repositories / Changes /

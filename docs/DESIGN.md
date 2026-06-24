@@ -36,7 +36,7 @@ All workbench components live under `client/components/workbench/` and are group
 | `layout/` | `ViewContainer`, `SplitViewArea`, `SplitView`, `SplitSectionArea`, `SplitSection`, `ViewContentHost`, `ViewActions`, `ViewDropOverlay`, `Sash` |
 | `editor/` | `Editor`, `GridView`, `EditorGroup`, `EditorDropOverlay`, `TabContentHost` (resolves a tab's `kind` → registered tab view), `DirectoryTab`, `HomePage`, `MonacoEditor` |
 | `directory/` | `DirectoryPanel`, `DirectoryLayout`, all `Directory*Layout` variants, `DirectoryBreadcrumb`, `DirectoryHoverPreview`, `AudioPlayer`, `VideoPlayer` |
-| `explorer/` | `ExplorerPanel`, `ExplorerTree`, `TreeList`, `TreeItem`, `OpenEditorsView` |
+| `explorer/` | `ExplorerPanel`, `TreeList`, `TreeItem`, `OpenEditorsView` |
 | `views/` | `PreviewPanel`, `DetailsPanel`, `ChatPanel`, `DebugPanel`; `preview/` subfolder for preview sub-components |
 | `ui/` | `FloatingMenu`, `ContextMenu`, `Tooltip`, `CommandPalette`, `ModalEditor` (shared modal chrome), `ModalHost` (renders the active registered modal), `SettingsModal`, `KeyboardShortcutsModal` |
 
@@ -178,7 +178,7 @@ Submenu position is computed from the chevron button's `getBoundingClientRect()`
 
 ### Explorer tree
 
-`ExplorerTree` owns expanded/collapsed state and lazy-loads children via `/_api/v2/Explorer`. The tree is recursive: `TreeItem` renders a node and its children, forwarding events up through `TreeList` → `ExplorerTree` → `ExplorerPanel` → `Workbench`.
+`ExplorerPanel` uses `useDirectoryFileTree` in **lazy** mode: virtual roots (`Root`, `Home`, `Drives`) are loaded by `loadExplorerRoots` from `client/lib/explorer-roots.js`, and each root's children are fetched on first expand via `/_api/v2/Explorer` endpoints. Expanded state is persisted to the workspace via `explorerContext` (the `state-change` event propagated up to `Workbench`). The tree is recursive: `TreeItem` renders a node and its children, forwarding events up through `TreeList` → `ExplorerPanel` → `Workbench`.
 
 ### Event propagation pattern
 
@@ -188,7 +188,7 @@ This means adding a new event in a leaf component requires threading it through 
 
 ## Activity system
 
-The workbench is organized into **activities** — self-contained feature modules in `client/activities/` (`workbench`, `explorer`, `preview`, `details`, `debug`, `chat`). An activity declares the **surfaces** it contributes and, optionally, a runtime **API** that other activities query or subscribe to. This modularizes each activity's context and is the foundation of the plugin system (see Plugin system below): first-party activities use the same internal API a plugin does, narrowed by permission.
+The workbench is organized into **activities** — self-contained feature modules. In-core activities live in `client/activities/` (`workbench`, `chat`); `explorer`, `preview`, `details`, and `debug` are contributed by first-party **plugins** in `client/builtin-plugins/` (loaded through the plugin host, not compiled into `ACTIVITIES`). An activity declares the **surfaces** it contributes and, optionally, a runtime **API** that other activities query or subscribe to. This modularizes each activity's context and is the foundation of the plugin system (see Plugin system below): first-party activities use the same internal API a plugin does, narrowed by permission.
 
 ### Activity definition
 
@@ -270,7 +270,7 @@ No Pinia or Vuex. State lives in:
 - `useWorkspaces.js` — the persisted per-workspace model in `localStorage` (`files-workbench.workspaces`), versioned with forward migration (v1→v2 wraps the flat tabs array into a single-group leaf; v2→v3 renames panel areas to primarySidebar/secondarySidebar/panel and adds `viewContainerOrder`, `mergeGroups`, and `activeViewContainerId`; v3→v4 renames the `activity` fields to `view`; v4→v5 unifies per-container section storage into a `viewSections` map keyed by view id, with `homeViewId` on each section, replacing the old `sectionState`); serialises the editor grid, sidebar/panel layout, and explorer tree state
 - `DirectoryTab.vue` — navigation history, items list, thumbnail map
 - `DirectoryPanel.vue` — sort/filter state, layout picker state
-- `ExplorerTree.vue` — expanded Set, children cache (also persisted to localStorage)
+- `ExplorerPanel.vue` — lazy tree state via `useDirectoryFileTree` (per-path child cache; expanded nodes persisted to workspace as `explorerContext`)
 - Module-level refs in `useTreeDrag.js` — shared drag state across all tree nodes
 
 ## Drag and drop systems
