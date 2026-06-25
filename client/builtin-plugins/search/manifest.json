@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "id": "search",
+  "name": "Search",
+  "version": "1.0.0",
+  "description": "Placeholder for project-wide file and content search, contributed to the Activity Bar.",
+  "author": "Files Workbench",
+  "icon": "mdiMagnifyScan",
+  "main": "src/plugin.js",
+  "permissions": ["activities"]
+}

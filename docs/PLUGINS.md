@@ -99,6 +99,7 @@ defined in [`client/models/plugin/permissions.js`](../client/models/plugin/permi
 | `events` | `api.events` — app-level pub/sub. |
 | `selection` | `api.selection` — the active activity's selection. |
 | `query` | `api.query` / `api.peer` — inspect other activities + app state. |
+| `icons` | `api.icons` — register an icon theme (a `getIcon` handler) that resolves file/folder icons. |
 
 **`host_permissions`** — backend/host access, each gating a **brokered** service
 (the Workbench forwards vetted requests to the Go server; the plugin never touches
@@ -147,7 +148,36 @@ api.preferences.get('myPlugin.someSetting')
 api.events.on('active-tab-change', cb)
 const sel = api.selection.value                                            // active selection snapshot
 const other = api.peer('explorer')                                         // another activity's API
+
+api.icons.register({ id, label, getIcon })                                 // register an icon theme
 ```
+
+### Icon themes
+
+The `icons` permission lets a plugin contribute an **icon theme** — layer 2 of the
+icon pipeline (custom `.directory`/`desktop.ini` icons resolve first, the built-in
+MDI glyphs last). The renderers call the *active* theme's handler per item:
+
+```js
+api.icons.register({ id, label, getIcon })   // disposer; only the active theme is consulted
+api.icons.setActive(id)                       // choose among several installed themes
+api.icons.list()                              // [{ id, label }]
+
+// getIcon(ctx) => result | null
+//   ctx:    { path, name, isDir, kind, extension, expanded,
+//             mimeType?, hasThumbnail, hasCustomIcon, activityName, activityContext? }
+//   result: { type: 'url',       icon }   // image URL
+//           { type: 'file.path', icon }   // path resolved relative to the plugin's assets
+//           { type: 'component', icon }   // a Vue component
+//           { type: 'svg.path',  icon }   // raw MDI-style path 'd' data
+//   null  => no theme icon for this item; the renderer falls back to its MDI default.
+```
+
+`getIcon` must be a cheap, pure lookup — it runs per item at render time. The
+workbench renders the descriptor through `ResolvedIcon.vue` and falls back to the
+MDI default on a `null` result or an `<img>` that fails to load. The active theme
+follows the `iconTheme` preference (or the first registered, so a single installed
+pack lights up with no configuration).
 
 Brokered services (host permissions):
 
@@ -239,3 +269,16 @@ tab params), a branch **status widget**, **commands** + a section **action**, a
 **preference** (`sourceControl.changesViewMode`), and the **`scm:read`/`scm:write`**
 brokered git backend. It never touches the filesystem directly — all git access
 goes through `api.scm` → the Workbench broker → the Go `/scm` endpoints.
+
+### Material Icon Theme
+
+[`client/builtin-plugins/material-icon-theme/`](../client/builtin-plugins/material-icon-theme/)
+is the reference **icon theme** and the smallest first-party plugin: it declares only
+the `icons` permission and, in `activate`, registers one `getIcon` handler. It owns
+*resolution* but not *assets* — the SVGs and mapping tables are loaded server-side by
+the Go config plugin under `config/plugins/material-icon-theme/` and exposed at
+`/icons/manifest` + `/icons/svg`. The handler fetches the manifest once, maps a
+file/folder name (honouring the open-folder variant via `expanded`) to an
+icon-definition name, and returns `{ type: 'url', icon }` pointing at `/icons/svg`
+(or `null` so the renderer falls back to MDI). It is the proof that the whole icon
+layer is plugin-driven: unregister it and every view cleanly reverts to MDI glyphs.

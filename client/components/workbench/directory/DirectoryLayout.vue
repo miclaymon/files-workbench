@@ -116,7 +116,7 @@
           <svg v-else-if="customFolderColor(dir)" class="dl-icon" viewBox="0 0 24 24" fill="currentColor" :style="{ color: customFolderColor(dir) }">
             <path :d="iconPath(dir)" />
           </svg>
-          <img v-else-if="itemIconUrl(dir)" :src="itemIconUrl(dir)" class="dl-pack-icon" :alt="dir.name" @error="onPackIconError(dir.path)" />
+          <ResolvedIcon v-else-if="packResult(dir)" :result="packResult(dir)" icon-class="dl-pack-icon" @fail="onPackIconError(dir.path)" />
           <svg v-else class="dl-icon" viewBox="0 0 24 24" fill="currentColor">
             <path :d="iconPath(dir)" />
           </svg>
@@ -204,7 +204,7 @@
           <svg v-else-if="customFolderColor(item)" class="dl-icon" viewBox="0 0 24 24" fill="currentColor" :style="{ color: customFolderColor(item) }">
             <path :d="iconPath(item)" />
           </svg>
-          <img v-else-if="itemIconUrl(item)" :src="itemIconUrl(item)" class="dl-pack-icon" :alt="item.name" @error="onPackIconError(item.path)" />
+          <ResolvedIcon v-else-if="packResult(item)" :result="packResult(item)" icon-class="dl-pack-icon" @fail="onPackIconError(item.path)" />
           <svg v-else class="dl-icon" viewBox="0 0 24 24" fill="currentColor">
             <path :d="iconPath(item)" />
           </svg>
@@ -320,12 +320,13 @@ import { useClickDebounce } from '~/composables/interaction/useClickDebounce.js'
 import { useHoverPreview } from '~/composables/interaction/useHoverPreview.js'
 import { useDrag } from '~/composables/interaction/useDrag.js'
 import { useRightClickDrag } from '~/composables/interaction/useRightClickDrag.js'
-import { useIconPack } from '~/composables/useIconPack.js'
+import { useIconRegistry } from '~/composables/useIconRegistry.js'
 import { resolveCustomIcon } from '~/composables/useCustomIcon.js'
 import { fsListDir, fsArchiveList } from '~/lib/fs-api.js'
 import { MEDIA_BASE } from '~/lib/api-config.js'
 import DirectoryFindWidget from './DirectoryFindWidget.vue'
 import DirSizeCell from './DirSizeCell.vue'
+import ResolvedIcon from '~/components/workbench/ResolvedIcon.vue'
 
 const MEDIA_EXTS = new Set([
   'png','jpg','jpeg','webp','gif','bmp','ico','avif',
@@ -1060,8 +1061,7 @@ function onSelectAll(e) {
 const isSelected = (item) => props.selectedItems.some(s => s.path === item.path)
 const isFocused  = (item) => props.focusedItem?.path === item.path
 
-const { ensureLoaded: ensureIconPack, resolveIcon, iconUrl, isAvailable: iconPackAvailable } = useIconPack()
-ensureIconPack()
+const { resolveIcon } = useIconRegistry()
 const _packIconErrors = ref(new Set())
 function onPackIconError(path) {
   _packIconErrors.value = new Set(_packIconErrors.value).add(path)
@@ -1075,12 +1075,19 @@ function iconPath(item) {
   }
 }
 
-function itemIconUrl(item) {
+// Icon pack (layer 2): the active icon theme resolves a descriptor for this item.
+// Returns null (→ MDI fallback) when no theme matches or the glyph failed to load.
+function packResult(item) {
   if (_packIconErrors.value.has(item.path)) return null
-  if (item.icon) return iconUrl(item.icon)
-  if (!iconPackAvailable.value) return null
-  const name = resolveIcon(item.name, item.kind === 'dir')
-  return name ? iconUrl(name) : null
+  return resolveIcon({
+    path: item.path,
+    name: item.name,
+    kind: item.kind,
+    isDir: item.kind === 'dir',
+    expanded: false,
+    hasThumbnail: !!item.thumbnail,
+    activityName: 'explorer',
+  })
 }
 
 // Custom icon from .directory / desktop.ini

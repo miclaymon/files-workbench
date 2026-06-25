@@ -38,7 +38,7 @@ export function createHookRegistry({ log = () => {} } = {}) {
         const r = fn(v, ctx)
         if (r !== undefined) v = r
       } catch (err) {
-        log('hooks', `handler for "${name}" threw`, err)
+        log('hooks', `handler for "${name}" threw`, err, 'error')
       }
     }
     return v

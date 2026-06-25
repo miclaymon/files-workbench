@@ -18,6 +18,14 @@
       "description": "Built-in UI theme. 'system' follows the OS preference. Custom themes can be added to config/themes/.",
       "default": "dark"
     },
+    "iconTheme": {
+      "title": "Icon Theme",
+      "type": "string",
+      "x-control": "select",
+      "x-options": "iconThemes",
+      "description": "Active icon pack, provided by an icon-pack plugin (e.g. Material Icon Theme). Resolves file/folder icons. Options are the installed icon-pack plugins; falls back to the first one, then to the built-in glyphs.",
+      "default": "material-icon-theme"
+    },
     "explorer": {
       "title": "Explorer",
       "type": "object",

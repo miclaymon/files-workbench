@@ -1,5 +1,4 @@
 import { ref, computed, watch } from 'vue'
-import { useIconPack } from '~/composables/useIconPack.js'
 
 // ── Directory file tree ───────────────────────────────────────────────────────
 //
@@ -35,9 +34,6 @@ import { useIconPack } from '~/composables/useIconPack.js'
 const EXPANDABLE = new Set(['directory', 'drive', 'root'])
 
 export function useDirectoryFileTree({ items, mode, loadChildren, lazyDepth = 1, initialState = null } = {}) {
-  const { ensureLoaded, resolveIcon, isAvailable } = useIconPack()
-  ensureLoaded()
-
   const lazy      = typeof loadChildren === 'function'
   const flatItems = computed(() => unwrap(items) ?? [])
   const modeVal   = computed(() => unwrap(mode) ?? 'tree')
@@ -46,7 +42,6 @@ export function useDirectoryFileTree({ items, mode, loadChildren, lazyDepth = 1,
   const childrenByPath = ref(initialState?.childrenByPath ? { ...initialState.childrenByPath } : {})
   let _userToggled = false   // eager: stop auto-expanding once the user takes over
 
-  function iconName(name, isDir) { return isAvailable.value ? resolveIcon(name, isDir) : null }
   const isExpandable = (node) => EXPANDABLE.has(node.type)
   const expandKeyFor = (root, path) => (lazy ? `${root}::${path}` : path)
 
@@ -79,8 +74,10 @@ export function useDirectoryFileTree({ items, mode, loadChildren, lazyDepth = 1,
   }
 
   // ── Node building ─────────────────────────────────────────────────────────────
-  // Spread the source item (icon/customization/status/etc. carry through) and build
-  // children only while expanded — exactly the shape TreeItem renders.
+  // Spread the source item (customization/status/mdiPath/etc. carry through) and
+  // build children only while expanded — exactly the shape TreeItem renders. Icons
+  // are resolved at render time by the renderer through the active icon theme
+  // (useIconRegistry), so nodes carry no baked icon.
   function buildNode(item, rootKey) {
     const path = item.path ?? item.name
     const effectiveRoot = rootKey ?? path
@@ -89,9 +86,6 @@ export function useDirectoryFileTree({ items, mode, loadChildren, lazyDepth = 1,
       ...item,
       key: lazy ? expandKey : path,
       _expandKey: expandKey,
-      // Skip icon-pack resolution for nodes that pin their own MDI icon (e.g.
-      // virtual roots), so the pack-icon slot never outbids mdiPath.
-      icon: item.mdiPath ? null : (item.icon ?? iconName(item.name, isExpandable(item))),
     }
     node.children = (isExpandable(node) && expanded.value.has(expandKey))
       ? (childrenByPath.value[item.path] ?? []).map(c => buildNode(c, effectiveRoot))
@@ -109,7 +103,7 @@ export function useDirectoryFileTree({ items, mode, loadChildren, lazyDepth = 1,
       const segs = path.split('/')
       return {
         ...it, path, key: path, _expandKey: path, name: segs[segs.length - 1], type: 'file',
-        icon: iconName(segs[segs.length - 1], false), dir: segs.slice(0, -1).join('/'), children: [],
+        dir: segs.slice(0, -1).join('/'), children: [],
       }
     }))
 

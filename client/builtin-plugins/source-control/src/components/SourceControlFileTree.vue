@@ -25,13 +25,12 @@
         <span v-else class="expand-spacer" />
 
         <span class="folder-icon">
-          <img
-            v-if="iconUrlFor(node) && !failed.has(node.icon)"
-            :src="iconUrlFor(node)"
-            width="16"
-            height="16"
-            class="pack-icon"
-            @error="failed.add(node.icon)"
+          <ResolvedIcon
+            v-if="packResult(node) && !failed.has(node.path)"
+            :result="packResult(node)"
+            :size="16"
+            icon-class="pack-icon"
+            @fail="failed.add(node.path)"
           />
           <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiFor(node)" /></svg>
         </span>
@@ -56,7 +55,8 @@
 <script setup>
 import { reactive } from 'vue'
 import { mdiFile, mdiFolder, mdiFolderOpen } from '@mdi/js'
-import { useIconPack } from '~/composables/useIconPack.js'
+import { useIconRegistry } from '~/composables/useIconRegistry.js'
+import ResolvedIcon from '~/components/workbench/ResolvedIcon.vue'
 
 // Recursive renderer for useDirectoryFileTree output, mirroring the Explorer
 // TreeItem look (indent guides, expand chevron, indentScale, icon-pack + MDI
@@ -70,10 +70,9 @@ const props = defineProps({
 })
 const emit = defineEmits(['toggleExpand'])
 
-const { ensureLoaded, iconUrl, isAvailable } = useIconPack()
-ensureLoaded()
+const { resolveIcon } = useIconRegistry()
 
-// Icon-pack names whose SVG failed to load (so we fall back to MDI). Keyed by name.
+// Item paths whose icon SVG failed to load (so we fall back to MDI).
 const failed = reactive(new Set())
 
 function isDir(node)  { return node.type === 'directory' }
@@ -81,7 +80,17 @@ function isOpen(node) { return isDir(node) && props.expanded?.has?.(node._expand
 function toggle(node) { emit('toggleExpand', { expandKey: node._expandKey, path: node.path }) }
 function onItemClick(node) { if (isDir(node)) toggle(node) }
 
-function iconUrlFor(node) { return node.icon && isAvailable.value ? iconUrl(node.icon) : null }
+// Icon pack (layer 2) — resolve a descriptor for this node through the active theme.
+function packResult(node) {
+  return resolveIcon({
+    path: node.path,
+    name: node.name,
+    kind: node.type,
+    isDir: isDir(node),
+    expanded: isOpen(node),
+    activityName: 'source-control',
+  })
+}
 function mdiFor(node) {
   if (isDir(node)) return isOpen(node) ? mdiFolderOpen : mdiFolder
   return mdiFile

@@ -1,6 +1,7 @@
 {
   "developerMode": false,
   "theme": "dark",
+  "iconTheme": "material-icon-theme",
   "explorer": {
     "showFiles": false,
     "showIcons": true,

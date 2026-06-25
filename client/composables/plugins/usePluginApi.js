@@ -29,6 +29,7 @@ const FACADE_SLICE = {
   events:      (f) => ({ events: f.events }),
   selection:   (f) => ({ selection: f.selection }),
   query:       (f) => ({ query: f.query, peer: f.peer }),
+  icons:       (f) => ({ icons: f.icons }),
 }
 
 export function createPluginApi(manifest, host) {

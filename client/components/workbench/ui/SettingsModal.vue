@@ -87,7 +87,7 @@
                         @change="e => setVal(item.path, e.target.value)"
                       >
                         <option v-for="opt in item.enum" :key="opt" :value="opt">
-                          {{ ENUM_LABELS[opt] ?? opt }}
+                          {{ item._optionLabels?.[opt] ?? ENUM_LABELS[opt] ?? opt }}
                         </option>
                       </select>
 
@@ -135,6 +135,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, inject, useAttrs } from 'vue'
 import schemaData from '#preferences-schema'
 import { contributedSchemaProperties } from '~/composables/usePreferenceSchema.js'
+import { listIconThemes } from '~/composables/useIconRegistry.js'
 
 // Works in both presentations of the same EditorView. As a modal, ModalHost binds
 // `prefs` in and a `save` listener out (Workbench.js modal def). As a promoted
@@ -251,6 +252,30 @@ function controlType(prop) {
   return null
 }
 
+// Some selects are populated at runtime from a dynamic registry rather than a
+// static schema `enum` (e.g. the installed icon-pack plugins). `x-options` names
+// the source; returns { enum, labels } merged onto the item, or null.
+function dynamicOptions(prop) {
+  if (prop['x-options'] === 'iconThemes') {
+    const themes = listIconThemes()
+    return { enum: themes.map(t => t.id), labels: Object.fromEntries(themes.map(t => [t.id, t.label])) }
+  }
+  return null
+}
+
+function buildItem(prop, path, sectionTitle) {
+  const ctrl = controlType(prop)
+  if (!ctrl) return null
+  const opts = dynamicOptions(prop)
+  return {
+    ...prop,
+    path,
+    _control:      ctrl,
+    _sectionTitle: sectionTitle,
+    ...(opts ? { enum: opts.enum, _optionLabels: opts.labels } : {}),
+  }
+}
+
 function extractDefaults(schema, path = '') {
   const out = {}
   if (!schema?.properties) return out
@@ -294,14 +319,8 @@ const sections = computed(() => {
     if (prop.type === 'object' && prop.properties) {
       const items = []
       for (const [subKey, subProp] of Object.entries(prop.properties)) {
-        const ctrl = controlType(subProp)
-        if (!ctrl) continue
-        items.push({
-          ...subProp,
-          path:          `${key}.${subKey}`,
-          _control:      ctrl,
-          _sectionTitle: prop.title,
-        })
+        const item = buildItem(subProp, `${key}.${subKey}`, prop.title)
+        if (item) items.push(item)
       }
       if (items.length) {
         result.push({
@@ -312,9 +331,8 @@ const sections = computed(() => {
         })
       }
     } else {
-      const ctrl = controlType(prop)
-      if (!ctrl) continue
-      generalItems.push({ ...prop, path: key, _control: ctrl, _sectionTitle: '' })
+      const item = buildItem(prop, key, '')
+      if (item) generalItems.push(item)
     }
   }
 

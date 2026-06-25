@@ -17,6 +17,9 @@ server/v1/.venv/
 # Go build artifacts
 server/v2/files-workbench
 
+# Generated icon-pack assets (run scripts/install-material-icon-theme.sh)
+config/plugins/material-icon-theme/vscode-material-icon-theme/
+
 # Claude Code local settings
 .claude/
 

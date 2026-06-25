@@ -1,5 +1,5 @@
 import { markRaw } from 'vue'
-import { mdiSourceBranch, mdiSourceCommit, mdiSourceRepository, mdiFileTree, mdiFormatListBulleted } from '@mdi/js'
+import { mdiSourceBranch, mdiSourceCommit, mdiSourceRepository, mdiFileTree, mdiFormatListBulleted, mdiRefresh } from '@mdi/js'
 
 import RepositoriesSection from './components/SourceControlRepositoriesSection.vue'
 import ChangesSection from './components/SourceControlChangesSection.vue'
@@ -42,6 +42,14 @@ export function activate(api) {
   const git = useGitData()
   const offTab = api.events.on('active-tab-change', () => git.refresh())
 
+  // Poll the open repos so changes made on disk (commits, edits, branch switches
+  // outside the app) surface without a manual refresh. Skipped while the window is
+  // hidden, to avoid pointless background git calls.
+  const REFRESH_INTERVAL_MS = 10000
+  const refreshTimer = setInterval(() => {
+    if (typeof document === 'undefined' || !document.hidden) git.refresh()
+  }, REFRESH_INTERVAL_MS)
+
   api.commands.register({
     id: 'sourceControl.viewGitGraph',
     title: 'View Git Graph',
@@ -71,6 +79,9 @@ export function activate(api) {
       icon: mdiSourceRepository,
       homeView: 'sourceControl',
       component: markRaw(RepositoriesSection),
+      actions: [
+        { id: 'refresh', icon: mdiRefresh, title: 'Refresh', run: () => git.refresh() },
+      ],
     }))
     .addView(new ViewSection({
       id: 'scChanges',
@@ -79,6 +90,7 @@ export function activate(api) {
       homeView: 'sourceControl',
       component: markRaw(ChangesSection),
       actions: [
+        { id: 'refresh', icon: mdiRefresh, title: 'Refresh', run: () => git.refresh() },
         {
           id: 'toggleChangesView',
           // Reflects the next mode (like VS Code's SCM view-as toggle).
@@ -118,7 +130,7 @@ export function activate(api) {
     }))
 
   const offActivity = api.activities.register(activity)
-  return () => { offTab?.(); offActivity() }
+  return () => { offTab?.(); clearInterval(refreshTimer); offActivity() }
 }
 
 export function deactivate() {}

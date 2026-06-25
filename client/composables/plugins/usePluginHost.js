@@ -25,9 +25,9 @@ export function createPluginHost({ host, log = () => {} }) {
   function load(manifest, module) {
     const { valid, errors, warnings } = validateManifest(manifest)
     if (!valid) throw new Error(`[plugins] invalid manifest for "${manifest?.id ?? '?'}": ${errors.join('; ')}`)
-    for (const w of warnings) log('plugins', `${manifest.id}: ${w}`)
+    for (const w of warnings) log('plugins', `${manifest.id}: ${w}`, null, 'warning')
 
-    if (loaded.has(manifest.id)) { log('plugins', `"${manifest.id}" already loaded`); return }
+    if (loaded.has(manifest.id)) { log('plugins', `"${manifest.id}" already loaded`, null, 'warning'); return }
     if (typeof module?.activate !== 'function') {
       throw new Error(`[plugins] "${manifest.id}" entry has no activate(api) export`)
     }
@@ -43,7 +43,7 @@ export function createPluginHost({ host, log = () => {} }) {
       throw new Error(`[plugins] "${manifest.id}" activate() threw: ${err?.message ?? err}`)
     }
     loaded.set(manifest.id, { manifest, api, module, dispose })
-    log('plugins', `loaded "${manifest.id}" v${manifest.version}`)
+    log('plugins', `loaded "${manifest.id}" v${manifest.version}`, null, 'info')
   }
 
   function unload(id) {
@@ -53,8 +53,8 @@ export function createPluginHost({ host, log = () => {} }) {
     if (dependents.length) {
       throw new Error(`[plugins] cannot unload "${id}" — required by ${dependents.map(d => d.manifest.id).join(', ')}`)
     }
-    try { if (typeof p.dispose === 'function') p.dispose() } catch (err) { log('plugins', `"${id}" dispose threw`, err) }
-    try { p.module.deactivate?.(p.api) } catch (err) { log('plugins', `"${id}" deactivate threw`, err) }
+    try { if (typeof p.dispose === 'function') p.dispose() } catch (err) { log('plugins', `"${id}" dispose threw`, err, 'error') }
+    try { p.module.deactivate?.(p.api) } catch (err) { log('plugins', `"${id}" deactivate threw`, err, 'error') }
     loaded.delete(id)
   }
 
@@ -62,7 +62,7 @@ export function createPluginHost({ host, log = () => {} }) {
   // with missing/cyclic dependencies are skipped (and reported).
   function loadAll(entries) {
     for (const { manifest, module } of order(entries, log)) {
-      try { load(manifest, module) } catch (err) { log('plugins', String(err?.message ?? err)) }
+      try { load(manifest, module) } catch (err) { log('plugins', String(err?.message ?? err), null, 'error') }
     }
   }
 
@@ -87,12 +87,12 @@ function order(entries, log) {
 
   function visit(id) {
     if (done.has(id)) return true
-    if (visiting.has(id)) { log('plugins', `dependency cycle involving "${id}" — skipped`); return false }
+    if (visiting.has(id)) { log('plugins', `dependency cycle involving "${id}" — skipped`, null, 'warning'); return false }
     const entry = byId.get(id)
     if (!entry) return false
     visiting.add(id)
     for (const depId of Object.keys(entry.manifest.dependencies ?? {})) {
-      if (!byId.has(depId)) { log('plugins', `"${id}" depends on missing "${depId}" — skipped`); visiting.delete(id); return false }
+      if (!byId.has(depId)) { log('plugins', `"${id}" depends on missing "${depId}" — skipped`, null, 'warning'); visiting.delete(id); return false }
       if (!visit(depId)) { visiting.delete(id); return false }
     }
     visiting.delete(id)

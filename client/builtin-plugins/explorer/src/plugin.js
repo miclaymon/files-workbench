@@ -128,9 +128,11 @@ export function activate(api) {
         { id: 'refresh',   title: 'Refresh',    icon: mdiRefresh,           run: ctx => ctx.refreshExplorer?.() },
         {
           id:    'toggleHidden',
-          icon:  ctx => ctx.prefs.explorer.showHiddenFiles ? mdiEyeOff : mdiEye,
-          title: ctx => ctx.prefs.explorer.showHiddenFiles ? 'Hide hidden items' : 'Show hidden items',
-          run:   ctx => { ctx.prefs.explorer.showHiddenFiles = !ctx.prefs.explorer.showHiddenFiles },
+          // The Places tree owns its hidden-item visibility (persisted per workspace
+          // in explorerContext), independent of the global showHiddenFiles pref.
+          icon:  ctx => ctx.explorerContext?.value?.showHidden ? mdiEyeOff : mdiEye,
+          title: ctx => ctx.explorerContext?.value?.showHidden ? 'Hide hidden items' : 'Show hidden items',
+          run:   ctx => ctx.toggleExplorerHidden?.(),
         },
         {
           id:    'collapseExpand',
@@ -146,7 +148,6 @@ export function activate(api) {
         selectedPath:       ctx.explorerTreeFocus?.value?.path ?? '',
         showCheckboxes:     ctx.prefs.explorer.alwaysShowCheckboxes,
         showFiles:          ctx.prefs.explorer.showFiles ?? false,
-        showHiddenFiles:    ctx.prefs.explorer.showHiddenFiles ?? false,
         excludedCategories: ctx.prefs.excludedCategories,
         indentScale:        ctx.prefs.explorer.indentScale ?? 1.0,
         explorerState:      ctx.explorerContext.value,

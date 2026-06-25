@@ -12,7 +12,7 @@ A desktop file manager built with Electron + Nuxt 3 (Vue 3) on the front end and
 - File preview panel: images, video (Video.js), audio (Wavesurfer.js + embedded album art), code/text (Monaco Editor), HTML (rendered iframe + source toggle)
 - Hover preview overlay: hovering a grid item shows a floating media preview centered on the thumbnail
 - Media thumbnails: images resized server-side; video frame extraction and audio artwork via ffmpeg; disk-based thumbnail cache
-- Icon pack plugin system: VSCode icon theme adapter with `vscode-material-icon-theme` support; icons resolved server-side and shown in directory views and the explorer tree
+- Icon pack plugin system: a first-party **Material Icon Theme** plugin registers a `getIcon` handler through the Workbench API (the `icons` permission) and resolves file/folder icons (VS Code `vscode-material-icon-theme` assets, served by the Go backend) — shown in directory views, the explorer tree, source control, and details; the active pack is selectable and falls back cleanly to built-in MDI glyphs
 - File operations: rename (F2, optimistic), move (drag-and-drop, cut/paste), copy/cut/paste, trash (Del), permanent delete (Shift+Del), create folder — with undo/redo
 - System path protection: critical paths (root, /etc, /sys, …) are blocked; operations on protected paths trigger a sudo/admin elevation prompt
 - Compression and extraction: compress to ZIP/TAR/TAR.GZ/7Z; extract with missing-tool detection and per-platform install instructions
@@ -81,8 +81,8 @@ npm run dev:v2
 files-workbench2/
 ├── client/                   Nuxt 3 SPA + Electron shell
 │   ├── assets/css/           Global CSS variables and base styles
-│   ├── activities/           First-party activity modules — each declares its tab/panel/status surfaces + runtime API (Workbench, Chat)
-│   ├── builtin-plugins/      First-party plugins loaded through the plugin host (Explorer, Source Control, Preview, Details, Debug)
+│   ├── activities/           First-party activity modules — each declares its tab/panel/status surfaces + runtime API (Workbench shell only; the rest are plugins)
+│   ├── builtin-plugins/      First-party plugins loaded through the plugin host (Explorer, Source Control, Preview, Details, Debug, Material Icon Theme, Chat, Search, Storage, Converter)
 │   ├── models/               UI model classes (ui/: Activity, View, …) + plugin model (plugin/: manifest, permissions)
 │   ├── components/workbench/ All UI components
 │   ├── composables/          Vue composables, grouped:

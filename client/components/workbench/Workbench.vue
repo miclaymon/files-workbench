@@ -501,6 +501,7 @@ Object.assign(host, {
   showNewFolderModal:  () => _openNewItemModal('folder'),
   collapseAllExplorer: () => explorerPanelRef.value?.collapseAll(),
   expandRootsExplorer: () => explorerPanelRef.value?.expandRoots(),
+  toggleExplorerHidden: () => explorerPanelRef.value?.toggleHidden(),
 })
 provide('viewCtx', host)
 

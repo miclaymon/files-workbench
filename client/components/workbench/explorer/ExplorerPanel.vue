@@ -34,7 +34,6 @@ import { useTreeDrag } from '~/composables/interaction/useTreeDrag.js'
 
 const props = defineProps({
   selectedPath:       { type: String,  default: '' },
-  showHiddenFiles:    { type: Boolean, default: false },
   showFiles:          { type: Boolean, default: false },
   showCheckboxes:     { type: Boolean, default: false },
   excludedCategories: { type: Array,   default: () => ['System'] },
@@ -48,14 +47,20 @@ const error     = ref('')
 const rootItems = ref([])
 const highlightedPaths = computed(() => (props.selectedPath ? new Set([props.selectedPath]) : new Set()))
 
-// Lazy children fetch — same visibility flags the panel was given, so the hidden /
-// show-files toggles apply through the whole tree (matching the original).
+// Hidden-item visibility is the Places tree's OWN state — persisted to the
+// workspace alongside the expanded paths (not the global `showHiddenFiles` pref,
+// which still governs the directory editor views) and defaulting to hidden.
+// Restored from the persisted explorer state on mount.
+const showHidden = ref(props.explorerState?.showHidden ?? false)
+
+// Lazy children fetch — applies the tree's own hidden / show-files flags through
+// the whole tree.
 function loadChildren(path) {
   return explorerList({
     root: path,
     excludeCategories: (props.excludedCategories ?? ['System']).join(','),
     showFiles:  props.showFiles ?? false,
-    showHidden: props.showHiddenFiles ?? false,
+    showHidden: showHidden.value,
     includeMetadata: false,
   }).then(r => r.items ?? []).catch(() => [])
 }
@@ -69,12 +74,13 @@ const { nodes, expanded, toggleExpand, reloadDir, reloadAll, expandRoots, collap
     initialState: props.explorerState,
   })
 
-// Persist expand/cache state up to the workspace, like the original tree.
-watch(state, (s) => emit('state-change', s))
+// Persist expand/cache state AND the hidden-visibility flag up to the workspace.
+watch([state, showHidden], () => emit('state-change', { ...state.value, showHidden: showHidden.value }))
 
-// Re-list all cached directories when visibility prefs change.
-// Roots themselves don't change; only their children do, which reloadAll refreshes.
-watch(() => [props.showHiddenFiles, props.showFiles], () => reloadAll())
+// Re-list all cached directories when a visibility flag changes. Roots themselves
+// don't change; only their children do, which reloadAll refreshes.
+watch(() => props.showFiles, () => reloadAll())
+watch(showHidden, () => reloadAll())
 
 // Drag-move support: a node dropped on a directory bubbles up as a move.
 useTreeDrag({ onDrop: ({ dragged, target }) => emit('move', { items: [dragged], destPath: target.path }) })
@@ -83,7 +89,7 @@ async function loadRoots() {
   try {
     loading.value = true; error.value = ''
     rootItems.value = await loadExplorerRoots({
-      showHidden: props.showHiddenFiles ?? false,
+      showHidden: showHidden.value,
       showFiles:  props.showFiles ?? false,
       excludeCategories: (props.excludedCategories ?? ['System']).join(','),
     })
@@ -95,7 +101,10 @@ async function loadRoots() {
 }
 
 onMounted(loadRoots)
-defineExpose({ refresh: loadRoots, reloadDir, reloadAll, collapseAll, expandRoots })
+defineExpose({
+  refresh: loadRoots, reloadDir, reloadAll, collapseAll, expandRoots,
+  toggleHidden: () => { showHidden.value = !showHidden.value },
+})
 </script>
 
 <style scoped>

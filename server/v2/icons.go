@@ -14,12 +14,14 @@ func handleIconsManifest(w http.ResponseWriter, r *http.Request) {
 	}
 	t := activeIconTheme
 	jsonOK(w, map[string]any{
-		"available":      true,
-		"fileExtensions": t.FileExtensions,
-		"fileNames":      t.FileNames,
-		"folderNames":    t.FolderNames,
-		"file":           t.File,
-		"folder":         t.Folder,
+		"available":           true,
+		"fileExtensions":      t.FileExtensions,
+		"fileNames":           t.FileNames,
+		"folderNames":         t.FolderNames,
+		"folderNamesExpanded": t.FolderNamesExpanded,
+		"file":                t.File,
+		"folder":              t.Folder,
+		"folderExpanded":      t.FolderExpanded,
 	})
 }
 

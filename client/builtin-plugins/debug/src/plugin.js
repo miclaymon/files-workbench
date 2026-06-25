@@ -1,8 +1,16 @@
 import { markRaw } from 'vue'
-import { mdiBug, mdiNotificationClearAll } from '@mdi/js'
+import { mdiBug, mdiNotificationClearAll, mdiFilter, mdiFilterOutline } from '@mdi/js'
 
 import DebugPanel from './components/DebugPanel.vue'
 import { useDebugLog } from '~/composables/useDebugLog.js'
+
+// Action label per minimum-severity filter.
+const FILTER_LABEL = {
+  debug:   'All levels',
+  info:    'Info & above',
+  warning: 'Warnings & Errors',
+  error:   'Errors only',
+}
 
 // Debug plugin entry. A first-party plugin loaded through the plugin host (not
 // compiled into ACTIVITIES) — it contributes the Debug panel to the Bottom Panel.
@@ -14,7 +22,7 @@ import { useDebugLog } from '~/composables/useDebugLog.js'
 // offering a service the rest of the app consumes over the internal API.
 export function activate(api) {
   const { Activity, PanelView } = api
-  const { entries, log, clear } = useDebugLog()
+  const { entries, visibleEntries, log, clear, minLevel, cycleLevelFilter } = useDebugLog()
 
   // Activity-owned command, contributed through the scoped api a plugin uses —
   // proving registration isn't special-cased for first-party activities.
@@ -27,7 +35,7 @@ export function activate(api) {
     label: 'Debug',
     icon: mdiBug,
     // The activity API the host's `log` capability delegates to.
-    setup: () => ({ entries, log, clear }),
+    setup: () => ({ entries, visibleEntries, log, clear, minLevel, cycleLevelFilter }),
   })
     .addView(new PanelView({
       id: 'debug',
@@ -36,6 +44,13 @@ export function activate(api) {
       location: 'BottomPanel',
       component: markRaw(DebugPanel),
       actions: [
+        {
+          id: 'filterLevel',
+          // Funnel fills in once a filter is active; the title shows what's shown.
+          icon:  ctx => (ctx.api('debug')?.minLevel?.value ?? 'debug') === 'debug' ? mdiFilterOutline : mdiFilter,
+          title: ctx => `Filter: ${FILTER_LABEL[ctx.api('debug')?.minLevel?.value ?? 'debug']}`,
+          run:   ctx => ctx.api('debug')?.cycleLevelFilter?.(),
+        },
         { id: 'clear', title: 'Clear', icon: mdiNotificationClearAll, run: ctx => ctx.api('debug')?.clear?.() },
       ],
     }))

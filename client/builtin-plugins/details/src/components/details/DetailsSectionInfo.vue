@@ -13,9 +13,12 @@
                :src="thumbSrc" class="dsi-thumb-img"
                :style="{ opacity: thumbLoaded ? 1 : 0 }"
                @load="thumbLoaded = true" @error="thumbFailed = true" />
-          <img v-else-if="packIconSrc && !packIconFailed"
-               :src="packIconSrc" class="dsi-thumb-pack"
+          <img v-else-if="customIconSrc && !packIconFailed"
+               :src="customIconSrc" class="dsi-thumb-pack"
                @error="packIconFailed = true" />
+          <ResolvedIcon v-else-if="packResult && !packIconFailed"
+               :result="packResult" icon-class="dsi-thumb-pack"
+               @fail="packIconFailed = true" />
           <svg v-else class="dsi-thumb-mdi" viewBox="0 0 24 24" fill="currentColor">
             <path :d="fallbackIcon" />
           </svg>
@@ -84,10 +87,11 @@
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
 import { mdiFile, mdiFolder, mdiArchive, mdiInformationOutline } from '@mdi/js'
-import { useIconPack } from '~/composables/useIconPack.js'
+import { useIconRegistry } from '~/composables/useIconRegistry.js'
 import { resolveCustomIcon } from '~/composables/useCustomIcon.js'
 import { API_BASE, API_V, MEDIA_BASE } from '~/lib/api-config.js'
 import { fsOpenWithSystem } from '~/lib/fs-api.js'
+import ResolvedIcon from '~/components/workbench/ResolvedIcon.vue'
 
 const props = defineProps({
   selectedPath: { type: String, default: '' },
@@ -99,8 +103,7 @@ const emit = defineEmits(['rename'])
 
 // ── Icon pack ─────────────────────────────────────────────────────────────────
 
-const { ensureLoaded, resolveIcon, iconUrl, isAvailable: iconPackAvailable } = useIconPack()
-ensureLoaded()
+const { resolveIcon } = useIconRegistry()
 
 // ── Fetched data ──────────────────────────────────────────────────────────────
 
@@ -202,18 +205,26 @@ const thumbSrc = computed(() => {
 // already-loaded thumbnail, since the unchanged <img> src never re-fires @load).
 watch(thumbSrc, () => { thumbLoaded.value = false; thumbFailed.value = false })
 
-const packIconSrc = computed(() => {
-  if (packIconFailed.value) return null
+// Layer 1: explicit image icon from .directory / desktop.ini (directories only).
+const customIconSrc = computed(() => {
+  const item = props.selectedItem
+  if (!item || item.kind !== 'dir') return null
+  const d = resolveCustomIcon(item.customization?.icon)
+  return d?.type === 'url' ? d.url : null
+})
+
+// Layer 2: the active icon theme's descriptor for the selected item.
+const packResult = computed(() => {
   const item = props.selectedItem
   if (!item) return null
-  if (item.kind === 'dir') {
-    const d = resolveCustomIcon(item.customization?.icon)
-    if (d?.type === 'url') return d.url
-  }
-  if (item.icon) return iconUrl(item.icon)
-  if (!iconPackAvailable.value) return null
-  const name = resolveIcon(item.name, item.kind === 'dir')
-  return name ? iconUrl(name) : null
+  return resolveIcon({
+    path: item.path,
+    name: item.name,
+    kind: item.kind,
+    isDir: item.kind === 'dir',
+    expanded: false,
+    activityName: 'details',
+  })
 })
 
 const fallbackIcon = computed(() => {

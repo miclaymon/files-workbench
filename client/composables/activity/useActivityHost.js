@@ -3,6 +3,7 @@ import { ACTIVITIES } from '~/activities/index.js'
 import { activityOfTabKind, registerActivity, unregisterActivity, getModal, listModals } from '~/composables/useViewRegistry.js'
 import { collectLeaves } from '~/composables/useLayoutGrid.js'
 import { registerPreferences } from '~/composables/usePreferenceSchema.js'
+import { registerIconTheme, setActiveIconTheme, listIconThemes } from '~/composables/useIconRegistry.js'
 import { createEmitter } from './useEmitter.js'
 import { createCommandRegistry } from './useCommandRegistry.js'
 import { createKeybindingRegistry } from './useKeybindingRegistry.js'
@@ -191,6 +192,9 @@ export function useActivityHost({ editor, prefs, services = {}, log = () => {} }
       register: registerPreferences,
       get: (path) => String(path).split('.').reduce((o, k) => o?.[k], prefs),
     },
+    // icon themes: an icon-pack plugin registers a getIcon handler; renderers
+    // resolve item icons through the active one (layer 2 of the icon pipeline).
+    icons: { register: registerIconTheme, setActive: setActiveIconTheme, list: listIconThemes },
     // dynamic activity registration. First-party activities use the bootstrap
     // below; a plugin calls register() at runtime to add an activity's API and its
     // surfaces together, and gets a disposer that removes both.
@@ -241,9 +245,19 @@ export function useActivityHost({ editor, prefs, services = {}, log = () => {} }
   for (const def of ACTIVITIES) instantiateActivity(def)
 
   // Re-broadcast active-tab / active-activity changes as app-level events so
-  // activities can react without watching the editor grid directly.
-  watch(activeTab,        tab => appEvents.emit('active-tab-change', tab))
+  // activities can react without watching the editor grid directly. The active-tab
+  // signal keys on the tab's id AND path: navigating a directory tab mutates its
+  // `path` in place (same tab object), so a plain identity watch would miss it —
+  // and consumers like Source Control re-detect repos from the open dir tabs' paths.
+  watch(
+    () => { const t = activeTab.value; return t ? `${t.id} ${t.path ?? ''}` : null },
+    () => appEvents.emit('active-tab-change', activeTab.value),
+  )
   watch(activeActivityId, id  => appEvents.emit('active-activity-change', id))
+
+  // The active icon theme follows the `iconTheme` preference; the registry falls
+  // back to the first registered theme when it is unset or names an unloaded pack.
+  watch(() => prefs.iconTheme, id => { if (id) setActiveIconTheme(id) }, { immediate: true })
 
   return host
 }

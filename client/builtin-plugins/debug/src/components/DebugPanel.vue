@@ -1,11 +1,13 @@
 <template>
   <div class="dbg" ref="containerEl">
-    <div v-if="entries.length === 0" class="dbg-empty">No events yet.</div>
+    <div v-if="visibleEntries.length === 0" class="dbg-empty">
+      {{ entries.length ? 'No events at this level.' : 'No events yet.' }}
+    </div>
     <div
-      v-for="entry in entries"
+      v-for="entry in visibleEntries"
       :key="entry.id"
       class="dbg-row"
-      :class="{ 'dbg-row--expandable': isExpandable(entry), 'dbg-row--expanded': expanded.has(entry.id) }"
+      :class="[`dbg-row--lvl-${entry.level}`, { 'dbg-row--expandable': isExpandable(entry), 'dbg-row--expanded': expanded.has(entry.id) }]"
       @click="isExpandable(entry) && toggle(entry.id)"
     >
       <!-- Main row -->
@@ -15,6 +17,7 @@
         </span>
         <span v-else class="dbg-chevron dbg-chevron--placeholder" />
         <span class="dbg-time">{{ entry.time }}</span>
+        <span class="dbg-level" :class="`dbg-level--${entry.level}`" :title="entry.level">{{ LEVEL_ABBR[entry.level] ?? '—' }}</span>
         <span class="dbg-cat" :class="`dbg-cat--${entry.category}`">{{ entry.category }}</span>
         <span class="dbg-msg">{{ entry.message }}</span>
         <span v-if="summaryText(entry)" class="dbg-data">{{ summaryText(entry) }}</span>
@@ -95,10 +98,13 @@ import {
   mdiImage, mdiFilm, mdiMusicNote, mdiCodeBraces, mdiFilePdfBox,
 } from '@mdi/js'
 
-const { entries } = useDebugLog()
+const { entries, visibleEntries } = useDebugLog()
 const containerEl = ref(null)
 const expanded     = ref(new Set())
 const failedThumbs = ref(new Set())
+
+// Short level tags shown per row (full level is in the title attribute).
+const LEVEL_ABBR = { debug: 'DBG', info: 'INF', warning: 'WRN', error: 'ERR' }
 
 function onThumbError(key) {
   failedThumbs.value = new Set([...failedThumbs.value, key])
@@ -199,7 +205,7 @@ function toggle(id) {
 }
 
 // Auto-scroll to bottom when new entries arrive, only if already near the bottom
-watch(entries, async () => {
+watch(visibleEntries, async () => {
   await nextTick()
   const el = containerEl.value
   if (!el) return
@@ -261,6 +267,26 @@ watch(entries, async () => {
   letter-spacing: 0.01em;
   user-select: none;
 }
+
+/* ── Level badge ─────────────────────────────────────────────────────────── */
+.dbg-level {
+  flex-shrink: 0;
+  width: 30px;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border-radius: 3px;
+  user-select: none;
+}
+.dbg-level--debug   { color: #90a4ae; background: rgba(144,164,174,0.14); }
+.dbg-level--info    { color: #64b5f6; background: rgba(100,181,246,0.16); }
+.dbg-level--warning { color: #ffb74d; background: rgba(255,183,77,0.18); }
+.dbg-level--error   { color: #ef5350; background: rgba(239,83,80,0.20); }
+
+/* Severity tint on the whole row for the louder levels. */
+.dbg-row--lvl-warning .dbg-main { background: rgba(255,183,77,0.05); }
+.dbg-row--lvl-error   .dbg-main { background: rgba(239,83,80,0.07); }
 
 /* ── Category chip ───────────────────────────────────────────────────────── */
 .dbg-cat {
