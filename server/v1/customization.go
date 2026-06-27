@@ -116,7 +116,7 @@ func parseDesktopIni(data []byte) *dirCustomization {
 
 // handleFsCustomizationGet returns the parsed customization for a single directory.
 //
-//	GET /_api/v2/fs/customization?path=<dir>
+//	GET /_api/v1/fs/customization?path=<dir>
 func handleFsCustomizationGet(w http.ResponseWriter, r *http.Request) {
 	dirPath := r.URL.Query().Get("path")
 	if dirPath == "" {
@@ -130,7 +130,7 @@ func handleFsCustomizationGet(w http.ResponseWriter, r *http.Request) {
 // handleFsCustomizationPut writes or updates the .directory file for a directory.
 // Fields set to null in the JSON body are left unchanged; fields set to "" are cleared.
 //
-//	PUT /_api/v2/fs/customization?path=<dir>
+//	PUT /_api/v1/fs/customization?path=<dir>
 //	Body: { "name": "...", "icon": "...", "comment": "..." }
 func handleFsCustomizationPut(w http.ResponseWriter, r *http.Request) {
 	dirPath := r.URL.Query().Get("path")

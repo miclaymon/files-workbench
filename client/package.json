@@ -4,9 +4,9 @@
   "private": true,
   "main": "electron/main.js",
   "scripts": {
-    "dev": "node scripts/dev.js",
-    "dev:web": "nuxt dev",
-    "build": "nuxt build",
+    "dev:web:client": "nuxt dev",
+    "dev:electron:client": "node scripts/dev.js",
+    "build:web": "nuxt build",
     "build:electron": "nuxt generate && electron-builder",
     "generate": "nuxt generate",
     "preview": "nuxt preview",

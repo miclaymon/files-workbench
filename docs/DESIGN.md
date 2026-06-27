@@ -14,7 +14,7 @@ Files Workbench 2 is a multi-process desktop application:
 │  │  http://localhost:3000         │  │
 │  └────────────────────────────────┘  │
 └──────────────────────────────────────┘
-              │ HTTP /_api/v2/*
+              │ HTTP /_api/v1/*
 ┌──────────────────────────────────────┐
 │  Go HTTP server                      │
 │  data:    http://localhost:8001      │
@@ -22,7 +22,7 @@ Files Workbench 2 is a multi-process desktop application:
 └──────────────────────────────────────┘
 ```
 
-In development, Nuxt's Vite dev server proxies `/_api/v2/*` to the data server on port 8001. Write operations contact the control server directly at port 8002. In production, Nuxt generates a static bundle that Electron loads directly from disk; the client calls both servers by their port numbers without a proxy.
+In development, Nuxt's Vite dev server proxies `/_api/v1/*` to the data server on port 8001. Write operations contact the control server directly at port 8002. In production, Nuxt generates a static bundle that Electron loads directly from disk; the client calls both servers by their port numbers without a proxy.
 
 ## Frontend component model
 
@@ -178,7 +178,7 @@ Submenu position is computed from the chevron button's `getBoundingClientRect()`
 
 ### Explorer tree
 
-`ExplorerPanel` uses `useDirectoryFileTree` in **lazy** mode: virtual roots (`Root`, `Home`, `Drives`) are loaded by `loadExplorerRoots` from `client/lib/explorer-roots.js`, and each root's children are fetched on first expand via `/_api/v2/Explorer` endpoints. Expanded state is persisted to the workspace via `explorerContext` (the `state-change` event propagated up to `Workbench`). The tree is recursive: `TreeItem` renders a node and its children, forwarding events up through `TreeList` → `ExplorerPanel` → `Workbench`.
+`ExplorerPanel` uses `useDirectoryFileTree` in **lazy** mode: virtual roots (`Root`, `Home`, `Drives`) are loaded by `loadExplorerRoots` from `client/lib/explorer-roots.js`, and each root's children are fetched on first expand via `/_api/v1/Explorer` endpoints. Expanded state is persisted to the workspace via `explorerContext` (the `state-change` event propagated up to `Workbench`). The tree is recursive: `TreeItem` renders a node and its children, forwarding events up through `TreeList` → `ExplorerPanel` → `Workbench`.
 
 ### Event propagation pattern
 
@@ -259,7 +259,7 @@ A **plugin** is an out-of-core activity loaded at runtime through a *permission-
 - **Manifest + permissions** (`client/models/plugin/`) — `manifest.js` validates a Chrome-style `manifest.json` (id/version/main/permissions/host_permissions/dependencies). `permissions.js` defines two tiers: front-end `PERMISSIONS` each gating a facade slice, and backend `HOST_PERMISSIONS` each gating a brokered service. Unknown permissions are ignored with a warning (forward-compatible).
 - **Loader** (`client/composables/plugins/`) — `usePluginApi.js` builds the frozen `api` handed to `activate`: the UI model classes + `log` always, plus exactly the facade slices and brokered services the declared permissions grant. `usePluginHost.js` loads/unloads `{ manifest, module }` pairs (dependency-ordered, with disposers). `activate(api)` contributes and returns a disposer; `deactivate(api)` is optional.
 - **Loading** — built-ins are listed in `client/builtin-plugins/index.js` and loaded at startup in `Workbench.vue`. The archive/sandbox runtime (`.zip`/`.vsix` → extract → import `src/plugin.js` sandboxed) is planned and will produce the same `{ manifest, module }` pairs.
-- **Brokered backend** — plugins never touch the filesystem/control server directly. A host-permission'd service (e.g. `api.scm`, gated by `scm:read`/`scm:write`) forwards to a client broker (`client/lib/scm-api.js`) that calls the Go server's `/scm` endpoints (`server/v2/scm.go`: git detect/info/commit/init), reads→data and writes→control, with a mock fallback when the endpoints are offline.
+- **Brokered backend** — plugins never touch the filesystem/control server directly. A host-permission'd service (e.g. `api.scm`, gated by `scm:read`/`scm:write`) forwards to a client broker (`client/lib/scm-api.js`) that calls the Go server's `/scm` endpoints (`server/v1/scm.go`: git detect/info/commit/init), reads→data and writes→control, with a mock fallback when the endpoints are offline.
 
 The reference is the first-party **Source Control** plugin (`client/builtin-plugins/source-control/`): a `PrimarySideBar` panel with Repositories / Changes / Graph view sections, a Git Graph editor tab (repo pinned at open time via tab `params`), a branch status widget, commands + a section action, a contributed preference, and the `scm:*` git backend — all through the permission-scoped API.
 
@@ -413,7 +413,7 @@ If the SW is unavailable (first load, no HTTPS, unsupported browser), `sw-queue.
 
 ## Server architecture
 
-The active backend is a Go HTTP server (`server/v2/`) using the stdlib `net/http` package. There is no framework — routes are registered on a `http.ServeMux`. All routes are prefixed with `/_api/v2/`.
+The active backend is a Go HTTP server (`server/v1/`) using the stdlib `net/http` package. There is no framework — routes are registered on a `http.ServeMux`. All routes are prefixed with `/_api/v1/`.
 
 The process starts **two independent `http.Server` goroutines** on separate ports:
 
@@ -434,7 +434,7 @@ Functional areas:
 - **media** — thumbnails (image resize via `golang.org/x/image`; video frame and audio artwork extraction via ffmpeg), file metadata, raw file serving
 - **icons** — serve icon pack manifest (`/icons/manifest`) and individual SVG icons by definition name (`/icons/svg?name=…`)
 - **preferences** — read and write user preferences JSON, serve the preferences JSON Schema
-- **scm** — source control via the `git` CLI: detect repositories reachable from open paths, report branch/ahead-behind/status/log, commit, init (`server/v2/scm.go`); reached from the client only through the SCM broker behind the `scm:*` plugin permissions
+- **scm** — source control via the `git` CLI: detect repositories reachable from open paths, report branch/ahead-behind/status/log, commit, init (`server/v1/scm.go`); reached from the client only through the SCM broker behind the `scm:*` plugin permissions
 - **perf** — client-side performance log ingestion
 
 Thumbnail generation is handled by `thumbnail.go` and results are stored in a disk-based cache keyed by file path, size, and type. `blacklist.go` loads path exclusion rules from a server-side config file rather than URL parameters.
@@ -451,7 +451,7 @@ Thumbnail generation is handled by `thumbnail.go` and results are stored in a di
 
 These reads bypass the blacklist intentionally — the blacklist controls what appears in listing responses; `readDirCustomization` is an internal server read that enriches parent directory metadata.
 
-The `customization` field is embedded in every directory item returned by `list_dir` and the Explorer APIs. `PUT /_api/v2/fs/customization` writes or updates the `.directory` file, using pointer fields in the JSON body so `null` = keep existing value, `""` = clear the field.
+The `customization` field is embedded in every directory item returned by `list_dir` and the Explorer APIs. `PUT /_api/v1/fs/customization` writes or updates the `.directory` file, using pointer fields in the JSON body so `null` = keep existing value, `""` = clear the field.
 
 The client resolves customization icons via `useCustomIcon.js`: absolute paths are served through `fs/preview`; Dolphin `folder-<color>` names map to CSS colors and render as inline `<svg fill="currentColor">` (bypassing the icon pack `<img>` since CSS `color` cannot tint an image element). Icon priority: custom path → folder-color SVG → icon pack → MDI default.
 

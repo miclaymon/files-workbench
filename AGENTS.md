@@ -5,8 +5,8 @@ Instructions for AI coding agents (Claude Code, etc.) working in this repository
 ## Repository at a glance
 
 - **Frontend**: Nuxt 3 SPA (`client/`) served by Vite in dev and compiled to static in production. Runs inside Electron for the desktop app.
-- **Backend**: Go HTTP server (`server/v2/`) — data server on port 8001, control server on port 8002. All routes under `/_api/v2/`.
-- **Dev proxy**: Nuxt/Vite proxies `/_api/v2/*` to port 8001 (data). Write ops contact port 8002 directly via `CONTROL_BASE`. The proxy silently drops large binary responses — use Nitro server routes for file preview content (see below).
+- **Backend**: Go HTTP server (`server/v1/`) — data server on port 8001, control server on port 8002. All routes under `/_api/v1/`.
+- **Dev proxy**: Nuxt/Vite proxies `/_api/v1/*` to port 8001 (data). Write ops contact port 8002 directly via `CONTROL_BASE`. The proxy silently drops large binary responses — use Nitro server routes for file preview content (see below).
 
 ## Component architecture
 
@@ -94,7 +94,7 @@ A **plugin** is an out-of-core activity loaded at runtime through a *permission-
 - **Manifest + permissions** (`client/models/plugin/`): `manifest.js` (Chrome-style `manifest.json` validator), `permissions.js` (front-end `PERMISSIONS` gating facade slices, backend `HOST_PERMISSIONS` gating brokered services like `scm:read`/`scm:write`). JSON schema + example: `docs/plugins/`.
 - **Loader** (`client/composables/plugins/`): `usePluginApi.js` builds the frozen, permission-scoped `api` (UI classes + `log` + only the granted facade slices/brokers); `usePluginHost.js` loads/unloads `{ manifest, module }` pairs (dependency-ordered, lifecycle). `activate(api)` contributes and returns a disposer; `deactivate(api)` is optional.
 - **Loading**: built-ins are listed in `client/builtin-plugins/index.js` and loaded at startup in `Workbench.vue`. Current built-ins: **`explorer`** (the file-tree + directory-tab + selection-capability plugin — must load first so Workbench can pull its selection refs before the other slices initialise), **`source-control`** (brokers to the Go scm API — the richest surface reference), and **`preview`** / **`details`** / **`debug`** (pure surface contributors: selection-consuming panels in the Secondary Side Bar, and Debug's log-provider panel in the Bottom Panel). The archive/sandbox runtime path is not built yet — it will produce the same `{ manifest, module }` pairs the host already consumes.
-- **Brokered backend**: plugins never touch the filesystem/control server directly — host-permission'd services (e.g. `api.scm`) forward to the Go server (`server/v2/scm.go`) via a client broker (`client/lib/scm-api.js`, reads→data / writes→control, mock fallback when offline).
+- **Brokered backend**: plugins never touch the filesystem/control server directly — host-permission'd services (e.g. `api.scm`) forward to the Go server (`server/v1/scm.go`) via a client broker (`client/lib/scm-api.js`, reads→data / writes→control, mock fallback when offline).
 - **Preference contributions** (`client/composables/usePreferenceSchema.js`): `api.preferences.register({ key, title, properties })` adds a section to the Settings panel (merged with the static base schema in `SettingsModal.vue`); values live under `prefs.<key>` and persist normally. `api.preferences.get(path)` reads a value.
 
 ## Key lib files and composables
@@ -181,16 +181,16 @@ Hand-rolled store slices instantiated by `Workbench.vue` and wired by dependency
 - `media-preview.get.ts` — streams binary files (images, video, audio) with correct MIME types.
 - `text-preview.get.ts` — reads text/code files up to `max_lines`, decodes UTF-8 (falls back to latin-1), returns JSON.
 
-In production these routes are unused; the client calls `/_api/v2/` directly.
+In production these routes are unused; the client calls `/_api/v1/` directly.
 
-## Go server handlers (`server/v2/`)
+## Go server handlers (`server/v1/`)
 
-The Go process starts **two independent servers**: a read-only data server (port 8001, `PORT` env) and a mutating control server (port 8002, `CONTROL_PORT` env). All routes are prefixed with `/_api/v2/`.
+The Go process starts **two independent servers**: a read-only data server (port 8001, `PORT` env) and a mutating control server (port 8002, `CONTROL_PORT` env). All routes are prefixed with `/_api/v1/`.
 
 | File | Key handlers |
 |---|---|
 | `main.go` | `registerDataRoutes` / `registerControlRoutes`, CORS middleware, dual-server startup with `sync.WaitGroup` |
-| `fs.go` | `handleFsStat`, `handleFsListDir`, `handleFsPreview`, `handleFsCreateFile`, `handleFsCreateDir`, `handleFsWriteFile`, `handleFsOpenWithSystem`, `handleFsOpenTerminal`, `handleFsRename`, `handleFsMove`, `handleFsCopy`, `handleFsDelete`, `handleFsDeleteElevated`, `handleFsTrash`, `handleFsTrashElevated`, `handleFsCompress`, `handleFsDecompress`, `handleFsDirSize`. Files with archive extensions get `kind: "archive"` in listing responses. `handleFsOpenTerminal` walks a list of known terminal emulators (`x-terminal-emulator`, `gnome-terminal`, `konsole`, `kitty`, `alacritty`, etc.) and launches the first one found; uses macOS `osascript` / Windows Terminal fallback on other platforms. `handleFsDirSize` serves `GET /_api/v2/fs/dir_size?path=…`; backed by `getDirSize(path)` (a `sync.Map` cache with 5-min TTL that walks on miss) and `invalidateDirSize(paths…)` (evicts path + immediate parent, called by all write handlers). |
+| `fs.go` | `handleFsStat`, `handleFsListDir`, `handleFsPreview`, `handleFsCreateFile`, `handleFsCreateDir`, `handleFsWriteFile`, `handleFsOpenWithSystem`, `handleFsOpenTerminal`, `handleFsRename`, `handleFsMove`, `handleFsCopy`, `handleFsDelete`, `handleFsDeleteElevated`, `handleFsTrash`, `handleFsTrashElevated`, `handleFsCompress`, `handleFsDecompress`, `handleFsDirSize`. Files with archive extensions get `kind: "archive"` in listing responses. `handleFsOpenTerminal` walks a list of known terminal emulators (`x-terminal-emulator`, `gnome-terminal`, `konsole`, `kitty`, `alacritty`, etc.) and launches the first one found; uses macOS `osascript` / Windows Terminal fallback on other platforms. `handleFsDirSize` serves `GET /_api/v1/fs/dir_size?path=…`; backed by `getDirSize(path)` (a `sync.Map` cache with 5-min TTL that walks on miss) and `invalidateDirSize(paths…)` (evicts path + immediate parent, called by all write handlers). |
 | `archive.go` | `handleFsArchiveLs` — lists archive contents as virtual directory entries. `handleArchiveCapabilities` — reports which tools (7z, unrar) are available. Supports ZIP, TAR/TAR.GZ/TAR.BZ2/TAR.XZ, 7Z (via `7z l -slt`), RAR (via `unrar lt`). `filterArchiveEntries` synthesizes implied directory nodes for archives that omit them. |
 | `exe.go` | `handleMediaExeIcon` — extracts the best-resolution icon from a Windows PE `.rsrc` section (PNG direct or DIB wrapped in a minimal ICO). `handleMediaExeInfo` — parses `VS_VERSIONINFO` to return `{ name, publisher, version, description }`. |
 | `permissions.go` | `isProtectedPath` — blocks operations on critical OS paths (root, /etc, /sys, etc.). `requiresElevation` — detects whether a path needs sudo/admin and returns the elevation method (`sudo_password` on Linux/macOS, `uac` on Windows). |
@@ -209,12 +209,12 @@ The Go process starts **two independent servers**: a read-only data server (port
 
 ### Directory size loading is two-phase and async
 
-`list_dir` does **not** walk directories for sizes. Sizes are loaded separately via `GET /_api/v2/fs/dir_size?path=…` in a two-phase flow inside `DirectoryTab`:
+`list_dir` does **not** walk directories for sizes. Sizes are loaded separately via `GET /_api/v1/fs/dir_size?path=…` in a two-phase flow inside `DirectoryTab`:
 
 - **Phase 1** — `fetchItems()` renders the directory listing immediately; every directory shows no size until phase 2 completes.
 - **Phase 2** — after phase 1, `DirectoryTab` fires concurrent `/fs/dir_size` requests (4 workers) filling a `dirSizes = reactive({})` map keyed by path. `DirectoryPanel` passes `dirSizes` as a prop; `DirectoryLayout` renders `DirSizeCell.vue` per directory item, reading only `dirSizes[item.path]` — so only that one cell re-renders when its size resolves (not the whole list). `DirSizeCell` shows a shimmer skeleton while loading.
 
-**Server-side cache**: `getDirSize(path)` uses a `sync.Map` with a 5-min TTL (walks on miss). `invalidateDirSize(paths…)` evicts the path and its immediate parent; all mutating handlers (`rename`, `move`, `copy`, `delete`, `trash`, `create`) call it after success. `handleFsDirSize` serves `GET /_api/v2/fs/dir_size`.
+**Server-side cache**: `getDirSize(path)` uses a `sync.Map` with a 5-min TTL (walks on miss). `invalidateDirSize(paths…)` evicts the path and its immediate parent; all mutating handlers (`rename`, `move`, `copy`, `delete`, `trash`, `create`) call it after success. `handleFsDirSize` serves `GET /_api/v1/fs/dir_size`.
 
 Do not add `includeDirSize: true` to `fsListDir` calls — the separate endpoint + reactive map pattern is intentional for granular updates.
 
@@ -233,7 +233,7 @@ When a pack icon name has no backing SVG file, `handleIconsSvg` returns HTTP 404
 Some MIME detection logic returns `video/mp2t` for `.ts` files (MPEG-2 transport stream). Always check extension against known text/code extension sets **before** checking MIME type in preview logic.
 
 ### Vite dev proxy size limit
-Binary responses and large text routed through `/_api/v2/` are silently truncated by the Vite dev proxy. Always use the Nitro routes (`/media-preview`, `/text-preview`) in dev for file content delivered to the preview panel. Thumbnails and JSON API responses pass through the proxy fine.
+Binary responses and large text routed through `/_api/v1/` are silently truncated by the Vite dev proxy. Always use the Nitro routes (`/media-preview`, `/text-preview`) in dev for file content delivered to the preview panel. Thumbnails and JSON API responses pass through the proxy fine.
 
 ### DirectoryLayout view modes
 `DirectoryLayout.vue` is a single unified component that handles all view layouts (grid, list, details, gallery-grid, gallery-mosaic, feed, and all grid size variants). The active layout is controlled by the `layout` prop applied as a `data-layout` attribute on the root element; all layout-specific styling is CSS-driven. Old per-layout components (`DirectoryGridLayout.vue`, `DirectoryListLayout.vue`, `DirectoryTableLayout.vue`, `DirectoryFeedLayout.vue`, `DirectoryGalleryLayout.vue`, `DirectoryMosaicLayout.vue`) remain in the repo but are no longer wired into the active rendering path.
@@ -250,7 +250,7 @@ The `::` separator in a tab path signals archive mode throughout the client. `Di
 
 ### Data server vs control server
 
-File-read requests (`/_api/v2/fs/list_dir`, media, etc.) go to port 8001 (proxied in dev via Nuxt). File-write requests (`rename`, `move`, `delete`, etc.) go directly to port 8002 (`CONTROL_BASE`). The service worker also targets `CONTROL_BASE` for all queued operations. Do not register write routes on the data mux or vice versa.
+File-read requests (`/_api/v1/fs/list_dir`, media, etc.) go to port 8001 (proxied in dev via Nuxt). File-write requests (`rename`, `move`, `delete`, etc.) go directly to port 8002 (`CONTROL_BASE`). The service worker also targets `CONTROL_BASE` for all queued operations. Do not register write routes on the data mux or vice versa.
 
 ### Service worker operations queue
 

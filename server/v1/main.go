@@ -10,14 +10,14 @@ import (
 	"sync"
 )
 
-const version = "v2"
+const version = "v1"
 const apiPrefix = "/_api/" + version
 
 // repoRoot is the root of the files-workbench2 repo, computed at startup.
 var repoRoot string
 
 func main() {
-	// Determine repo root: two levels up from server/v2/
+	// Determine repo root: two levels up from server/v1/
 	exe, err := os.Executable()
 	if err != nil {
 		log.Fatal(err)
@@ -25,7 +25,7 @@ func main() {
 	dir := filepath.Dir(exe)
 	// When running via `go run`, the binary is in a temp dir — use source dir instead.
 	if _, src, _, ok := runtime.Caller(0); ok {
-		dir = filepath.Dir(src) // server/v2
+		dir = filepath.Dir(src) // server/v1
 	}
 	repoRoot = filepath.Join(dir, "..", "..")
 	repoRoot, _ = filepath.Abs(repoRoot)

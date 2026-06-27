@@ -103,7 +103,7 @@ files-workbench2/
 │   ├── themes/               Theme color definitions
 │   └── plugins/              Third-party plugins (e.g. material-icon-theme)
 ├── docs/                     Project documentation
-├── server/v2/                Go HTTP backend (active)
+├── server/v1/                Go HTTP backend (active)
 │   └── *.go                  Route handlers, media processing, thumbnail cache
 ├── server/v1/                FastAPI/Python backend (legacy, superseded by v2)
 ├── setup.sh                  One-shot dependency installation
@@ -119,7 +119,7 @@ The Go process starts two independent HTTP servers:
 | Data | 8001 (`PORT` env) | Read-only GETs — directory listing, stat, media, icons, preferences |
 | Control | 8002 (`CONTROL_PORT` env) | Mutating POSTs/PUTs — rename, move, copy, delete, trash, compress, … |
 
-All routes are prefixed with `/_api/v2/`. In development, Nuxt proxies `/_api/v2/*` to port 8001 (data). The control server is contacted directly at `http://localhost:8002` (CORS is permissive on the Go side).
+All routes are prefixed with `/_api/v1/`. In development, Nuxt proxies `/_api/v1/*` to port 8001 (data). The control server is contacted directly at `http://localhost:8002` (CORS is permissive on the Go side).
 
 > **Dev proxy size limit**: Vite's dev proxy silently drops large binary responses. File content for previews (images, video, audio, text) is served through Nitro server routes at `/media-preview` and `/text-preview`, which run in Node.js and bypass the proxy entirely. Thumbnails and JSON API responses are small enough to pass through the proxy fine.
 

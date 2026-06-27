@@ -11,7 +11,7 @@ import { API_BASE, CONTROL_BASE, API_V } from './api-config.js'
 // the UI works; the mock is keyed off whether any directory paths were supplied,
 // to approximate "repos are found from the open editors".
 //
-// Go endpoints (to implement in server/v2/scm.go):
+// Go endpoints (to implement in server/v1/scm.go):
 //   POST {data}/scm/detect   { paths:[], relations? } → [{ id, name, root }]
 //   GET  {data}/scm/info?root=…                       → { branch, ahead, behind, staged[], changes[], log[] }
 //   POST {control}/scm/commit { root, message }       → { ok }

@@ -26,7 +26,7 @@ export function useArchive() {
 
   onMounted(async () => {
     try {
-      const init = await fetch('/_api/v2/app/init').then(r => r.json())
+      const init = await fetch('/_api/v1/app/init').then(r => r.json())
       platform.value = init.platform ?? 'linux'
     } catch { /* non-fatal */ }
     try { archiveCaps.value = await fsArchiveCapabilities() } catch { /* non-fatal */ }

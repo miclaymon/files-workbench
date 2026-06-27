@@ -50,10 +50,10 @@ Open http://localhost:3000 in a browser.
 ```bash
 npm run dev:server:v2
 # or
-cd server/v2 && PORT=8000 go run .
+cd server/v1 && PORT=8000 go run .
 ```
 
-There is no Swagger UI. Refer to `server/v2/main.go` for the full route list or use `curl`/`httpie` against `http://localhost:8000/health` to verify the server is up.
+There is no Swagger UI. Refer to `server/v1/main.go` for the full route list or use `curl`/`httpie` against `http://localhost:8000/health` to verify the server is up.
 
 ## Project-specific dev notes
 
@@ -72,13 +72,13 @@ Vite's HTTP proxy silently drops response bodies larger than ~3–4 KB. File con
 After adding a new `import` in a `.go` file:
 
 ```bash
-cd server/v2 && go mod tidy
+cd server/v1 && go mod tidy
 ```
 
 ### Adding a new API endpoint
 
-1. Add the route handler function to the appropriate `.go` file in `server/v2/`.
-2. Register it on the mux in `server/v2/main.go` (`registerRoutes` function) with the `/_api/v2/` prefix.
+1. Add the route handler function to the appropriate `.go` file in `server/v1/`.
+2. Register it on the mux in `server/v1/main.go` (`registerRoutes` function) with the `/_api/v1/` prefix.
 3. Add a matching client helper in `client/lib/` (see `fs-api.js` or `explorer-api.js` as examples).
 
 ### Monaco Editor workers
@@ -121,7 +121,7 @@ npm install && npm install --prefix client
 **Go module cache issues**
 
 ```bash
-cd server/v2 && go clean -modcache && go mod download
+cd server/v1 && go clean -modcache && go mod download
 ```
 
 **Electron window doesn't open**

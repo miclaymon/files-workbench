@@ -41,7 +41,7 @@ plugins: loaded icon pack "material-icon-theme" (N ext, N name, N folder mapping
 
 - The server reads `vscode-material-icon-theme/package.json` to find the theme JSON path.
 - The theme JSON maps filenames/extensions/folder names to icon definition names.
-- Those mappings are sent to the client once at startup via `/_api/v2/icons/manifest`.
+- Those mappings are sent to the client once at startup via `/_api/v1/icons/manifest`.
 - The client resolves icon names locally (no per-file round-trip) and fetches SVGs on demand.
 - SVGs are served with a 24 h cache header, so each icon is only downloaded once per session.
 - Thumbnails always take priority over pack icons for media files.
