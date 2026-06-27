@@ -65,22 +65,25 @@ function openSettingsMenu() {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 6px 0;
-}
-.activitybar-top, .activitybar-bottom { display: flex; flex-direction: column; }
-.activitybar-icon {
-  width: 100%;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  color: rgba(255,255,255,0.4);
-  text-decoration: none;
-  transition: color 0.1s;
-}
-.activitybar-icon:hover { color: rgba(255,255,255,0.8); }
-.activitybar-icon.active {
-  color: white;
-  border-left: 2px solid var(--accent);
-  background: rgba(255,255,255,0.04);
+  padding: 0;
+  .activitybar-top, .activitybar-bottom {
+    display: flex;
+    flex-direction: column;
+  }
+  .activitybar-icon {
+    width: 100%;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    color: rgba(255,255,255,0.4);
+    text-decoration: none;
+    transition: color 0.1s;
+    &:hover { color: rgba(255,255,255,0.8); }
+    &.active {
+      color: white;
+      border-left: 2px solid var(--accent);
+      background: rgba(255,255,255,0.04);
+    }
+  }
 }
 </style>

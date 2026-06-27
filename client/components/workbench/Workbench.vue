@@ -2,7 +2,13 @@
   <div class="vscode-shell">
 
     <!-- Titlebar -->
-    <TitleBar :menus="titleMenus" @open-command-palette="showCommandPalette('', true)" />
+    <TitleBar
+      :menus="titleMenus"
+      @open-command-palette="showCommandPalette('', true)"
+      @toggle-primary-sidebar="sidebarVisible = !sidebarVisible"
+      @toggle-panel="bottompaneVisible = !bottompaneVisible"
+      @toggle-secondary-sidebar="rightpaneVisible = !rightpaneVisible"
+    />
 
     <!-- Main area -->
     <div class="main">
@@ -681,6 +687,7 @@ function onGroupStats({ groupId, stats }) {
   display: grid;
   grid-template-rows: var(--titlebar-height) 1fr var(--statusbar-height);
   overflow: hidden;
+  border-radius: 4px;
   background: var(--bg);
   color: var(--text);
 }

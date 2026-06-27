@@ -120,6 +120,12 @@ export function useAppMenus({ host, history, views, savePrefs, statusbar, explor
         action:  () => { isViewVisible(id) ? hideView(id) : showView(id) },
       }))
     },
+    // Electron dev only: the renderer DevTools are otherwise unreachable with the
+    // native menu suppressed and the window frameless.
+    ...(window.electron?.isDev ? [
+      { separator: true },
+      { key: 'toggleDevTools', label: 'Toggle Developer Tools', action: () => window.electron.window.toggleDevTools() },
+    ] : []),
   ]
 
   const settingsTree = [

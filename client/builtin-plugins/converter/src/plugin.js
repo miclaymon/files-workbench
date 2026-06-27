@@ -1,5 +1,5 @@
 import { markRaw } from 'vue'
-import { mdiArrowSplitHorizontal } from '@mdi/js'
+import { mdiSyncAlt } from '@mdi/js'
 
 import PlaceholderPanel from '~/components/workbench/views/PlaceholderPanel.vue'
 
@@ -9,11 +9,11 @@ import PlaceholderPanel from '~/components/workbench/views/PlaceholderPanel.vue'
 export function activate(api) {
   const { Activity, PanelView, ViewSection } = api
 
-  const activity = new Activity({ id: api.manifest.id, label: 'Converter', icon: mdiArrowSplitHorizontal })
+  const activity = new Activity({ id: api.manifest.id, label: 'Converter', icon: mdiSyncAlt })
     .addView(new PanelView({
       id: 'converter',
       label: 'Converter',
-      icon: mdiArrowSplitHorizontal,
+      icon: mdiSyncAlt,
       location: 'PrimarySideBar',
       sections: ['converterMain'],
       acceptsSections: false,
@@ -23,7 +23,7 @@ export function activate(api) {
       label: 'Converter',
       homeView: 'converter',
       component: markRaw(PlaceholderPanel),
-      props: () => ({ title: 'Converter', icon: mdiArrowSplitHorizontal, note: 'File format conversion is coming soon.' }),
+      props: () => ({ title: 'Converter', icon: mdiSyncAlt, note: 'File format conversion is coming soon.' }),
     }))
 
   return api.activities.register(activity)
