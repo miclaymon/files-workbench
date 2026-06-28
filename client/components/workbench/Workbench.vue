@@ -236,7 +236,7 @@ import { useNotifications } from '~/composables/workbench/useNotifications.js'
 import { useActivityHost } from '~/composables/activity/useActivityHost.js'
 import { formatChord } from '~/composables/activity/useKeybindingRegistry.js'
 import { createPluginHost } from '~/composables/plugins/usePluginHost.js'
-import { BUILTIN_PLUGINS } from '~/builtin-plugins/index.js'
+import { EXPLORER_PLUGIN, OPTIONAL_PLUGIN_LOADERS } from '~/builtin-plugins/index.js'
 import { useArchive } from '~/composables/workbench/useArchive.js'
 import { useFileOperations } from '~/composables/workbench/useFileOperations.js'
 import { useFileContextMenus } from '~/composables/workbench/useFileContextMenus.js'
@@ -362,7 +362,12 @@ const host = useActivityHost({
 // them and owns the selection API the file-op / menu / keyboard slices below
 // consume synchronously — it must be registered before host.requireApi('explorer').
 const pluginHost = createPluginHost({ host, log })
-pluginHost.loadAll(BUILTIN_PLUGINS)
+pluginHost.load(EXPLORER_PLUGIN.manifest, EXPLORER_PLUGIN.module)
+// Optional plugins load asynchronously (dynamic import per plugin). An import
+// failure or activate() error in any one is isolated — it logs and skips that
+// plugin without affecting peers or the host. Fire-and-forget: Vue reactivity
+// propagates each plugin's registrations as they resolve.
+pluginHost.loadAllAsync(OPTIONAL_PLUGIN_LOADERS)
 if (import.meta.dev) window.__plugins = pluginHost
 
 // Selection now lives in the Explorer activity (a first-party plugin). Pull the
