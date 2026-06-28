@@ -7,17 +7,15 @@ import (
 	"path/filepath"
 )
 
-var prefsDir = "" // set after repoRoot is known
-
-func prefsPath(name string) string {
-	if prefsDir == "" {
-		prefsDir = filepath.Join(repoRoot, "config", "preferences")
-	}
-	return filepath.Join(prefsDir, name)
-}
+// configPrefsPath resolves a read-only preferences file (schema, defaults) under
+// the bundled config dir. userPrefsPath resolves the writable user overrides under
+// the data dir — separated so a packaged build can read defaults from read-only app
+// resources while writing user prefs to a writable user-data dir.
+func configPrefsPath(name string) string { return filepath.Join(configDir, "preferences", name) }
+func userPrefsPath() string              { return filepath.Join(dataDir, "preferences", "user-preferences.json") }
 
 func handlePreferencesSchema(w http.ResponseWriter, r *http.Request) {
-	data, err := os.ReadFile(prefsPath("preferences.schema.json"))
+	data, err := os.ReadFile(configPrefsPath("preferences.schema.json"))
 	if err != nil {
 		jsonErr(w, http.StatusInternalServerError, "Failed to load schema: "+err.Error())
 		return
@@ -31,12 +29,12 @@ func handlePreferencesSchema(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePreferencesGet(w http.ResponseWriter, r *http.Request) {
-	defaults, err := loadPrefsFile(prefsPath("default-preferences.json"))
+	defaults, err := loadPrefsFile(configPrefsPath("default-preferences.json"))
 	if err != nil {
 		jsonErr(w, http.StatusInternalServerError, "Failed to load default preferences: "+err.Error())
 		return
 	}
-	user, _ := loadPrefsFile(prefsPath("user-preferences.json"))
+	user, _ := loadPrefsFile(userPrefsPath())
 	merged := deepMerge(defaults, user)
 	jsonOK(w, merged)
 }
@@ -47,8 +45,8 @@ func handlePreferencesPut(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
 		return
 	}
-	dir := prefsPath("")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	path := userPrefsPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		jsonErr(w, http.StatusInternalServerError, "Failed to create prefs dir: "+err.Error())
 		return
 	}
@@ -57,7 +55,7 @@ func handlePreferencesPut(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := os.WriteFile(prefsPath("user-preferences.json"), data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0644); err != nil {
 		jsonErr(w, http.StatusInternalServerError, "Failed to save preferences: "+err.Error())
 		return
 	}

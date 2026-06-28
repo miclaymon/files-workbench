@@ -80,7 +80,9 @@ A `panelView` with `location: 'PrimarySideBar'` becomes an Activity Bar entry (t
 - `hooks.add(name, fn, order)` / `apply(name, value, ctx)` — generic ordered transform/veto chain (the menu API is built on it).
 - `activities.register(def)/unregister(id)/get/list` — dynamic activity registration (API **and** surfaces together); first-party use the startup bootstrap, plugins call this at runtime.
 - `modals.open(id)/close()/promote(id)/active/get/list` — modal-editor surfaces; `promote` re-presents a modal as an editor tab.
-- `editor.openTab(kind, { title, params, focusExisting })/tabs()` — open registered editor tabs by kind; read the open tabs.
+- `editor.openTab(kind, { title, params, focusExisting })/tabs()` — open registered editor tabs by kind; read the open tabs. `focusExisting` matches by kind **and** `params` (so a per-item tab focuses the same item but a different item opens a new tab). An `EditorView` may set `tabIcon(tab)` for a per-tab icon (e.g. Preview's thumbnail / file-type icon).
+- `icons.register({ id, label, getIcon })/setActive/list` — register an icon theme (`icons` permission); layer 2 of the icon pipeline (see `useIconRegistry`).
+- `lightbox.open({ component, props })/close()/active` — open a near-fullscreen overlay (`lightbox` permission); `LightboxHost.vue` renders it. The Preview plugin opens its single-item media viewer here on double-click.
 - `preferences.register({ key, title, properties })/get(path)` — contribute a Settings section + read a value (see Plugin system → preference contributions).
 - `events.on/once/emit`, `selection`, `peer(id)`, `query.{activeTab,activeActivityId}`, `log`.
 
@@ -92,7 +94,7 @@ A **plugin** is an out-of-core activity loaded at runtime through a *permission-
 
 - **UI model** (`client/models/ui/`): UI-agnostic classes — `Activity`, `View`, `EditorView`, `ModalView`, `PanelView`, `ViewSection`, `StatusView` — that carry metadata + a component reference (no Vue imports). `fromDefinition.js` wraps the declarative `client/activities/*.js` objects into instances; the registry stores instances. A plugin authors `new Activity(...).addView(new PanelView(...))`.
 - **Manifest + permissions** (`client/models/plugin/`): `manifest.js` (Chrome-style `manifest.json` validator), `permissions.js` (front-end `PERMISSIONS` gating facade slices, backend `HOST_PERMISSIONS` gating brokered services like `scm:read`/`scm:write`). JSON schema + example: `docs/plugins/`.
-- **Loader** (`client/composables/plugins/`): `usePluginApi.js` builds the frozen, permission-scoped `api` (UI classes + `log` + only the granted facade slices/brokers); `usePluginHost.js` loads/unloads `{ manifest, module }` pairs (dependency-ordered, lifecycle). `activate(api)` contributes and returns a disposer; `deactivate(api)` is optional.
+- **Loader** (`client/composables/plugins/`): `usePluginApi.js` builds the frozen, permission-scoped `api` (UI classes + `log` + only the granted facade slices/brokers); `usePluginHost.js` loads/unloads `{ manifest, module }` pairs (dependency-ordered, lifecycle). `activate(api)` may be sync or async and returns (or resolves to) a disposer; `deactivate(api)` is optional. **Fault isolation**: the host imports optional plugins lazily and in parallel, then activates them sequentially — an import failure, a thrown/rejected `activate()`, or a bogus disposer is logged and confined to that plugin (peers and the host keep running); a reactive `states` map tracks each plugin's `loading`/`active`/`failed` status.
 - **Loading**: built-ins are listed in `client/builtin-plugins/index.js` and loaded at startup in `Workbench.vue`. Current built-ins: **`explorer`** (the file-tree + directory-tab + selection-capability plugin — must load first so Workbench can pull its selection refs before the other slices initialise), **`source-control`** (brokers to the Go scm API — the richest surface reference), and **`preview`** / **`details`** / **`debug`** (pure surface contributors: selection-consuming panels in the Secondary Side Bar, and Debug's log-provider panel in the Bottom Panel). The archive/sandbox runtime path is not built yet — it will produce the same `{ manifest, module }` pairs the host already consumes.
 - **Brokered backend**: plugins never touch the filesystem/control server directly — host-permission'd services (e.g. `api.scm`) forward to the Go server (`server/v1/scm.go`) via a client broker (`client/lib/scm-api.js`, reads→data / writes→control, mock fallback when offline).
 - **Preference contributions** (`client/composables/usePreferenceSchema.js`): `api.preferences.register({ key, title, properties })` adds a section to the Settings panel (merged with the static base schema in `SettingsModal.vue`); values live under `prefs.<key>` and persist normally. `api.preferences.get(path)` reads a value.
@@ -251,6 +253,17 @@ The `::` separator in a tab path signals archive mode throughout the client. `Di
 ### Data server vs control server
 
 File-read requests (`/_api/v1/fs/list_dir`, media, etc.) go to port 8001 (proxied in dev via Nuxt). File-write requests (`rename`, `move`, `delete`, etc.) go directly to port 8002 (`CONTROL_BASE`). The service worker also targets `CONTROL_BASE` for all queued operations. Do not register write routes on the data mux or vice versa.
+
+### Packaging: Electron spawns the Go server
+
+In a packaged build there is no separate backend — `client/electron/main.js` spawns the
+bundled server binary (fixed ports 8001/8002) and waits for `/health` before opening
+the window; in dev the spawn is skipped (`npm run dev:server` runs it). The server
+resolves paths through `FW_CONFIG_DIR` / `FW_DATA_DIR` / `FW_LOGS_DIR` / `FW_BLACKLIST`
+(set by main.js to app-resources + Electron `userData`), falling back to the repo
+layout when unset. So: read-only config is bundled, user data is written to `userData`,
+and any new server file path must go through one of those roots — never assume the repo
+is on disk. See **Packaging & distribution** in `docs/DESIGN.md`.
 
 ### Service worker operations queue
 

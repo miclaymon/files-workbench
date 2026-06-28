@@ -1005,9 +1005,8 @@ func languageForPath(path string) string {
 }
 
 func loadMaxPreviewBytes() int {
-	prefsDir := filepath.Join(repoRoot, "config", "preferences")
-	defaults := loadJSONFile(filepath.Join(prefsDir, "default-preferences.json"))
-	user := loadJSONFile(filepath.Join(prefsDir, "user-preferences.json"))
+	defaults := loadJSONFile(configPrefsPath("default-preferences.json"))
+	user := loadJSONFile(userPrefsPath())
 	if v := nestedInt(user, "preview", "maxPreviewBytes"); v > 0 {
 		return v
 	}

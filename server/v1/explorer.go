@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"mime"
 	"net/http"
 	"os"
@@ -91,10 +90,17 @@ func handleExplorerDrives(w http.ResponseWriter, r *http.Request) {
 		root := makeItemInfo(mounts, "drive", "Volumes")
 		jsonOK(w, map[string]any{"root": root, "items": items})
 	default:
-		// Linux: read /proc/mounts
-		drives := linuxDrives(excluded)
-		root := makeItemInfo("/mnt", "drive", "Drives")
-		jsonOK(w, map[string]any{"root": root, "items": drives})
+		// Linux: the Drives root *is* /mnt — list it like any directory so the
+		// preloaded children match what expanding the node fetches
+		// (`/Explorer?root=/mnt`). Parsing /proc/mounts here diverged from that
+		// listing (it surfaced system mounts like btrfs subvolumes) and produced a
+		// stale first-load tree that only corrected after a manual toggle. Removable
+		// drives mounted under /mnt show up here directly.
+		includeMetadata := qBool(q, "includeMetadata", false)
+		mounts := "/mnt"
+		items := explorerListDir(mounts, excluded, showHidden, includeMetadata, showFiles)
+		root := makeItemInfo(mounts, "drive", "Drives")
+		jsonOK(w, map[string]any{"root": root, "items": items})
 	}
 }
 
@@ -294,66 +300,6 @@ func fillTimestamps(item *explorerItem, info os.FileInfo) {
 }
 
 // ── drives ────────────────────────────────────────────────────────────────────
-
-var linuxSystemFSTypes = map[string]bool{
-	"proc": true, "sysfs": true, "devtmpfs": true, "devpts": true, "tmpfs": true,
-	"securityfs": true, "cgroup": true, "cgroup2": true, "pstore": true, "bpf": true,
-	"autofs": true, "mqueue": true, "hugetlbfs": true, "debugfs": true, "tracefs": true,
-	"fusectl": true, "configfs": true, "ramfs": true, "efivarfs": true,
-	"fuse.gvfsd-fuse": true, "rpc_pipefs": true, "nfsd": true, "overlay": true,
-	"nsfs": true, "squashfs": true, "swap": true, "fuse": true,
-}
-
-var linuxSystemPrefixes = []string{
-	"/proc", "/sys", "/dev", "/run/user", "/run/lock",
-	"/snap", "/var/lib/docker", "/tmp", "/run/snapd", "/boot",
-}
-
-func linuxDrives(excluded []string) []explorerItem {
-	f, err := os.Open("/proc/mounts")
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-
-	seen := map[string]bool{}
-	var items []explorerItem
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		parts := strings.Fields(scanner.Text())
-		if len(parts) < 3 {
-			continue
-		}
-		fstype := parts[2]
-		mountpoint := strings.ReplaceAll(parts[1], `\040`, " ")
-		if linuxSystemFSTypes[fstype] || mountpoint == "/" || seen[mountpoint] {
-			continue
-		}
-		skip := false
-		for _, pfx := range linuxSystemPrefixes {
-			if strings.HasPrefix(mountpoint, pfx) {
-				skip = true
-				break
-			}
-		}
-		if skip {
-			continue
-		}
-		p := mountpoint
-		if isExcluded(p, excluded) {
-			continue
-		}
-		if info, err := os.Stat(p); err == nil && info.IsDir() {
-			seen[mountpoint] = true
-			item := makeItemInfo(p, "drive", "")
-			items = append(items, item)
-		}
-	}
-	sort.Slice(items, func(i, j int) bool {
-		return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
-	})
-	return items
-}
 
 func windowsDrives(showHidden bool) []explorerItem {
 	// Basic Windows drive enumeration without ctypes

@@ -13,13 +13,13 @@ const platform = (typeof window !== 'undefined' && window.electron?.platform) ??
 const ROOTS = [
   { load: explorerRoot,   name: 'Root',   mdiPath: mdiShield,   skipOnWin: true },
   { load: explorerHome,   name: 'Home',   mdiPath: mdiHome },
-  { load: explorerDrives, name: 'Drives', mdiPath: mdiHarddisk, requireItems: true },
+  { load: explorerDrives, name: 'Drives', mdiPath: mdiHarddisk },
 ]
 
 // Fetch the virtual roots with the given visibility flags. Each result carries its
 // immediate children as `_preloadedItems` (so the first level shows without a fetch)
-// plus the fixed name/icon. Roots that fail to load (or, for Drives, have no items)
-// are skipped.
+// plus the fixed name/icon. A root is included as long as it loads — Drives shows
+// even with no mounted drives (an empty node), it just has no children.
 export async function loadExplorerRoots({ showHidden = false, showFiles = false, excludeCategories = 'System' } = {}) {
   const opts = { showHidden, showFiles, excludeCategories, includeMetadata: false }
   const results = await Promise.allSettled(ROOTS.map(r =>
@@ -30,7 +30,6 @@ export async function loadExplorerRoots({ showHidden = false, showFiles = false,
     const meta = ROOTS[i]
     if (res.status !== 'fulfilled' || !res.value?.root) return
     const items = res.value.items ?? []
-    if (meta.requireItems && !items.length) return
     out.push({ ...res.value.root, name: meta.name, mdiPath: meta.mdiPath, _preloadedItems: items })
   })
   return out

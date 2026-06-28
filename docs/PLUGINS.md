@@ -100,6 +100,7 @@ defined in [`client/models/plugin/permissions.js`](../client/models/plugin/permi
 | `selection` | `api.selection` — the active activity's selection. |
 | `query` | `api.query` / `api.peer` — inspect other activities + app state. |
 | `icons` | `api.icons` — register an icon theme (a `getIcon` handler) that resolves file/folder icons. |
+| `lightbox` | `api.lightbox` — open a near-fullscreen overlay (`open({ component, props })` / `close` / `active`). |
 
 **`host_permissions`** — backend/host access, each gating a **brokered** service
 (the Workbench forwards vetted requests to the Go server; the plugin never touches
@@ -150,6 +151,9 @@ const sel = api.selection.value                                            // ac
 const other = api.peer('explorer')                                         // another activity's API
 
 api.icons.register({ id, label, getIcon })                                 // register an icon theme
+
+api.lightbox.open({ component, props })                                     // near-fullscreen overlay
+api.lightbox.close()
 ```
 
 ### Icon themes

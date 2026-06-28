@@ -111,7 +111,7 @@ func (t *iconTheme) resolve(name string, isDir bool) string {
 }
 
 func loadPlugins() {
-	dir := filepath.Join(repoRoot, "config", "plugins")
+	dir := filepath.Join(configDir, "plugins")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return

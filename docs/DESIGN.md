@@ -48,7 +48,7 @@ Composables live in `client/composables/` and are split into three layers (Nuxt 
 
 | Folder | Contents |
 |---|---|
-| `composables/*.js` | Foundational services and utilities: `useWorkspaces`, `usePreferences`, `useFileOpsQueue`, `useActionHistory`, `useDebugLog`, `useLayoutGrid`, `useViewRegistry`, `usePreferenceSchema` (contributed Settings sections), `useDirectoryFileTree` (file-tree builder), `useIconPack`, `useCustomIcon`, `useRpc` |
+| `composables/*.js` | Foundational services and utilities: `useWorkspaces`, `usePreferences`, `useFileOpsQueue`, `useActionHistory`, `useDebugLog`, `useLayoutGrid`, `useViewRegistry`, `usePreferenceSchema` (contributed Settings sections), `useDirectoryFileTree` (file-tree builder), `useIconRegistry` (icon-theme registry), `useLightbox` (overlay service), `useCustomIcon`, `useRpc` |
 | `composables/activity/` | Inter-activity API (see Activity system): `useEmitter` (pub/sub primitive), `useActivityHost` (the broker + frozen `facade`, provided as `viewCtx`), and the contribution registries `useCommandRegistry` / `useKeybindingRegistry` / `useHookRegistry` |
 | `composables/plugins/` | Plugin loader (see Plugin system): `usePluginApi` (builds the frozen, permission-scoped plugin API) and `usePluginHost` (loads/unloads `{ manifest, module }` pairs, dependency-ordered, with lifecycle) |
 | `composables/interaction/` | UI-behavior primitives consumed by individual components: drag systems (`useDrag`, `useRightClickDrag`, `useTreeDrag`, `useEditorDnd`, `useViewDrag`), `useClickDebounce`, `useHoverPreview`, `useSideBar`, `useStackResize` |
@@ -461,12 +461,48 @@ The client resolves customization icons via `useCustomIcon.js`: absolute paths a
 
 At startup, the first successfully-loaded plugin becomes `activeIconTheme`. Icon names are resolved server-side and embedded in every list and explorer API response as `icon` and `icon_open` string fields. `resolve()` and `resolveOpen()` only return icon names whose SVG files exist on disk, cascading through fallbacks gracefully (named-open → named-closed → default-open → default-closed). Preferring the named-closed icon over the generic open folder keeps custom folder icons visually consistent when no specific open-variant SVG has been generated.
 
-The client composable `useIconPack.js` is a module-level singleton that fetches the manifest once and provides `resolveIcon()`, `iconUrl()`, and `isAvailable` to all components. `<img>` elements that load pack icons fall back to MDI icons via `@error` handlers if the SVG request fails.
-
-A legacy FastAPI/Python server lives in `server/v1/` and is no longer actively used.
+On the client, icon-pack resolution is now a **plugin contribution**, not a hardcoded lookup. The Material Icon Theme is a first-party plugin (`builtin-plugins/material-icon-theme/`) that registers a theme — `{ id, label, getIcon }` — through the Workbench API (`api.icons`, gated by the `icons` permission). The module-level singleton `useIconRegistry.js` holds the registered themes and the active one; renderers call `resolveIcon(ctx)` (ctx = `{ path, name, isDir, kind, extension, expanded, … }`), which delegates to the active theme's `getIcon` and returns a `{ type, icon }` descriptor (or `null`). `ResolvedIcon.vue` renders that descriptor (`url`/`file.path` → `<img>`, `component`, `svg.path` → inline SVG), falling back to the MDI default on a `null` result or an `<img>` load error. Icons resolve at **render time** — they are no longer baked into the listing nodes (the server still stamps `item.icon`/`item.icon_open` for now, but the client no longer consumes them). The active theme follows the `iconTheme` preference, else the first registered.
 
 ## Configuration system
 
 User configuration is read from `config/` at startup. The app merges `user-*.json` over `default-*.json` using a shallow merge. JSON Schema files (`*.schema.json`) validate the merged result. Unknown keys in user files are ignored rather than causing errors, to support forward-compatibility when the schema evolves.
 
 Plugins are loaded from `config/plugins/`. Each subdirectory is a plugin; the server reads `plugin.json` and initializes any supported plugins at startup. Plugin directories are not gitignored — they are part of the repo and can contain bundled or cloned third-party assets.
+
+### Config vs. data paths (dev vs. packaged)
+
+The server resolves its paths through four roots, each overridable by an env var so a
+packaged build can read read-only config from app resources while writing user data
+to a writable location. Unset (dev / `go run`), they fall back to the repo layout:
+
+| Var | Holds | Dev fallback |
+|---|---|---|
+| `FW_CONFIG_DIR` | read-only config: preferences schema + defaults, plugins | `<repo>/config` |
+| `FW_DATA_DIR` | writable user data: `user-preferences.json` | `<repo>/config` |
+| `FW_LOGS_DIR` | writable logs: `perf.log` | `<repo>/server/logs` |
+| `FW_BLACKLIST` | the path-protection `blacklist.yaml` | `<repo>/server/v1/blacklist.yaml` |
+
+Preferences are split accordingly: the schema and defaults are read from the
+read-only config dir, while `user-preferences.json` is read/written under the data
+dir (so it survives in a packaged app where resources are read-only).
+
+## Packaging & distribution
+
+A production build is a self-contained Electron app that **bundles and launches the
+Go server** — there is no separate backend to install.
+
+- **Build** (`npm run build:electron`): `client/scripts/build-server.js` compiles the
+  Go server to `server/v1/dist/` (platform-correct name), `nuxt generate` emits the
+  static client to `.output/public`, then electron-builder packages both. The server
+  binary, the `config/` tree, and `blacklist.yaml` are copied in via electron-builder
+  `extraResources` (they live in `process.resourcesPath`, outside the asar so the
+  binary stays executable).
+- **Launch** (`client/electron/main.js`): in production the main process `spawn`s the
+  bundled server on fixed ports 8001/8002, passing the `FW_*` env vars above
+  (`FW_CONFIG_DIR` → bundled config, `FW_DATA_DIR` → Electron's `userData`), waits for
+  `/health`, then opens the window; it kills the server on `will-quit`. In dev the
+  server is run separately by `npm run dev:server`, so the spawn is skipped.
+- **Installers**: electron-builder produces an AppImage (Linux), dmg (macOS), and
+  NSIS `.exe` (Windows). `install.sh` / `install.ps1` at the repo root fetch the
+  latest release's asset from GitHub. Releases are published manually for now; a
+  tag-triggered CI matrix build is on the roadmap.

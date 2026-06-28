@@ -1,4 +1,4 @@
-# Files Workbench 2
+# Files Workbench
 
 A desktop file manager built with Electron + Nuxt 3 (Vue 3) on the front end and a Go HTTP server on the back end. It runs as a native Electron app in production and as a browser SPA in development.
 
@@ -9,7 +9,7 @@ A desktop file manager built with Electron + Nuxt 3 (Vue 3) on the front end and
 - Multiple directory view layouts: grid (XS through XXL), list, details, gallery grid, gallery mosaic, and feed
 - Client-side sort (name, size, type, date modified/created/accessed) and filter (by file type, size, date) with a contextual active-state bar showing removable chips
 - Explorer sidebar tree with expandable folders, indent guides, and drag-and-drop
-- File preview panel: images, video (Video.js), audio (Wavesurfer.js + embedded album art), code/text (Monaco Editor), HTML (rendered iframe + source toggle)
+- File preview panel: images, video (Video.js), audio (Wavesurfer.js + embedded album art), code/text (Monaco Editor), HTML (rendered iframe + source toggle); single-item previews support click-to-zoom (contain ↔ cover) and double-click to open a near-fullscreen **lightbox**, and can be promoted to a dedicated **editor tab**
 - Hover preview overlay: hovering a grid item shows a floating media preview centered on the thumbnail
 - Media thumbnails: images resized server-side; video frame extraction and audio artwork via ffmpeg; disk-based thumbnail cache
 - Icon pack plugin system: a first-party **Material Icon Theme** plugin registers a `getIcon` handler through the Workbench API (the `icons` permission) and resolves file/folder icons (VS Code `vscode-material-icon-theme` assets, served by the Go backend) — shown in directory views, the explorer tree, source control, and details; the active pack is selectable and falls back cleanly to built-in MDI glyphs
@@ -49,31 +49,60 @@ A desktop file manager built with Electron + Nuxt 3 (Vue 3) on the front end and
 - Go 1.23+
 - ffmpeg (for video/audio thumbnail generation)
 
-## Quick start
+## Install (pre-alpha)
+
+Prebuilt, self-contained desktop builds bundle the Go server and launch it
+automatically. See [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) for details.
+
+```bash
+# Linux (downloads the latest AppImage from GitHub Releases)
+curl -fsSL https://raw.githubusercontent.com/miclaymon/files-workbench/main/install.sh | bash
+```
+
+```powershell
+# Windows (downloads + runs the latest installer)
+irm https://raw.githubusercontent.com/miclaymon/files-workbench/main/install.ps1 | iex
+```
+
+> Pre-alpha builds are unsigned — Windows SmartScreen / macOS Gatekeeper will warn;
+> choose "More info → Run anyway". Releases are published manually for now.
+
+## Quick start (development)
 
 ```bash
 # Install all dependencies
 ./setup.sh
 
 # Start Nuxt dev server + Go server + Electron
-./start-dev.sh
+npm run dev
 ```
 
 ### Running parts separately
 
 ```bash
 # Frontend only (browser at http://localhost:3000)
-npm run dev:client
+npm run dev:web:client
 
-# Electron desktop app (opens window automatically)
-npm run dev:client:electron
+# Frontend + Go server together (browser, no Electron)
+npm run dev:web
+
+# Full Electron desktop app (frontend + Go server + window)
+npm run dev:electron        # `npm run dev` is an alias
 
 # Go server only (data: http://localhost:8001, control: http://localhost:8002)
-npm run dev:server:v2
-
-# Frontend + Go server together (no Electron)
-npm run dev:v2
+npm run dev:server
 ```
+
+## Build a desktop app
+
+```bash
+npm run build:electron      # compiles the Go server, generates the client, packages with electron-builder
+```
+
+Output goes to `client/dist-electron/` (`.AppImage` on Linux, `.dmg` on macOS,
+`.exe`/NSIS on Windows — for the platform you build on). The Go server binary and
+read-only config are bundled into the app and spawned by the Electron main process
+at startup (fixed ports 8001/8002).
 
 ## Project structure
 
@@ -103,9 +132,10 @@ files-workbench2/
 │   ├── themes/               Theme color definitions
 │   └── plugins/              Third-party plugins (e.g. material-icon-theme)
 ├── docs/                     Project documentation
-├── server/v1/                Go HTTP backend (active)
+├── server/v1/                Go HTTP backend (data + control servers)
 │   └── *.go                  Route handlers, media processing, thumbnail cache
-├── server/v1/                FastAPI/Python backend (legacy, superseded by v2)
+├── install.sh                Linux installer (downloads latest AppImage)
+├── install.ps1               Windows installer (downloads latest installer)
 ├── setup.sh                  One-shot dependency installation
 └── start-dev.sh              Start all dev servers together
 ```

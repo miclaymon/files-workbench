@@ -35,6 +35,13 @@ Items roughly ordered by priority. See `TODO.md` for the full flat list.
 - **Dir-size cache: op-pipeline invalidation** — basic `invalidateDirSize` hooks are in place on all write handlers (rename, move, copy, delete, trash, create). The next step is propagating invalidation further up the ancestor chain when deeply-nested items change, and invalidating from the frontend after optimistic renames so the stale entry is evicted before the cache TTL expires.
 - **Dir-size long-term: background index** — replace `filepath.Walk` per-request with an incremental background indexer that watches directories for changes (inotify/FSEvents/ReadDirectoryChangesW) and maintains a pre-computed size database. The two-phase API (`/fs/dir_size`) and TTL cache are the bridge until then.
 
+## Packaging & distribution
+
+- **Tag-based release CI** — a GitHub Actions workflow triggered on a `v*` tag push that builds installers on a matrix of `ubuntu-latest` / `windows-latest` / `macos-latest` (each runner builds the Go server natively + runs `npm run build:electron`) and publishes artifacts to a GitHub Release via electron-builder `--publish`. Until then, releases are built and uploaded manually; the local build is `npm run build:electron` (compiles the Go server → `nuxt generate` → electron-builder), and `install.sh` / `install.ps1` fetch the latest release's AppImage / `.exe`. *(Deferred — manual releases for now.)*
+- **Dynamic server ports** — the packaged app launches the Go server on fixed ports 8001/8002 (matching the client's baked `VITE_API_BASE`). Pick free ports at launch and pass the base URL to the renderer via the preload bridge so the app survives port conflicts; requires `lib/api-config.js` to read the base at runtime instead of build-time `import.meta.env`.
+- **Bundled icon-pack assets in CI** — the Material icon-theme SVGs under `config/plugins/material-icon-theme/vscode-material-icon-theme/` are gitignored (generated via `scripts/install-material-icon-theme.sh`); CI must regenerate or cache them before bundling.
+- **Code signing** — unsigned builds trigger SmartScreen (Windows) and Gatekeeper (macOS) warnings. Sign + notarize for a clean install once past pre-alpha.
+
 ## Known issues / tech debt
 
 - Thumbnail rendering for directories with custom icons (`.directory`, `desktop.ini`) not yet implemented
@@ -44,6 +51,16 @@ Items roughly ordered by priority. See `TODO.md` for the full flat list.
 - Click debounce not yet applied to explorer tree nodes and some directory item edge cases
 
 ## Recently completed
+
+- **Packaging: self-contained desktop builds** — `npm run build:electron` now compiles the Go server, `nuxt generate`s the client, and bundles both with electron-builder. The Electron main process spawns the bundled server (ports 8001/8002), waiting for `/health` before opening the window and killing it on quit; the server resolves read-only config (bundled) vs writable user data (Electron `userData`) through `FW_CONFIG_DIR`/`FW_DATA_DIR`/`FW_LOGS_DIR`/`FW_BLACKLIST` env vars, falling back to the repo layout in dev. `install.sh` / `install.ps1` fetch the latest GitHub release's AppImage / installer. See **Packaging & distribution** in [`docs/DESIGN.md`](DESIGN.md). (Releases are manual for now — tag-based CI is above.)
+
+- **Preview: zoom, lightbox, and an editor tab** — single-item previews support click-to-zoom (contain ↔ cover, longer axis overflows) and double-click to open a near-fullscreen **lightbox** (a reusable `api.lightbox` facade + `lightbox` permission, rendered by `LightboxHost.vue`). A preview can also open as a dedicated **editor tab** (the "Open in Editor Tab" action), whose tab icon is the item's thumbnail or file-type icon. Generalized the editor-tab plumbing along the way: `openTab` matches by kind + params, `EditorView.tabIcon(tab)`, view/section actions support `disabled` + dropdown `menu(ctx)`, and tab `kind`/`params` now persist across reloads.
+
+- **Robust plugin loader** — optional plugins are imported lazily and in parallel, then activated sequentially; an import failure, a thrown/rejected `activate()`, or a bogus disposer is isolated to that plugin (peers + host keep running). `activate()` may be async; a reactive `states` map tracks `loading`/`active`/`failed`.
+
+- **Electron window chrome** — frameless window with a custom title bar: in-renderer min/maximize/close controls (per-platform styling), layout-toggle buttons, suppressed native menu, and a dev-only "Toggle Developer Tools" View item.
+
+- **Debug filter dropdown** — the Debug panel's level filter is a dropdown of independent per-level toggles (multi-select) instead of a min-severity cycle.
 
 - **Chat moved to a plugin; Search / Storage / Converter placeholder plugins** — the last compiled-in panel activity (`chat`) is now a first-party plugin (`client/builtin-plugins/chat/`, Secondary Side Bar), so `ACTIVITIES` is just the `workbench` shell. Re-added **Search**, **Storage**, and **Converter** as placeholder Primary Side Bar plugins (Activity Bar entries). All four render a shared `PlaceholderPanel.vue` ("coming soon") pending their roadmap build-out; the legacy `client/activities/{Chat,Search,Storage,Converter}.js` stubs were removed
 

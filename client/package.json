@@ -1,5 +1,5 @@
 {
-  "name": "files-workbench2-client",
+  "name": "files-workbench-client",
   "version": "0.1.0",
   "private": true,
   "main": "electron/main.js",
@@ -7,7 +7,7 @@
     "dev:web:client": "nuxt dev",
     "dev:electron:client": "node scripts/dev.js",
     "build:web": "nuxt build",
-    "build:electron": "nuxt generate && electron-builder",
+    "build:electron": "node scripts/build-server.js && nuxt generate && electron-builder",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare"
@@ -27,14 +27,20 @@
     "vue": "^3.5.0"
   },
   "build": {
-    "appId": "com.files-workbench2.app",
-    "productName": "Files Workbench 2",
+    "appId": "com.files-workbench.app",
+    "productName": "Files Workbench",
     "directories": {
       "output": "dist-electron"
     },
+    "artifactName": "FilesWorkbench-${version}-${arch}.${ext}",
     "files": [
       "electron/**/*",
       ".output/public/**/*"
+    ],
+    "extraResources": [
+      { "from": "../server/v1/dist", "to": "." },
+      { "from": "../server/v1/blacklist.yaml", "to": "blacklist.yaml" },
+      { "from": "../config", "to": "config" }
     ],
     "linux": {
       "target": "AppImage"

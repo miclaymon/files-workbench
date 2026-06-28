@@ -29,7 +29,7 @@ func handlePerf(w http.ResponseWriter, r *http.Request) {
 		entry.Ts = time.Now().UTC().Format(time.RFC3339Nano)
 	}
 
-	logPath := filepath.Join(repoRoot, "server", "logs", "perf.log")
+	logPath := filepath.Join(logsDir, "perf.log")
 	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err == nil {
 		line, _ := json.Marshal(map[string]any{
 			"ts":    entry.Ts,

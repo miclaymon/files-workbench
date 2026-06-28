@@ -13,24 +13,51 @@ import (
 const version = "v1"
 const apiPrefix = "/_api/" + version
 
-// repoRoot is the root of the files-workbench2 repo, computed at startup.
-var repoRoot string
+// Path roots, resolved at startup. In a packaged build the FW_* env vars (set by
+// the Electron main process) point these at app resources and a writable user-data
+// dir; running unbundled (go run / a local binary in the repo) they fall back to
+// the repo layout so dev needs no configuration.
+//
+//	configDir — read-only bundled config: preferences schema/defaults, plugins.
+//	dataDir   — writable user data: user-preferences.json.
+//	logsDir   — writable logs: perf.log.
+//	blacklistPath — the blacklist.yaml file.
+var (
+	repoRoot      string
+	configDir     string
+	dataDir       string
+	logsDir       string
+	blacklistPath string
+)
+
+// envOr returns the environment value for key, or fallback when it is unset/empty.
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
 
 func main() {
-	// Determine repo root: two levels up from server/v1/
+	// Dev fallback: repo root is two levels up from server/v1/. When running via
+	// `go run`, the binary is in a temp dir — use the source dir instead.
 	exe, err := os.Executable()
 	if err != nil {
 		log.Fatal(err)
 	}
 	dir := filepath.Dir(exe)
-	// When running via `go run`, the binary is in a temp dir — use source dir instead.
 	if _, src, _, ok := runtime.Caller(0); ok {
 		dir = filepath.Dir(src) // server/v1
 	}
-	repoRoot = filepath.Join(dir, "..", "..")
-	repoRoot, _ = filepath.Abs(repoRoot)
+	repoRoot, _ = filepath.Abs(filepath.Join(dir, "..", ".."))
 
-	if err := loadBlacklist(filepath.Join(repoRoot, "server", "v1", "blacklist.yaml")); err != nil {
+	// Resolve path roots; FW_* env vars (packaged build) override the dev fallbacks.
+	configDir = envOr("FW_CONFIG_DIR", filepath.Join(repoRoot, "config"))
+	dataDir = envOr("FW_DATA_DIR", filepath.Join(repoRoot, "config"))
+	logsDir = envOr("FW_LOGS_DIR", filepath.Join(repoRoot, "server", "logs"))
+	blacklistPath = envOr("FW_BLACKLIST", filepath.Join(repoRoot, "server", "v1", "blacklist.yaml"))
+
+	if err := loadBlacklist(blacklistPath); err != nil {
 		log.Printf("warn: could not load blacklist: %v", err)
 	}
 
