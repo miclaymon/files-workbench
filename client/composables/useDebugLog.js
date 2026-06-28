@@ -1,14 +1,17 @@
-import { ref, computed } from 'vue'
+import { ref, reactive, computed } from 'vue'
 
-// Severity ladder, low → high. Every log entry carries one `level`; the Debug panel
-// can filter to a minimum severity. `log()` defaults to 'debug' since most internal
-// traces are verbose — callers pass a higher level for notable events / problems.
+// Severity ladder, low → high. Every log entry carries one `level`. The Debug panel
+// filters by an independent on/off per level (see `enabled`), so users can show any
+// combination. `log()` defaults to 'debug' since most internal traces are verbose —
+// callers pass a higher level for notable events / problems.
 export const LOG_LEVELS = ['debug', 'info', 'warning', 'error']
 const RANK = Object.fromEntries(LOG_LEVELS.map((l, i) => [l, i]))
 
 const MAX_ENTRIES = 500
-const entries  = ref([])
-const minLevel = ref('debug')   // lowest severity shown; 'debug' shows everything
+const entries = ref([])
+// Which levels are currently shown — an independent toggle per level (all on by
+// default). The panel's filter dropdown flips these.
+const enabled = reactive(Object.fromEntries(LOG_LEVELS.map(l => [l, true])))
 let _seq = 0
 
 function _timestamp() {
@@ -32,16 +35,19 @@ export function useDebugLog() {
 
   function clear() { entries.value = [] }
 
-  // Entries at or above the current minimum severity.
-  const visibleEntries = computed(() => {
-    const min = RANK[minLevel.value] ?? 0
-    return min === 0 ? entries.value : entries.value.filter(e => (RANK[e.level] ?? 0) >= min)
-  })
+  // Entries whose level is currently enabled. Fast-path the common all-on case so
+  // we don't filter every render when no level is hidden.
+  const allLevelsEnabled = computed(() => LOG_LEVELS.every(l => enabled[l]))
+  const visibleEntries = computed(() =>
+    allLevelsEnabled.value ? entries.value : entries.value.filter(e => enabled[e.level] !== false)
+  )
 
-  // Advance the filter through the ladder: All → Info+ → Warnings+ → Errors → All.
-  function cycleLevelFilter() {
-    minLevel.value = LOG_LEVELS[((RANK[minLevel.value] ?? 0) + 1) % LOG_LEVELS.length]
+  function isLevelEnabled(level) { return enabled[level] !== false }
+  function toggleLevel(level)    { if (level in enabled) enabled[level] = !enabled[level] }
+  function setLevelEnabled(level, on) { if (level in enabled) enabled[level] = !!on }
+
+  return {
+    entries, visibleEntries, log, clear,
+    levels: LOG_LEVELS, allLevelsEnabled, isLevelEnabled, toggleLevel, setLevelEnabled,
   }
-
-  return { entries, visibleEntries, log, clear, minLevel, cycleLevelFilter }
 }

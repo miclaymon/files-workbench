@@ -237,8 +237,15 @@ export function useEditorGrid({ log, getInitialEditor, saveEditor }) {
   }
 
   function findTabByKind(kind) {
+    return findTab(t => t.kind === kind)
+  }
+
+  // Generic tab search across all groups: returns { groupId, tab } for the first
+  // tab matching `predicate(tab)`, or null. The kind/path finders delegate here;
+  // openTab uses it for kind+params identity matching.
+  function findTab(predicate) {
     for (const leaf of collectLeaves(editorRoot.value)) {
-      const tab = leaf.tabs.find(t => t.kind === kind)
+      const tab = leaf.tabs.find(predicate)
       if (tab) return { groupId: leaf.id, tab }
     }
     return null
@@ -296,7 +303,7 @@ export function useEditorGrid({ log, getInitialEditor, saveEditor }) {
     // controller
     editorController,
     // tab helpers
-    findTabByPath, findTabByKind, focusTab, addTabToActiveGroup, openPeekTabForDir, flashTab,
+    findTabByPath, findTabByKind, findTab, focusTab, addTabToActiveGroup, openPeekTabForDir, flashTab,
     splitWithTab, closeOtherTabs, triggerInlineRename,
   }
 }

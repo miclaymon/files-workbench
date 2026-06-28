@@ -4,6 +4,7 @@ import { activityOfTabKind, registerActivity, unregisterActivity, getModal, list
 import { collectLeaves } from '~/composables/useLayoutGrid.js'
 import { registerPreferences } from '~/composables/usePreferenceSchema.js'
 import { registerIconTheme, setActiveIconTheme, listIconThemes } from '~/composables/useIconRegistry.js'
+import { openLightbox, closeLightbox, lightboxActive } from '~/composables/useLightbox.js'
 import { createEmitter } from './useEmitter.js'
 import { createCommandRegistry } from './useCommandRegistry.js'
 import { createKeybindingRegistry } from './useKeybindingRegistry.js'
@@ -32,6 +33,15 @@ import { createHookRegistry } from './useHookRegistry.js'
 //             registry entries (fsStat, uuid, statusbar, …); Workbench assigns
 //             slice handlers onto the returned host after its slices initialise
 //   log       debug logger passed to activity setups
+// Structural equality for two tab `params` bags (plain JSON-able objects). Used by
+// openTab to decide whether an existing tab represents the same target — null/
+// undefined both mean "no params" (singleton kinds), so they compare equal.
+function sameParams(a, b) {
+  if (a === b) return true
+  if (a == null || b == null) return a == null && b == null
+  try { return JSON.stringify(a) === JSON.stringify(b) } catch { return false }
+}
+
 export function useActivityHost({ editor, prefs, services = {}, log = () => {} }) {
   const apis = new Map()
   const activityDefs = new Map()
@@ -84,17 +94,20 @@ export function useActivityHost({ editor, prefs, services = {}, log = () => {} }
   const keybindings = createKeybindingRegistry({ log })
   const hooks = createHookRegistry({ log })
 
-  // Editor capability: open editor tabs by kind. Focuses an existing tab of that
-  // kind instead of duplicating (Settings, Git Graph, … are singletons); the tab
-  // body resolves through the registry (tabViewForKind). Lets activities/plugins
-  // contribute editor tabs without reaching into the editor-grid slice directly.
+  // Editor capability: open editor tabs by kind. The tab body resolves through the
+  // registry (tabViewForKind), so activities/plugins contribute editor tabs without
+  // reaching into the editor-grid slice directly.
   const editorApi = {
     // `params` is opaque per-tab context fixed at open time (e.g. the Git Graph's
-    // repo) — the tab view reads it via props(tab, ctx). With focusExisting:false
-    // each call opens a distinct tab (so two repos get two Git Graph tabs).
+    // repo, or a Preview's item) — the tab view reads it via props(tab, ctx).
+    // focusExisting (default) avoids duplicates by focusing a tab of the same kind
+    // AND the same params: a singleton kind (no params) always matches, while a
+    // per-item kind matches only the same item (so two different previews/repos
+    // open two tabs, but re-opening one focuses it). Pass focusExisting:false to
+    // force a distinct tab every time.
     openTab(kind, { title, params = null, focusExisting = true } = {}) {
       if (focusExisting) {
-        const existing = editor.findTabByKind(kind)
+        const existing = editor.findTab(t => t.kind === kind && sameParams(t.params, params))
         if (existing) { editor.focusTab(existing.groupId, existing.tab.id); return existing.tab.id }
       }
       const id = services.uuid()
@@ -195,6 +208,9 @@ export function useActivityHost({ editor, prefs, services = {}, log = () => {} }
     // icon themes: an icon-pack plugin registers a getIcon handler; renderers
     // resolve item icons through the active one (layer 2 of the icon pipeline).
     icons: { register: registerIconTheme, setActive: setActiveIconTheme, list: listIconThemes },
+    // lightbox: open a near-fullscreen overlay with a component + props (e.g. the
+    // Preview plugin's single-item media viewer). `active` is a readonly ref.
+    lightbox: { open: openLightbox, close: closeLightbox, active: lightboxActive },
     // dynamic activity registration. First-party activities use the bootstrap
     // below; a plugin calls register() at runtime to add an activity's API and its
     // surfaces together, and gets a disposer that removes both.

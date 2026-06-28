@@ -24,6 +24,8 @@
         :format="metadata?.format"
         :fileSize="item.size"
         :mode="mode"
+        :allowLightbox="allowLightbox"
+        @request-lightbox="$emit('request-lightbox', item)"
       />
       <VideoPreview
         v-else-if="preview?.kind === 'video'"
@@ -31,6 +33,8 @@
         :mimeType="metadata?.mime_type ?? ''"
         :duration="metadata?.duration_formatted"
         :mode="mode"
+        :allowLightbox="allowLightbox"
+        @request-lightbox="$emit('request-lightbox', item)"
       />
       <AudioPreview
         v-else-if="preview?.kind === 'audio'"
@@ -67,9 +71,10 @@ defineProps({
   index:    { type: Number, required: true },
   isLatest: { type: Boolean, default: false },
   mode:     { type: String, default: 'multi' },
+  allowLightbox: { type: Boolean, default: true },
 })
 
-defineEmits(['copy-name', 'force-load'])
+defineEmits(['copy-name', 'force-load', 'request-lightbox'])
 </script>
 
 <style scoped>

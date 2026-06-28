@@ -2,14 +2,14 @@ import { markRaw } from 'vue'
 import { mdiBug, mdiNotificationClearAll, mdiFilter, mdiFilterOutline } from '@mdi/js'
 
 import DebugPanel from './components/DebugPanel.vue'
-import { useDebugLog } from '~/composables/useDebugLog.js'
+import { useDebugLog, LOG_LEVELS } from '~/composables/useDebugLog.js'
 
-// Action label per minimum-severity filter.
-const FILTER_LABEL = {
-  debug:   'All levels',
-  info:    'Info & above',
-  warning: 'Warnings & Errors',
-  error:   'Errors only',
+// Display label per log level, shown in the filter dropdown.
+const LEVEL_LABEL = {
+  debug:   'Debug',
+  info:    'Info',
+  warning: 'Warning',
+  error:   'Error',
 }
 
 // Debug plugin entry. A first-party plugin loaded through the plugin host (not
@@ -22,7 +22,7 @@ const FILTER_LABEL = {
 // offering a service the rest of the app consumes over the internal API.
 export function activate(api) {
   const { Activity, PanelView } = api
-  const { entries, visibleEntries, log, clear, minLevel, cycleLevelFilter } = useDebugLog()
+  const { entries, visibleEntries, log, clear, allLevelsEnabled, isLevelEnabled, toggleLevel } = useDebugLog()
 
   // Activity-owned command, contributed through the scoped api a plugin uses —
   // proving registration isn't special-cased for first-party activities.
@@ -35,7 +35,7 @@ export function activate(api) {
     label: 'Debug',
     icon: mdiBug,
     // The activity API the host's `log` capability delegates to.
-    setup: () => ({ entries, visibleEntries, log, clear, minLevel, cycleLevelFilter }),
+    setup: () => ({ entries, visibleEntries, log, clear, allLevelsEnabled, isLevelEnabled, toggleLevel }),
   })
     .addView(new PanelView({
       id: 'debug',
@@ -46,10 +46,21 @@ export function activate(api) {
       actions: [
         {
           id: 'filterLevel',
-          // Funnel fills in once a filter is active; the title shows what's shown.
-          icon:  ctx => (ctx.api('debug')?.minLevel?.value ?? 'debug') === 'debug' ? mdiFilterOutline : mdiFilter,
-          title: ctx => `Filter: ${FILTER_LABEL[ctx.api('debug')?.minLevel?.value ?? 'debug']}`,
-          run:   ctx => ctx.api('debug')?.cycleLevelFilter?.(),
+          // Funnel fills in once any level is hidden. Clicking opens a dropdown of
+          // per-level toggles (multi-select) instead of cycling a single setting.
+          icon:  ctx => ctx.api('debug')?.allLevelsEnabled?.value ? mdiFilterOutline : mdiFilter,
+          title: 'Filter log levels',
+          menu:  ctx => {
+            const dbg = ctx.api('debug')
+            return LOG_LEVELS.map(level => ({
+              key:      `level-${level}`,
+              label:    LEVEL_LABEL[level] ?? level,
+              type:     'toggle',
+              keepOpen: true,   // let users flip several levels without reopening
+              checked:  () => dbg?.isLevelEnabled?.(level) ?? true,
+              action:   () => dbg?.toggleLevel?.(level),
+            }))
+          },
         },
         { id: 'clear', title: 'Clear', icon: mdiNotificationClearAll, run: ctx => ctx.api('debug')?.clear?.() },
       ],

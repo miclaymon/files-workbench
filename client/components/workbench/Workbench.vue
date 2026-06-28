@@ -222,6 +222,9 @@
          ModalView rendered in the shared ModalEditor chrome -->
     <ModalHost :host="host" />
 
+    <!-- Near-fullscreen lightbox overlay (opened via facade.lightbox) -->
+    <LightboxHost />
+
   </div>
 </template>
 
@@ -230,6 +233,7 @@ import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 
 import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
 import CommandPalette from './ui/CommandPalette.vue'
 import ModalHost from './ui/ModalHost.vue'
+import LightboxHost from './LightboxHost.vue'
 import { useEditorGrid } from '~/composables/workbench/useEditorGrid.js'
 import { useStatusBar } from '~/composables/workbench/useStatusBar.js'
 import { useNotifications } from '~/composables/workbench/useNotifications.js'

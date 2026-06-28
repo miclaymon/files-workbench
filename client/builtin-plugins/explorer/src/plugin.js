@@ -1,6 +1,6 @@
 import { markRaw, ref, computed, watch } from 'vue'
 import {
-  mdiFileTree, mdiEye, mdiEyeOff, mdiFolderMultiple, mdiFileDocumentMultiple,
+  mdiFileTree, mdiEye, mdiEyeOff, mdiFolder, mdiFolderMultiple, mdiFileDocumentMultiple,
   mdiRefresh, mdiFilePlusOutline, mdiFolderPlusOutline, mdiCollapseAll, mdiExpandAll,
 } from '@mdi/js'
 
@@ -93,7 +93,7 @@ export function activate(api) {
       id: 'directory',
       kind: 'dir',
       label: 'Directory',
-      icon: mdiFolderMultiple,
+      icon: mdiFolder,   // shown on directory editor tabs (resolved by kind)
       component: markRaw(DirectoryTab),
       // Editor tab views bind per-instance state: props receive (tab, ctx) where
       // `tab` is the leaf tab object and `ctx` carries shared editor context

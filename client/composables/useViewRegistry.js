@@ -121,6 +121,22 @@ export function tabViewForKind(kind) {
   return id ? REGISTRY[id] : null
 }
 
+// Resolve the icon descriptor (ResolvedIcon shape) for an editor tab. When the
+// tab's editor-view defines a per-tab tabIcon(tab) — e.g. Preview returns its
+// thumbnail or file-type icon — use it; otherwise the view's static kind icon as
+// an MDI path. `dynamic:false` forces the static kind icon, which renderers use as
+// the fallback when a dynamic <img> icon fails to load. Returns null when the kind
+// has no registered view/icon (the renderer then shows nothing or its own default).
+export function tabIconDescriptor(tab, { dynamic = true } = {}) {
+  const view = tabViewForKind(tab.kind)
+  if (!view) return null
+  if (dynamic && typeof view.tabIcon === 'function') {
+    const d = view.tabIcon(tab)
+    if (d) return d
+  }
+  return view.icon ? { type: 'svg.path', icon: view.icon } : null
+}
+
 // Status-bar widgets contributed by activities, in registration order, optionally
 // filtered by region ('left' | 'right').
 export function getStatusViews(region) {

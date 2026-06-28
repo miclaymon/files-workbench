@@ -1,14 +1,22 @@
 <template>
   <div class="media-preview-container" :class="{ 'mode-single': mode === 'single' }">
-    <div class="media-wrapper" :style="wrapperStyle">
+    <div
+      ref="wrapperEl"
+      class="media-wrapper"
+      :class="{ zoomed, zoomable }"
+      :style="wrapperStyle"
+      @click="onClick"
+    >
       <template v-if="!loaded">
         <img v-if="thumbnailSrc" :src="thumbnailSrc" class="image-placeholder" />
         <div class="shimmer-overlay" />
       </template>
       <img
+        ref="imgEl"
         :src="src"
         class="responsive-image"
         :class="{ visible: loaded }"
+        :style="imageStyle"
         @load="loaded = true"
         @error="loaded = true"
       />
@@ -24,6 +32,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { formatBytes } from './utils.js'
+import { useClickDebounce } from '~/composables/interaction/useClickDebounce.js'
 
 const props = defineProps({
   src:          { type: String, required: true },
@@ -33,7 +42,10 @@ const props = defineProps({
   format:       { type: String, default: null },
   fileSize:     { type: Number, default: null },
   mode:         { type: String, default: 'multi' },
+  allowLightbox:{ type: Boolean, default: true },
 })
+
+const emit = defineEmits(['request-lightbox'])
 
 const loaded = ref(false)
 
@@ -42,6 +54,52 @@ const wrapperStyle = computed(() => {
   if (props.width && props.height) return { aspectRatio: `${props.width} / ${props.height}` }
   return { minHeight: '120px' }
 })
+
+// ── Click-to-zoom (single mode only) ───────────────────────────────────────────
+// Toggles the image between "contain" (whole image fit) and "cover" (fills the
+// container's shorter axis; the longer axis overflows and the wrapper scrolls).
+// The cover axis is chosen from the image's aspect vs the container's at toggle
+// time, so the right axis is filled regardless of orientation.
+const wrapperEl = ref(null)
+const imgEl     = ref(null)
+const zoomed    = ref(false)
+const coverAxis = ref('width')   // axis pinned to 100% when zoomed
+
+const zoomable = computed(() => props.mode === 'single')
+
+const imageStyle = computed(() => {
+  if (!zoomed.value) return {}
+  return coverAxis.value === 'height'
+    ? { width: 'auto', height: '100%', maxWidth: 'none', maxHeight: 'none' }
+    : { width: '100%', height: 'auto', maxWidth: 'none', maxHeight: 'none' }
+})
+
+function toggleZoom() {
+  if (!zoomable.value) return
+  if (!zoomed.value) {
+    // Pin the axis that makes the image cover: a wide image fills height (width
+    // overflows); a tall image fills width (height overflows). Falls back to
+    // width-fill if the sizes aren't measurable yet.
+    const w = wrapperEl.value
+    const img = imgEl.value
+    if (w?.clientWidth && w?.clientHeight && img?.naturalWidth && img?.naturalHeight) {
+      const containerAspect = w.clientWidth / w.clientHeight
+      const imageAspect = img.naturalWidth / img.naturalHeight
+      coverAxis.value = imageAspect > containerAspect ? 'height' : 'width'
+    }
+  }
+  zoomed.value = !zoomed.value
+}
+
+// Single click toggles zoom; double click opens the lightbox. The debounce keeps a
+// double-click from flickering zoom on/off first. Inside the lightbox
+// (allowLightbox:false) there's no double action, so click zooms immediately.
+const { handleClick } = useClickDebounce({ delay: 220 })
+function onClick() {
+  if (!zoomable.value) return
+  if (!props.allowLightbox) { toggleZoom(); return }
+  handleClick('media', toggleZoom, () => emit('request-lightbox'))
+}
 </script>
 
 <style scoped>
@@ -67,6 +125,16 @@ const wrapperStyle = computed(() => {
   background: var(--hover-background);
   background: var(--input-background, #1e1e1e);
   padding: 8px;
+}
+/* Single-mode wrapper is the click-to-zoom target. */
+.media-wrapper.zoomable { cursor: zoom-in; }
+.media-wrapper.zoomed {
+  overflow: auto;
+  cursor: zoom-out;
+  /* `safe` keeps the filled axis centered but pins to the start once the content
+     overflows, so the leading edge is never clipped out of reach. */
+  justify-content: safe center;
+  align-items: safe center;
 }
 
 .image-placeholder {

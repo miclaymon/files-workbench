@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, ipcMain } = require('electron')
 const path = require('path')
 
 const isDev = process.env.NODE_ENV !== 'production'
+const openDevTools = isDev
 const DEV_URL = 'http://localhost:3000'
 const isMac = process.platform === 'darwin'
 
@@ -12,7 +13,7 @@ Menu.setApplicationMenu(null)
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1920,
+    width: openDevTools ? 1920 + 300 : 1920,
     height: 1080,
     // Frameless: the custom TitleBar is the only window chrome. On macOS,
     // titleBarStyle:'hidden' keeps the native traffic-light buttons (top-left)
@@ -33,7 +34,7 @@ function createWindow() {
 
   if (isDev) {
     win.loadURL(DEV_URL)
-    win.webContents.openDevTools()
+    if (openDevTools) win.webContents.openDevTools()
   } else {
     win.loadFile(path.join(__dirname, '../.output/public/index.html'))
   }
@@ -57,7 +58,7 @@ ipcMain.handle('window:isMaximized', (e) => {
   return BrowserWindow.fromWebContents(e.sender)?.isMaximized() ?? false
 })
 ipcMain.handle('window:toggleDevTools', (e) => {
-  e.sender.toggleDevTools()
+  if (openDevTools) e.sender.toggleDevTools()
 })
 
 app.whenReady().then(() => {

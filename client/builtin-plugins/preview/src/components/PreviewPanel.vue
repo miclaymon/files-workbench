@@ -17,6 +17,7 @@
         :mode="mode"
         @copy-name="copyName"
         @force-load="forceLoadPreview"
+        @request-lightbox="openLightbox"
       />
     </div>
   </div>
@@ -27,10 +28,18 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
-import { EXT_LANGUAGE, TEXT_APP_MIMES } from './preview/utils.js'
-import { MEDIA_BASE as API_BASE } from '~/lib/api-config.js'
+import { ref, computed, watch, inject } from 'vue'
+import { isPreviewable, singlePreviewable } from './preview/utils.js'
+import { loadPreview, forceLoadText } from './preview/load.js'
 import PreviewItem from './preview/PreviewItem.vue'
+import PreviewLightbox from './PreviewLightbox.vue'
+
+// Double-clicking a single-item preview opens it in the shared lightbox overlay
+// (facade.lightbox), reusing the same single-item renderer.
+const viewCtx = inject('viewCtx', null)
+function openLightbox(item) {
+  viewCtx?.facade?.lightbox?.open({ component: PreviewLightbox, props: { item } })
+}
 
 const props = defineProps({
   selectedItems:  { type: Array, required: true },
@@ -39,16 +48,11 @@ const props = defineProps({
   editorFontSize: { type: Number, default: 13 },
 })
 
-const validItems = computed(() =>
-  props.selectedItems.filter(item => item?.path && item?.name && item?.kind !== 'dir' && item?.kind !== 'directory')
-)
+const validItems = computed(() => props.selectedItems.filter(isPreviewable))
 
 const displayItems = computed(() => {
   if (props.mode === 'single') {
-    const fi = props.focusedItem
-    const item = (fi?.path && fi?.kind !== 'dir' && fi?.kind !== 'directory')
-      ? fi
-      : (validItems.value.at(-1) ?? null)
+    const item = singlePreviewable(props.selectedItems, props.focusedItem)
     return item ? [item] : []
   }
   return validItems.value
@@ -60,22 +64,11 @@ const loadingStates = ref({})
 const previewCache = new Map()
 const selectedPaths = ref(new Set())
 
-async function fetchTextContent(path, force = false) {
-  const base = import.meta.env.DEV ? '/text-preview' : `${API_BASE}/fs/preview`
-  const params = new URLSearchParams({ path })
-  if (force) params.set('force', 'true')
-  const res = await fetch(`${base}?${params}`)
-  return res.ok ? res.json() : null
-}
-
 async function forceLoadPreview(item) {
   loadingStates.value[item.path] = true
   try {
-    const data = await fetchTextContent(item.path, true)
-    if (!data || data.kind === 'tooLarge') return
-    const ext = item.name.split('.').pop()?.toLowerCase() ?? ''
-    const lang = EXT_LANGUAGE[ext] ?? previews.value[item.path]?.language ?? 'plaintext'
-    const previewData = { kind: 'text', text: data.text, language: lang }
+    const previewData = await forceLoadText(item, previews.value[item.path]?.language)
+    if (!previewData) return
     previewCache.set(item.path, { preview: previewData, metadata: metadata.value[item.path] })
     previews.value[item.path] = previewData
   } catch {
@@ -94,60 +87,14 @@ async function loadPreviewForItem(item) {
   }
 
   loadingStates.value[item.path] = true
-
   try {
-    const response = await fetch(`${API_BASE}/metadata?path=${encodeURIComponent(item.path)}`)
-    if (!response.ok) { previews.value[item.path] = { kind: 'error' }; return }
-
-    const itemMetadata = await response.json()
-    metadata.value[item.path] = itemMetadata
-
-    const mime = itemMetadata.mime_type ?? ''
-    const ext = item.name.split('.').pop()?.toLowerCase() ?? ''
-    const language = EXT_LANGUAGE[ext]
-    const isHtmlPage = ext === 'html' || ext === 'htm' || ext === 'xhtml'
-
-    let previewData
-
-    if (isHtmlPage) {
-      const textData = await fetchTextContent(item.path)
-      if (textData?.kind === 'tooLarge') {
-        previewData = { ...textData, language: 'html' }
-      } else {
-        previewData = { kind: 'html', text: textData?.text ?? '', language: 'html' }
-      }
-    } else if (language) {
-      const textData = await fetchTextContent(item.path)
-      if (textData?.kind === 'tooLarge') {
-        previewData = { ...textData, language }
-      } else {
-        previewData = textData ? { kind: 'text', text: textData.text, language } : { kind: 'binary' }
-      }
-    } else if (mime.startsWith('image/')) {
-      previewData = { kind: 'image' }
-    } else if (mime.startsWith('video/')) {
-      previewData = { kind: 'video' }
-    } else if (mime.startsWith('audio/')) {
-      previewData = { kind: 'audio' }
-    } else if (mime.startsWith('text/') || TEXT_APP_MIMES.has(mime)) {
-      const lang = mime.split('/')[1]?.replace(/^x-/, '') || 'plaintext'
-      const textData = await fetchTextContent(item.path)
-      if (textData?.kind === 'tooLarge') {
-        previewData = { ...textData, language: lang }
-      } else {
-        previewData = textData ? { kind: 'text', text: textData.text, language: lang } : { kind: 'binary' }
-      }
-    } else {
-      previewData = { kind: 'binary' }
+    const { preview, metadata: md } = await loadPreview(item)
+    if (md) metadata.value[item.path] = md
+    // Don't cache tooLarge (allow re-check if the user raises the limit) or errors.
+    if (preview.kind !== 'tooLarge' && preview.kind !== 'error') {
+      previewCache.set(item.path, { preview, metadata: md })
     }
-
-    // Don't cache tooLarge — allow re-check if user changes the limit
-    if (previewData.kind !== 'tooLarge') {
-      previewCache.set(item.path, { preview: previewData, metadata: itemMetadata })
-    }
-    previews.value[item.path] = previewData
-  } catch {
-    previews.value[item.path] = { kind: 'error' }
+    previews.value[item.path] = preview
   } finally {
     loadingStates.value[item.path] = false
   }

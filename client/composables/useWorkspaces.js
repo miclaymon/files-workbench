@@ -329,9 +329,13 @@ function migrateWorkspace(ws) {
 // ─── Tab serialisation ───────────────────────────────────────────────────────
 
 export function wsTabToRuntime(tab) {
-  return {
+  // Prefer the persisted `kind`; fall back to the legacy `type` mapping for tabs
+  // saved before kind was persisted.
+  const kind = tab.kind
+    ?? (tab.type === 'Home' ? 'home' : tab.type === 'Directory' ? 'dir' : (tab.type ?? 'home').toLowerCase())
+  const runtime = {
     id:            tab.id,
-    kind:          tab.type === 'Home' ? 'home' : tab.type === 'Directory' ? 'dir' : (tab.type ?? 'home').toLowerCase(),
+    kind,
     title:         tab.title ?? '',
     path:          tab.context?.path         ?? '',
     selectedPath:  tab.context?.selectedPath ?? '',
@@ -340,14 +344,22 @@ export function wsTabToRuntime(tab) {
     selectedItems: tab.context?.selectedItems ?? [],
     focusedItem:   tab.context?.focusedItem   ?? null,
   }
+  if (tab.context?.params) runtime.params = tab.context.params
+  return runtime
 }
 
 export function runtimeTabToWs(tab, existing = null) {
   const now = new Date().toISOString()
+  // `type` is the legacy display label, kept for backward compatibility; `kind` is
+  // the authoritative tab kind, persisted directly so any registered tab kind
+  // (git-graph, preview, plugin-contributed …) round-trips rather than collapsing
+  // to Home. `params` (opaque per-tab context) is persisted so those tabs restore
+  // their target on reload.
   const typeMap = { home: 'Home', dir: 'Directory', preferences: 'Preferences' }
   return {
     id:               tab.id,
     type:             typeMap[tab.kind] ?? 'Home',
+    kind:             tab.kind,
     title:            tab.title ?? '',
     subtitle:         null,
     timestampAdded:   existing?.timestampAdded   ?? now,
@@ -361,6 +373,7 @@ export function runtimeTabToWs(tab, existing = null) {
       selectedPath:  tab.selectedPath  ?? '',
       selectedItems: tab.selectedItems ?? [],
       focusedItem:   tab.focusedItem   ?? null,
+      params:        tab.params        ?? null,
     },
   }
 }

@@ -650,7 +650,18 @@ function onItemLeave() {
   _clearTt()
 }
 
+// An item shows a hover *preview* only when hover preview is on and it has a
+// thumbnail (media: image/video/audio) — same gate as hpStart. Non-media items
+// have no preview, so their icon shouldn't suppress the tooltip.
+function hasHoverPreview(item) {
+  return props.hoverPreviewEnabled && !!item?.thumbnail
+}
+
 function onThumbEnter(item, e) {
+  // Media items use the thumbnail for the hover preview, so suppress the tooltip
+  // there to avoid overlap. Non-media items have no preview — fall through so the
+  // row's tooltip may show over the icon too.
+  if (!hasHoverPreview(item)) return
   _ttOverThumb = true
   clearTimeout(_ttTimer)
   ttVisible.value = false
@@ -658,6 +669,7 @@ function onThumbEnter(item, e) {
 }
 
 function onThumbLeave(e) {
+  if (!hasHoverPreview(_ttHoverItem)) return
   _ttOverThumb = false
   endHover()
   if (_ttHoverItem) _scheduleTt(_ttHoverItem, e)

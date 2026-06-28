@@ -1,7 +1,7 @@
 <template>
   <div class="dbg" ref="containerEl">
     <div v-if="visibleEntries.length === 0" class="dbg-empty">
-      {{ entries.length ? 'No events at this level.' : 'No events yet.' }}
+      {{ entries.length ? 'No events match the level filter.' : 'No events yet.' }}
     </div>
     <div
       v-for="entry in visibleEntries"

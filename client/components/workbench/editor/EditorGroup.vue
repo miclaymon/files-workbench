@@ -33,7 +33,7 @@
           @dragstart="onTabDragStart($event, t)"
           @dragend="onTabDragEnd"
         >
-          <svg v-if="t.kind === 'dir'" class="tab-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path :d="mdiFolder" /></svg>
+          <ResolvedIcon v-if="iconResult(t)" :result="iconResult(t)" :size="14" icon-class="tab-icon" @fail="onIconFail(t.id)" />
           <span class="tab-label">{{ t.title }}</span>
           <span v-if="t.selectedItems?.length > 0" class="tab-badge">{{ t.selectedItems.length }}</span>
           <span
@@ -136,8 +136,19 @@
 
 <script setup>
 import { computed, inject, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { mdiFolder, mdiClose, mdiPin, mdiChevronDown, mdiLock, mdiDotsHorizontal } from '@mdi/js'
+import { mdiClose, mdiPin, mdiChevronDown, mdiLock, mdiDotsHorizontal } from '@mdi/js'
 import { useEditorDnd, dropRegion, regionToSide } from '~/composables/interaction/useEditorDnd.js'
+import { tabIconDescriptor } from '~/composables/useViewRegistry.js'
+import ResolvedIcon from '~/components/workbench/ResolvedIcon.vue'
+
+// A tab's icon comes from its registered editor-view (by kind) — and, when that
+// view defines a per-tab tabIcon (e.g. Preview's thumbnail / file-type icon), from
+// the tab itself. So every tab kind shows its own icon with no per-kind branching.
+// If a dynamic <img> icon (thumbnail / icon-pack URL) 404s, the tab id is recorded
+// and we fall back to the view's static kind glyph.
+const iconFailed = ref(new Set())
+function iconResult(tab) { return tabIconDescriptor(tab, { dynamic: !iconFailed.value.has(tab.id) }) }
+function onIconFail(id) { iconFailed.value = new Set(iconFailed.value).add(id) }
 
 const props = defineProps({
   group:       { type: Object,  required: true },
@@ -414,7 +425,9 @@ defineExpose({
   &:hover .tab-close,
   &.active .tab-close { opacity: 1; }
 
-  .tab-icon  { flex-shrink: 0; }
+  .tab-icon  { flex-shrink: 0; width: 14px; height: 14px; }
+  /* When the icon is an image (thumbnail / icon-pack glyph), keep it square. */
+  img.tab-icon { object-fit: cover; border-radius: 2px; }
   .tab-label { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
   .tab-badge {
     background: var(--accent);

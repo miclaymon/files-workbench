@@ -196,7 +196,9 @@ function onItemClick(item) {
   if (item.disabled) return
   item.action?.()
   emit('item-click', item)
-  if (props.type === 'menu' && !item.submenu) close()
+  // `keepOpen` items (e.g. multi-select filter toggles) leave the menu open so
+  // several can be flipped in one go; everything else closes after acting.
+  if (props.type === 'menu' && !item.submenu && !item.keepOpen) close()
 }
 
 function close() {
