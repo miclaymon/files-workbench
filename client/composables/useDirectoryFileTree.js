@@ -209,7 +209,7 @@ export function useDirectoryFileTree({ items, mode, loadChildren, lazyDepth = 1,
       const exp = new Set(expanded.value)
       let changed = false
       for (const r of roots) {
-        if (r._preloadedItems && !cbp[r.path]) {
+        if (r._preloadedItems) {
           cbp[r.path] = r._preloadedItems
           exp.add(expandKeyFor(r.path, r.path))
           changed = true
