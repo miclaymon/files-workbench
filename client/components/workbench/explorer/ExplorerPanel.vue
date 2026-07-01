@@ -25,7 +25,7 @@
 // Explorer Places panel — composable-driven folder tree using useDirectoryFileTree.
 // Loads virtual roots (Root/Home/Drives) then lazily fetches children on expand.
 // Tree logic (lazy fetch, expand state, caching, soft-refresh) lives in the composable.
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onActivated } from 'vue'
 import TreeList from './TreeList.vue'
 import { explorerList } from '~/lib/explorer-api.js'
 import { loadExplorerRoots } from '~/lib/explorer-roots.js'
@@ -65,7 +65,7 @@ function loadChildren(path) {
   }).then(r => r.items ?? []).catch(() => [])
 }
 
-const { nodes, expanded, toggleExpand, reloadDir, reloadAll, expandRoots, collapseAll, state } =
+const { nodes, expanded, toggleExpand, reloadDir, reloadAll, expandRoots, collapseAll, softRefreshAll, state } =
   useDirectoryFileTree({
     items: rootItems,
     mode: 'tree',
@@ -73,6 +73,16 @@ const { nodes, expanded, toggleExpand, reloadDir, reloadAll, expandRoots, collap
     lazyDepth: 1,
     initialState: props.explorerState,
   })
+
+// The Explorer is kept alive by the primary sidebar (its tree/expand state survives
+// Activity Bar switches). On re-reveal, background diff-refresh the visible tree so it
+// reflects filesystem changes without a rebuild. Skip the first activation — it
+// coincides with the onMounted load.
+let _activatedOnce = false
+onActivated(() => {
+  if (!_activatedOnce) { _activatedOnce = true; return }
+  softRefreshAll()
+})
 
 // Persist expand/cache state AND the hidden-visibility flag up to the workspace.
 watch([state, showHidden], () => emit('state-change', { ...state.value, showHidden: showHidden.value }))

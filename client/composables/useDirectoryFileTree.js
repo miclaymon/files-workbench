@@ -142,6 +142,22 @@ export function useDirectoryFileTree({ items, mode, loadChildren, lazyDepth = 1,
     childrenByPath.value = { ...childrenByPath.value, [path]: merged }
   }
 
+  // Background-refresh every directory whose children are currently shown — the roots
+  // plus any expanded dirs — diff-merging each (via softRefresh) so unchanged nodes keep
+  // their identity and only real changes move. Lazy-only: eager trees derive from the
+  // `items` prop and refresh through that watch. Used when a kept-alive tree is
+  // re-revealed (ExplorerPanel onActivated).
+  async function softRefreshAll() {
+    if (!lazy) return
+    const paths = new Set()
+    for (const r of flatItems.value) paths.add(r.path ?? r.name)
+    for (const key of expanded.value) {
+      const sep = key.indexOf('::')
+      paths.add(sep >= 0 ? key.slice(sep + 2) : key)
+    }
+    await Promise.all([...paths].filter(p => p && childrenByPath.value[p]).map(p => softRefresh(p)))
+  }
+
   // Externally swap a node's children (e.g. after a caller-driven fetch).
   function replaceNodeChildren(path, children) {
     childrenByPath.value = { ...childrenByPath.value, [path]: children ?? [] }
@@ -224,7 +240,7 @@ export function useDirectoryFileTree({ items, mode, loadChildren, lazyDepth = 1,
   return {
     nodes, expanded, toggleExpand,
     expandAll, collapseAll, expandRoots,
-    reloadDir, reloadAll, replaceNodeChildren,
+    reloadDir, reloadAll, softRefreshAll, replaceNodeChildren,
     childrenByPath, state,
   }
 }

@@ -87,27 +87,32 @@
       @drop="onBodyDrop"
       @dragleave="onBodyDragLeave"
     >
-      <TabContentHost
-        v-if="activeTab"
-        :key="activeTab.id"
-        :tab="activeTab"
-        :prefs="prefs"
-        :excludedCategories="excludedCategories"
-        :registerInstance="setTabInstance"
-        @select="$emit('select', $event)"
-        @open="$emit('open', $event)"
-        @navigate="$emit('navigate', $event)"
-        @contextmenu="$emit('contextmenu', $event)"
-        @background-contextmenu="$emit('background-contextmenu', $event)"
-        @right-drag-drop="$emit('right-drag-drop', $event)"
-        @rename="$emit('rename', $event)"
-        @rename-batch="$emit('rename-batch', $event)"
-        @stats="$emit('stats', { groupId: group.id, stats: $event })"
-        @update:layout="$emit('update:layout', $event)"
-        @preferences-save="$emit('preferences-save', $event)"
-        @preferences-change="$emit('preferences-change', $event)"
-      />
-      <div v-else class="group-placeholder">
+      <!-- Tabs are kept alive (LRU-capped): switching tabs caches the previous
+           instance instead of destroying it, so a directory tab's listing /
+           thumbnails / sizes survive and switching back is instant. -->
+      <KeepAlive :max="25">
+        <TabContentHost
+          v-if="activeTab"
+          :key="activeTab.id"
+          :tab="activeTab"
+          :prefs="prefs"
+          :excludedCategories="excludedCategories"
+          :registerInstance="setTabInstance"
+          @select="$emit('select', $event)"
+          @open="$emit('open', $event)"
+          @navigate="$emit('navigate', $event)"
+          @contextmenu="$emit('contextmenu', $event)"
+          @background-contextmenu="$emit('background-contextmenu', $event)"
+          @right-drag-drop="$emit('right-drag-drop', $event)"
+          @rename="$emit('rename', $event)"
+          @rename-batch="$emit('rename-batch', $event)"
+          @stats="$emit('stats', { groupId: group.id, stats: $event })"
+          @update:layout="$emit('update:layout', $event)"
+          @preferences-save="$emit('preferences-save', $event)"
+          @preferences-change="$emit('preferences-change', $event)"
+        />
+      </KeepAlive>
+      <div v-if="!activeTab" class="group-placeholder">
         <span>No open tabs in this group.</span>
       </div>
 
@@ -135,7 +140,7 @@
 </template>
 
 <script setup>
-import { computed, inject, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { computed, inject, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { mdiClose, mdiPin, mdiChevronDown, mdiLock, mdiDotsHorizontal } from '@mdi/js'
 import { useEditorDnd, dropRegion, regionToSide } from '~/composables/interaction/useEditorDnd.js'
 import { tabIconDescriptor } from '~/composables/useViewRegistry.js'
@@ -170,11 +175,28 @@ const { dragState, startTabDrag, endTabDrag } = useEditorDnd()
 const tabs = computed(() => props.group.tabs)
 const activeTab = computed(() => tabs.value.find(t => t.id === props.group.activeTabId) ?? tabs.value[0] ?? null)
 
-// The active tab's mounted content instance, handed back by TabContentHost.
-// Kept for imperative directory ops (refresh / optimistic rename); non-directory
-// tabs simply lack those methods, so the proxied calls below no-op via `?.`.
-const directoryTabRef = ref(null)
-function setTabInstance(el) { directoryTabRef.value = el }
+// Mounted content instances, keyed by tab id (handed back by TabContentHost with
+// its own id). A Map — not a single ref — because tabs are kept alive: switching
+// tabs deactivates rather than unmounts the previous one, so we resolve the active
+// tab's instance by id at call time. Kept for imperative directory ops (refresh /
+// optimistic rename); non-directory tabs lack those methods, so calls below no-op
+// via `?.`. On unmount (close / LRU evict) TabContentHost reports a null instance,
+// keyed by its own id, so the right entry is dropped.
+const tabInstances = new Map()
+function setTabInstance(el, tabId) {
+  if (!tabId) return
+  if (el) tabInstances.set(tabId, el)
+  else tabInstances.delete(tabId)
+}
+const activeTabInstance = () => (activeTab.value ? tabInstances.get(activeTab.value.id) ?? null : null)
+
+// Prune handles for tabs that have closed. A kept-alive instance may linger in the
+// KeepAlive cache until LRU eviction (its ref doesn't fire null on deactivate), but
+// we don't want stale handles for tabs no longer in the group.
+watch(() => props.group.tabs.map(t => t.id), (ids) => {
+  const live = new Set(ids)
+  for (const id of tabInstances.keys()) if (!live.has(id)) tabInstances.delete(id)
+})
 
 // ── Tab drag (reorder within strip + cross-group via body regions) ────────────
 
@@ -323,11 +345,11 @@ function toggleGroupMenu() {
 }
 
 defineExpose({
-  refresh: () => directoryTabRef.value?.refresh?.(),
-  renameItem: (...a) => directoryTabRef.value?.renameItem?.(...a),
-  batchRenameItems: (...a) => directoryTabRef.value?.batchRenameItems?.(...a),
-  clearOptimisticThumbnails: (...a) => directoryTabRef.value?.clearOptimisticThumbnails?.(...a),
-  getDirectoryTab: () => directoryTabRef.value,
+  refresh: () => activeTabInstance()?.refresh?.(),
+  renameItem: (...a) => activeTabInstance()?.renameItem?.(...a),
+  batchRenameItems: (...a) => activeTabInstance()?.batchRenameItems?.(...a),
+  clearOptimisticThumbnails: (...a) => activeTabInstance()?.clearOptimisticThumbnails?.(...a),
+  getDirectoryTab: () => activeTabInstance(),
 })
 </script>
 

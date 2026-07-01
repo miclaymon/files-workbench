@@ -33,7 +33,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, reactive, shallowReactive, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, reactive, shallowReactive, onMounted, onUnmounted, onActivated } from 'vue'
 import { MEDIA_BASE } from '~/lib/api-config.js'
 import { fsStat, fsListDir, fsDirSize, fsArchiveList, fsExeInfo } from '~/lib/fs-api.js'
 import { perfStart, perfMark, perfFlush } from '~/lib/perf-log.js'
@@ -42,6 +42,16 @@ const ARCHIVE_EXTS = ['.zip', '.tar', '.tar.gz', '.tar.bz2', '.tgz', '.tbz2', '.
 function isArchivePath(p) {
   const lower = p.toLowerCase()
   return ARCHIVE_EXTS.some(ext => lower.endsWith(ext))
+}
+
+// Archive listings are sorted client-side (dirs first, then case-insensitive name).
+// Regular directory listings arrive already sorted from the server, so they are not
+// re-sorted here. Shared by the initial fetch and the background soft-refresh.
+function sortArchiveItems(list) {
+  return list.sort((a, b) => {
+    if ((a.kind === 'dir') !== (b.kind === 'dir')) return a.kind === 'dir' ? -1 : 1
+    return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+  })
 }
 
 const props = defineProps({
@@ -98,16 +108,11 @@ async function fetchItems(path) {
       // Virtual archive path: list archive contents
       const result = await fsArchiveList(info.archiveFile, info.innerPath, { signal: ctrl.signal })
       if (gen !== _gen) return
-      items.value = (result.items ?? [])
-        .map(item => ({
-          ...item,
-          _id: ++_uid,
-          path: info.archiveFile + '::' + info.innerPath + item.name + (item.kind === 'dir' ? '/' : ''),
-        }))
-        .sort((a, b) => {
-          if ((a.kind === 'dir') !== (b.kind === 'dir')) return a.kind === 'dir' ? -1 : 1
-          return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
-        })
+      items.value = sortArchiveItems((result.items ?? []).map(item => ({
+        ...item,
+        _id: ++_uid,
+        path: info.archiveFile + '::' + info.innerPath + item.name + (item.kind === 'dir' ? '/' : ''),
+      })))
     } else {
       // Phase 1: fetch listing without dir sizes — renders immediately
       const excl = (props.excludedCategories ?? ['System']).join(',')
@@ -163,8 +168,12 @@ function seedDirSizePlaceholders() {
 // <DirSizeCell> re-renders — the item objects (and thus the grid rows) are untouched.
 const DIRS_CONCURRENCY = 4
 
-async function fetchDirSizes(gen, ctrl) {
+function fetchDirSizes(gen, ctrl) {
   const dirPaths = items.value.filter(i => i.kind === 'dir').map(i => i.path)
+  return fetchDirSizesFor(dirPaths, gen, ctrl)
+}
+
+async function fetchDirSizesFor(dirPaths, gen, ctrl) {
   if (!dirPaths.length) return
   let idx = 0
   async function worker() {
@@ -184,6 +193,72 @@ async function fetchDirSizes(gen, ctrl) {
     }
   }
   await Promise.all(Array.from({ length: Math.min(DIRS_CONCURRENCY, dirPaths.length) }, worker))
+}
+
+// Non-destructive background refresh, used when a kept-alive tab is re-revealed (see
+// onActivated). Re-lists the current directory and reconciles it against the existing
+// items by path: unchanged entries keep their object identity (and _id), so their grid
+// cells and thumbnails are NOT remounted; only added / removed / changed entries move.
+// Bails early when nothing changed, so an unchanged folder costs one listing call and
+// no DOM work. Mirrors the directory tree's diff-merge (useDirectoryFileTree).
+async function softRefresh() {
+  const path = props.path
+  const info = archiveInfo.value
+  const gen = ++_gen
+  _ctrl?.abort()
+  const ctrl = new AbortController()
+  _ctrl = ctrl
+  try {
+    let fresh
+    if (info) {
+      const result = await fsArchiveList(info.archiveFile, info.innerPath, { signal: ctrl.signal })
+      if (gen !== _gen) return
+      fresh = (result.items ?? []).map(item => ({
+        ...item,
+        path: info.archiveFile + '::' + info.innerPath + item.name + (item.kind === 'dir' ? '/' : ''),
+      }))
+    } else {
+      const excl = (props.excludedCategories ?? ['System']).join(',')
+      const showHidden = props.prefs?.showHiddenFiles ?? false
+      const result = await fsListDir(path, { includeMetadata: true, showHidden, excludeCategories: excl, signal: ctrl.signal })
+      if (gen !== _gen) return
+      fresh = result.items ?? []
+    }
+
+    // Reconcile by path, reusing existing objects where the entry is unchanged.
+    const prevByPath = new Map(items.value.map(it => [it.path, it]))
+    let changed = fresh.length !== items.value.length
+    let merged = fresh.map((f) => {
+      const prev = prevByPath.get(f.path)
+      if (!prev) { changed = true; return { ...f, _id: ++_uid } }
+      if (prev.size !== f.size || prev.date_modified !== f.date_modified) {
+        changed = true
+        return { ...prev, ...f, _id: prev._id }   // patch metadata, keep identity
+      }
+      return prev   // unchanged — same reference, Vue skips its DOM
+    })
+    if (!changed) return   // folder is identical; don't touch items / dirSizes
+
+    if (info) merged = sortArchiveItems(merged)   // regular listings keep server order
+    items.value = merged
+
+    // Reconcile the directory-size cache: drop vanished paths, seed + fetch the new
+    // dirs only (existing dirs keep their resolved sizes).
+    const livePaths = new Set(merged.map(i => i.path))
+    for (const k of Object.keys(dirSizes)) if (!livePaths.has(k)) delete dirSizes[k]
+    if (!info) {
+      const newDirPaths = merged.filter(i => i.kind === 'dir' && !(i.path in dirSizes)).map(i => i.path)
+      for (const p of newDirPaths) dirSizes[p] = { size: null, files: null, loading: true }
+      emitStats()
+      if (newDirPaths.length) await fetchDirSizesFor(newDirPaths, gen, ctrl)
+    } else {
+      emitStats()
+    }
+  } catch {
+    // aborted or network error — keep the current items as-is
+  } finally {
+    if (_ctrl === ctrl) _ctrl = null
+  }
 }
 
 watch(() => props.path, (newPath) => { fetchItems(newPath) })
@@ -275,6 +350,16 @@ onMounted(() => {
   document.addEventListener('keydown', handleKeyDown)
   checkThumbnailSupport()
   fetchItems(props.path)
+})
+
+// The tab is kept alive, so re-revealing it from the cache fires onActivated. Skip the
+// first one (it coincides with the initial mount, which already fetched) and on every
+// later reveal run a background diff-refresh to pick up filesystem changes without a
+// full reload.
+let _activatedOnce = false
+onActivated(() => {
+  if (!_activatedOnce) { _activatedOnce = true; return }
+  softRefresh()
 })
 
 onUnmounted(() => {

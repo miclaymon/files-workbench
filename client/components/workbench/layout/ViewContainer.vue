@@ -40,7 +40,35 @@
     <!-- Body: one SplitViewArea per tab slot. The primary sidebar is just a
          single, non-droppable slot whose one View (Explorer) carries the
          sections accordion. -->
-    <div class="vc-tabs-body">
+
+    <!-- Single-slot, keep-alive body (primary sidebar): the Activity Bar switches the
+         active view, so keep its content alive across switches — heavy views (e.g. the
+         Explorer tree) aren't rebuilt. KeepAlive caches the SplitViewArea by the active
+         id and reactivates it on return; each view mounts lazily on first open. -->
+    <div v-if="keepInactive" class="vc-tabs-body">
+      <div class="vc-tab-content">
+        <KeepAlive>
+          <SplitViewArea
+            :key="modelValue"
+            :views="slotViews(modelValue)"
+            :viewSections="viewSections"
+            :direction="dropDirection"
+            :containerId="containerId"
+            :slotKey="modelValue"
+            :showOverlay="false"
+            @commit-views="emit('update:mergedSlots', { ...mergedSlots })"
+            @commit-sections="emit('update:viewSections', { ...viewSections })"
+            @section-move="emit('section-move', $event)"
+            @section-contextmenu="openSectionMenu($event)"
+            @content-drop="onContentDrop(modelValue, $event)"
+          />
+        </KeepAlive>
+      </div>
+    </div>
+
+    <!-- Multi-tab body (secondary sidebar / panel): all slots stay mounted, hidden
+         with v-show — already mount-preserving across tab switches. -->
+    <div v-else class="vc-tabs-body">
       <div
         v-for="view in views"
         :key="view.id"
@@ -114,6 +142,7 @@ const props = defineProps({
   mergedSlots:    { type: Object, default: () => ({}) },    // { [primaryId]: [{ id, collapsed, size }] } — view stacking
   viewSections:   { type: Object, default: () => ({}) },    // { [viewId]: Section[] } — each view's own sections
   droppable:      { type: Boolean, default: true },         // false for the (non-mergeable) primary sidebar
+  keepInactive:   { type: Boolean, default: false },        // primary sidebar: keep the active view's content alive across Activity Bar switches
   menuItems:      { type: Array,  default: () => [] },
   dropDirection:  { type: String, default: 'col' },         // 'col' = top/bottom split, 'row' = left/right split
 })

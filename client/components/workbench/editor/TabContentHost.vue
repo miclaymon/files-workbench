@@ -17,7 +17,9 @@ import { tabViewForKind } from '~/composables/useViewRegistry.js'
 // entry's `props(tab, ctx)`; event listeners attached by the parent (EditorGroup)
 // pass straight through via `$attrs`, so the existing event-up chain to Workbench
 // is unchanged. The mounted instance is handed back through `registerInstance`
-// so EditorGroup keeps its imperative handle (refresh / optimistic rename).
+// together with this host's own tab id, so EditorGroup can key its imperative
+// handles (refresh / optimistic rename) by tab — correct even under <KeepAlive>,
+// where switching tabs deactivates (not unmounts) the previous instance.
 const props = defineProps({
   tab:                { type: Object, default: null },
   prefs:              { type: Object, required: true },
@@ -36,7 +38,7 @@ const boundProps = computed(() =>
     : {}
 )
 
-function setInstance(el) { props.registerInstance?.(el) }
+function setInstance(el) { props.registerInstance?.(el, props.tab?.id) }
 </script>
 
 <style scoped>

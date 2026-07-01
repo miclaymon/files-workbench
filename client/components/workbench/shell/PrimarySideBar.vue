@@ -10,6 +10,7 @@
       :modelValue="activeView"
       :viewSections="viewSections"
       :droppable="false"
+      :keepInactive="true"
       @update:modelValue="$emit('update:activeView', $event)"
       @update:viewSections="$emit('update:viewSections', $event)"
       @transfer="$emit('transfer', $event)"
