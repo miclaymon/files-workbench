@@ -199,6 +199,7 @@ func simpleListDir(dirPath string, excluded []string, includeMetadata, showHidde
 	if err != nil {
 		return nil
 	}
+	pinned := readPinnedNames(dirPath)
 	items := make([]any, 0, len(entries))
 	for _, e := range entries {
 		name := e.Name()
@@ -254,7 +255,7 @@ func simpleListDir(dirPath string, excluded []string, includeMetadata, showHidde
 			}
 			customization = readDirCustomization(entryPath)
 		}
-		items = append(items, map[string]any{
+		item := map[string]any{
 			"name":          name,
 			"path":          entryPath,
 			"kind":          kind,
@@ -264,12 +265,23 @@ func simpleListDir(dirPath string, excluded []string, includeMetadata, showHidde
 			"icon":          iconField,
 			"icon_open":     iconOpenField,
 			"customization": customization,
-		})
+		}
+		if pinned[name] {
+			item["pinned"] = true
+		}
+		items = append(items, item)
 	}
 
+	// Pinned items are grouped first; within the pinned group and within the rest the
+	// usual rules apply (directories/apps/archives first, then case-insensitive name).
 	sort.Slice(items, func(i, j int) bool {
 		a := items[i].(map[string]any)
 		b := items[j].(map[string]any)
+		aPinned := a["pinned"] == true
+		bPinned := b["pinned"] == true
+		if aPinned != bPinned {
+			return aPinned
+		}
 		aIsDir := a["kind"] == "dir" || a["kind"] == "app" || a["kind"] == "archive"
 		bIsDir := b["kind"] == "dir" || b["kind"] == "app" || b["kind"] == "archive"
 		if aIsDir != bIsDir {

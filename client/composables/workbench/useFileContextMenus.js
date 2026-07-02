@@ -16,7 +16,7 @@ export function useFileContextMenus({ host, editor, selection, fileOps, archive,
   const { selectedItems, handleOpenFromTab } = selection
   const {
     createNewFolder, createNewFile, doPaste, clipboard, doMove,
-    doCompress, doDecompress, copyToClipboard, cutToClipboard, doTrash, doDelete,
+    doCompress, doDecompress, copyToClipboard, cutToClipboard, doTrash, doDelete, doPin,
   } = fileOps
   const { isArchiveItem, archiveCaps } = archive
   const { flashStatus } = statusbar
@@ -149,6 +149,7 @@ export function useFileContextMenus({ host, editor, selection, fileOps, archive,
     const isApp      = singleItem?.kind === 'app'
     const isDir      = singleItem?.kind === 'dir'
     const multi      = targets.length > 1
+    const allPinned  = targets.every(t => t.pinned)
 
     // ── Quick action buttons (SVG icons) ──────────────────────────────────────
     const quickActions = inArchive ? [] : [
@@ -205,6 +206,7 @@ export function useFileContextMenus({ host, editor, selection, fileOps, archive,
 
       // Actions section
       { separator: true },
+      ...(!inArchive ? [{ key: 'pin', label: allPinned ? 'Unpin' : 'Pin', action: () => doPin(targets, !allPinned) }] : []),
       ...(!inArchive && compressSubmenu.length ? [{ key: 'compress', label: 'Compress', submenu: compressSubmenu }] : []),
       ...(!inArchive ? [{ key: 'rename', label: 'Rename', action: () => triggerInlineRename() }] : []),
       ...(!inArchive ? [{ key: 'delete', label: isShift ? 'Delete Permanently' : 'Delete', action: () => isShift ? doDelete(targets) : doTrash(targets) }] : []),

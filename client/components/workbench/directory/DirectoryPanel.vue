@@ -408,8 +408,13 @@ const processedItems = computed(() => {
     result = result.filter(item => item.name.toLowerCase().includes(q))
   }
 
-  // Sort — dirs always first unless sorting by size (then sort everything together)
+  // Sort — pinned items always grouped first, then dirs first (unless sorting by
+  // size), then the chosen field. Within each group the normal rules below apply.
   result.sort((a, b) => {
+    const aPin = !!a.pinned
+    const bPin = !!b.pinned
+    if (aPin !== bPin) return aPin ? -1 : 1
+
     if (sortField.value !== 'size') {
       const aIsDir = a.kind === 'dir' || a.kind === 'archive'
       const bIsDir = b.kind === 'dir' || b.kind === 'archive'

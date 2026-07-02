@@ -11,7 +11,7 @@ Items roughly ordered by priority. See `TODO.md` for the full flat list.
 
 - **Keybind customization** — make the Keyboard Shortcuts viewer editable (rebind, conflict detection) and back keybindings with `config/keybindings/*.json`; keybind events bubble through the DOM and can be captured by components
 - **Command palette quick-open** — the mode-prefix palette is built (`>` commands with chords + recently-used, `?` mode list); wire the stubbed **Go to File** (and path/tab) modes to real search
-- **Custom directory icons (extended)** — custom thumbnail support; `[Files Workbench]` section in `.directory` for app-specific overrides; open-variant folder icons require `generateOpenFolderIcons.ts` (needs Bun), currently falls back to closed-folder variant
+- **Custom directory icons (extended)** — custom folder **thumbnail** support (a folder rendering an image as its thumbnail, distinct from its icon); open-variant folder icons require `generateOpenFolderIcons.ts` (needs Bun), currently falls back to closed-folder variant. *(The `[X-Files-Workbench]` app group, lossless read/write API, relative icon paths, and the app-icon priority layer are done — see Recently completed.)*
 - **Home page improvements** — recent files, pinned folders, quick-access shortcuts
 - **Archive exploration** — browse contents of `.zip`, `.tar`, `.gz`, `.7z`, `.rar` as virtual directories
 
@@ -51,6 +51,10 @@ Items roughly ordered by priority. See `TODO.md` for the full flat list.
 - Click debounce not yet applied to explorer tree nodes and some directory item edge cases
 
 ## Recently completed
+
+- **Pinned items in directories** — items (files or folders) can be pinned via the item context menu; pins are stored by name in the folder's `.directory` under `[X-Files-Workbench] Pinned` (a freedesktop `;`-list). Pinned items are grouped first in the Directory view (dirs-first/name rules apply within each group, so a pinned file can sit above an unpinned folder) and carry a pin badge. Server stamps `pinned` + sorts pinned-first (`simpleListDir`); the client's `DirectoryPanel` sort and `DirectoryTab` rename comparators re-apply pinned-first; `POST /fs/pin` mutates the list losslessly.
+
+- **Directory customization: read/write API + icon priority** — the `[X-Files-Workbench]` app group is now first-class. `.directory` writes are **lossless** (an order-preserving `iniDoc` edits one key, preserving comments/order/unknown groups), replacing the whole-file rewrite. `readDirCustomization` merges `.directory` + `desktop.ini` by field (app group beats standard group; `.directory` beats `desktop.ini`), and icons may be absolute, `~/…`, or a **relative** image path resolved against the folder (raw kept in `icon_raw`). The custom-icon source priority is `[X-Files-Workbench] Icon` → `[Desktop Entry]`/`[.ShellClassInfo]` → icon pack → MDI. New endpoints: `GET` (typed + raw `sections`), `PUT` (typed, lossless), `PATCH` (generic set/delete `ops`); a `desktop.ini`-only folder seeds a new `.directory` on first write. See **Directory customization** in [`docs/DESIGN.md`](DESIGN.md).
 
 - **Packaging: self-contained desktop builds** — `npm run build:electron` now compiles the Go server, `nuxt generate`s the client, and bundles both with electron-builder. The Electron main process spawns the bundled server (ports 8001/8002), waiting for `/health` before opening the window and killing it on quit; the server resolves read-only config (bundled) vs writable user data (Electron `userData`) through `FW_CONFIG_DIR`/`FW_DATA_DIR`/`FW_LOGS_DIR`/`FW_BLACKLIST` env vars, falling back to the repo layout in dev. `install.sh` / `install.ps1` fetch the latest GitHub release's AppImage / installer. See **Packaging & distribution** in [`docs/DESIGN.md`](DESIGN.md). (Releases are manual for now — tag-based CI is above.)
 

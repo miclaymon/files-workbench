@@ -177,6 +177,8 @@ func registerControlRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+apiPrefix+"/fs/compress", handleFsCompress)
 	mux.HandleFunc("POST "+apiPrefix+"/fs/decompress", handleFsDecompress)
 	mux.HandleFunc("PUT "+apiPrefix+"/fs/customization", handleFsCustomizationPut)
+	mux.HandleFunc("PATCH "+apiPrefix+"/fs/customization", handleFsCustomizationPatch)
+	mux.HandleFunc("POST "+apiPrefix+"/fs/pin", handleFsPin)
 
 	// Preferences — writes
 	mux.HandleFunc("PUT "+apiPrefix+"/preferences", handlePreferencesPut)

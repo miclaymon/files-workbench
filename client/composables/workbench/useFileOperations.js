@@ -1,4 +1,5 @@
 import { ref, nextTick } from 'vue'
+import { fsPin } from '~/lib/fs-api.js'
 
 // ── File operations slice ─────────────────────────────────────────────────────
 // Create / rename / trash / delete / compress / extract / paste / move / undo /
@@ -437,6 +438,25 @@ export function useFileOperations({ editor, selection, statusbar, notifications,
     }
   }
 
+  // Pin / unpin items in their directory (grouped first in the directory view).
+  // All targets in a directory view share one parent dir; pins are stored by name.
+  async function doPin(items, pinned) {
+    if (!items?.length) return
+    const p = items[0].path
+    const sep = p.includes('\\') ? '\\' : '/'
+    const dir = p.slice(0, p.lastIndexOf(sep)) || '/'
+    const names = items.map(i => i.name)
+    const what = items.length === 1 ? `"${items[0].name}"` : `${items.length} items`
+    try {
+      await fsPin(dir, names, pinned)
+      refreshAllDirs()
+      notifyOpSuccess(`${pinned ? 'Pinned' : 'Unpinned'} ${what}`, [], { silent: true })
+    } catch (e) {
+      flashStatus(`${pinned ? 'Pin' : 'Unpin'} failed: ${e?.message ?? e}`, 2500)
+      notifyOpError(`Failed to ${pinned ? 'pin' : 'unpin'} ${what}`, e, () => doPin(items, pinned), { silent: true })
+    }
+  }
+
   async function doUndo() {
     try { await history.undo(); refreshAllDirs() }
     catch (e) { flashStatus(`Undo failed: ${e?.message ?? e}`, 2500) }
@@ -468,7 +488,7 @@ export function useFileOperations({ editor, selection, statusbar, notifications,
     clipboard, copyToClipboard, cutToClipboard,
     // create / mutate
     createNewFolder, createNewFile, handleRename, handleRenameBatch,
-    doTrash, doDelete, doCompress, doDecompress, doPaste, doMove, doUndo, doRedo,
+    doTrash, doDelete, doCompress, doDecompress, doPaste, doMove, doPin, doUndo, doRedo,
     // elevation dialog (bound by the modal in Workbench)
     elevationPasswordRef, elevationPrompt, elevationPassword, elevationError,
     cancelElevation, confirmElevation,

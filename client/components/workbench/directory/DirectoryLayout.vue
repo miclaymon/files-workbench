@@ -214,6 +214,10 @@
              class="dl-video-badge" viewBox="0 0 24 24" fill="currentColor">
           <path :d="mdiPlayCircle" />
         </svg>
+        <!-- Pin badge: item is pinned in this directory (grouped first) -->
+        <svg v-if="item.pinned" class="dl-pin-badge" viewBox="0 0 24 24" fill="currentColor">
+          <path :d="mdiPin" />
+        </svg>
       </div>
 
       <!-- Body: name + metadata row -->
@@ -315,7 +319,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { mdiChevronDown, mdiChevronRight, mdiFile, mdiFolder, mdiLinkVariant, mdiPlayCircle } from '@mdi/js'
+import { mdiChevronDown, mdiChevronRight, mdiFile, mdiFolder, mdiLinkVariant, mdiPlayCircle, mdiPin } from '@mdi/js'
 import { useClickDebounce } from '~/composables/interaction/useClickDebounce.js'
 import { useHoverPreview } from '~/composables/interaction/useHoverPreview.js'
 import { useDrag } from '~/composables/interaction/useDrag.js'
@@ -1864,6 +1868,19 @@ function onKeyDown(event) {
     pointer-events: none;
   }
   &:hover .dl-video-badge { opacity: 0.75; }
+
+  /* Pinned marker — top-left corner of the thumbnail. Pinned items also sort first. */
+  .dl-pin-badge {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 13px;
+    height: 13px;
+    color: var(--accent, #4aa3ff);
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.7));
+    pointer-events: none;
+    z-index: 2;
+  }
 
   .dl-skeleton {
     position: absolute;

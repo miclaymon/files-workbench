@@ -443,17 +443,47 @@ Thumbnail generation is handled by `thumbnail.go` and results are stored in a di
 
 `customization.go` reads platform-specific directory customization files at listing time — no extra round-trip needed:
 
-| File | Platform | Parsed fields |
+| File | Platform | Parsed groups |
 |---|---|---|
-| `.directory` | KDE/Dolphin (freedesktop.org) | `Name`, `Icon`, `Comment` from `[Desktop Entry]` |
-| `desktop.ini` | Windows | `IconResource`/`IconFile`, `InfoTip` from `[.ShellClassInfo]` |
+| `.directory` | KDE/Dolphin (freedesktop.org) | `[Desktop Entry]` (`Name`/`Icon`/`Comment`) + app group `[X-Files-Workbench]` |
+| `desktop.ini` | Windows | `[.ShellClassInfo]` (`IconResource`/`IconFile`, `InfoTip`) + app group `[X-Files-Workbench]` |
 | `.DS_Store` | macOS | presence only (binary format) |
 
-These reads bypass the blacklist intentionally — the blacklist controls what appears in listing responses; `readDirCustomization` is an internal server read that enriches parent directory metadata.
+`.directory` is the canonical, writable file; the app stores its own keys under the
+`[X-Files-Workbench]` group (freedesktop `X-` vendor-extension convention). `readDirCustomization`
+**merges** both files by field: the app group wins over the standard group, and within a tier
+`.directory` wins over `desktop.ini`. These reads bypass the blacklist intentionally — the
+blacklist controls what appears in listing responses; this is an internal server read that
+enriches parent-directory metadata. The `customization` field is embedded in every directory
+item returned by `list_dir` and the Explorer APIs.
 
-The `customization` field is embedded in every directory item returned by `list_dir` and the Explorer APIs. `PUT /_api/v1/fs/customization` writes or updates the `.directory` file, using pointer fields in the JSON body so `null` = keep existing value, `""` = clear the field.
+**Icons** may be an absolute path, a `~/…` path, a **relative** path to an image inside the
+folder (e.g. `Icon=cover.png`, resolved to an absolute path only when the file exists), a Dolphin
+`folder-<color>` name, or an XDG icon-theme name. The server resolves the display value (relative
+→ absolute) while keeping the raw value in `icon_raw`. The full source priority is
+**`[X-Files-Workbench] Icon` (`.directory`, then `desktop.ini`) → `[Desktop Entry] Icon` /
+`[.ShellClassInfo]` → icon pack → MDI default**; the source selection is resolved server-side, and
+the client's `useCustomIcon.js` then renders the winner (absolute paths via `fs/preview`;
+`folder-<color>` names as inline `<svg fill="currentColor">`, bypassing the icon-pack `<img>`
+since CSS `color` cannot tint an image element).
 
-The client resolves customization icons via `useCustomIcon.js`: absolute paths are served through `fs/preview`; Dolphin `folder-<color>` names map to CSS colors and render as inline `<svg fill="currentColor">` (bypassing the icon pack `<img>` since CSS `color` cannot tint an image element). Icon priority: custom path → folder-color SVG → icon pack → MDI default.
+**Writes** are lossless. An order-preserving INI document model (`iniDoc`) edits a single key
+while leaving every other line — comments, ordering, unknown groups, localized keys — intact, so
+`formatDotDirectory`-style whole-file rewrites are gone. When only a `desktop.ini` exists, the
+first write seeds a new `.directory` importing its name/icon/comment. Endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /_api/v1/fs/customization?path=` | typed summary (icon resolved) **+** raw editable `sections` |
+| `PUT /_api/v1/fs/customization?path=` | typed `{name,icon,comment}` (`null` = keep, `""` = remove) → `[Desktop Entry]` |
+| `PATCH /_api/v1/fs/customization?path=` | generic `ops: [{op:'set'\|'delete', section?, key, value?}]` (section defaults to `[X-Files-Workbench]`) |
+| `POST /_api/v1/fs/pin` | `{path, names, pinned}` — add/remove names in `[X-Files-Workbench] Pinned` |
+
+**Pinned items.** `[X-Files-Workbench] Pinned` holds a freedesktop `;`-list of item names.
+`simpleListDir` stamps `pinned:true` on matching items and groups them first (then the usual
+dirs-first/name rules within each group, so a pinned file can sit above an unpinned folder). The
+directory view re-applies the same pinned-first rule in its client sort (`DirectoryPanel`), and
+shows a pin badge; the Pin/Unpin action lives in the item context menu.
 
 ### Icon pack plugin system
 

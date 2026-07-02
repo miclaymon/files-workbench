@@ -13,6 +13,8 @@ A desktop file manager built with Electron + Nuxt 3 (Vue 3) on the front end and
 - Hover preview overlay: hovering a grid item shows a floating media preview centered on the thumbnail
 - Media thumbnails: images resized server-side; video frame extraction and audio artwork via ffmpeg; disk-based thumbnail cache
 - Icon pack plugin system: a first-party **Material Icon Theme** plugin registers a `getIcon` handler through the Workbench API (the `icons` permission) and resolves file/folder icons (VS Code `vscode-material-icon-theme` assets, served by the Go backend) — shown in directory views, the explorer tree, source control, and details; the active pack is selectable and falls back cleanly to built-in MDI glyphs
+- Folder customization: per-folder name, icon (absolute/relative image path or Dolphin `folder-<color>`), and comment read from `.directory` / `desktop.ini`, with a lossless read/write API storing app-specific keys under an `[X-Files-Workbench]` group
+- Pinned items: pin files or folders (item context menu) to keep them grouped first in a directory; stored with the folder in its `.directory`
 - File operations: rename (F2, optimistic), move (drag-and-drop, cut/paste), copy/cut/paste, trash (Del), permanent delete (Shift+Del), create folder — with undo/redo
 - System path protection: critical paths (root, /etc, /sys, …) are blocked; operations on protected paths trigger a sudo/admin elevation prompt
 - Compression and extraction: compress to ZIP/TAR/TAR.GZ/7Z; extract with missing-tool detection and per-platform install instructions

@@ -63,6 +63,15 @@ async function _post(path, body = {}, signal = null) {
 }
 
 async function _put(path, body = {}, signal = null) {
+  return _mutate('PUT', path, body, signal)
+}
+
+async function _patch(path, body = {}, signal = null) {
+  return _mutate('PATCH', path, body, signal)
+}
+
+// Shared PUT/PATCH sender against the control server.
+async function _mutate(method, path, body = {}, signal = null) {
   const url = `${CONTROL_BASE}${path}`
   const timeoutController = new AbortController()
   const timer = setTimeout(() => timeoutController.abort(), API_TIMEOUT_MS)
@@ -72,7 +81,7 @@ async function _put(path, body = {}, signal = null) {
 
   try {
     const res = await fetch(url, {
-      method: 'PUT',
+      method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: fetchSignal,
@@ -257,11 +266,38 @@ export async function fsDecompress(path, destDir, opts = {}) {
   return data
 }
 
-// ── preferences / customization writes ───────────────────────────────────────
+// ── directory customization (.directory reads / writes) ──────────────────────
+// The server reads the directory from the `path` query param on every method.
 
-export function fsCustomizationPut(path, customization, opts = {}) {
-  return _put(`/_api/${API_V}/fs/customization`, { path, ...customization }, opts.signal)
+// Full customization for a directory: the resolved typed summary (name/icon/comment,
+// icon resolved to an absolute path for relative/~ file icons) plus the raw editable
+// groups (`sections`) from its .directory file.
+export function fsCustomizationGet(path, opts = {}) {
+  return _get(`/_api/${API_V}/fs/customization`, { path }, opts.signal)
 }
+
+// Set the common typed [Desktop Entry] fields, losslessly (other keys/sections/comments
+// are preserved). Omit a field to keep it; pass "" to remove it.
+//   customization: { name?, icon?, comment? }
+export function fsCustomizationPut(path, customization, opts = {}) {
+  return _put(`/_api/${API_V}/fs/customization?path=${encodeURIComponent(path)}`, customization, opts.signal)
+}
+
+// Apply generic set/delete operations to arbitrary keys, losslessly. Ops without a
+// section default to the app group ([X-Files-Workbench]).
+//   ops: [{ op: 'set' | 'delete', section?, key, value? }]
+export function fsCustomizationPatch(path, ops, opts = {}) {
+  return _patch(`/_api/${API_V}/fs/customization?path=${encodeURIComponent(path)}`, { ops }, opts.signal)
+}
+
+// Pin or unpin item names within a directory (stored in .directory
+// [X-Files-Workbench] Pinned). Pinned items are grouped first in listings.
+//   dir: directory path · names: item basenames · pinned: true to pin, false to unpin
+export function fsPin(dir, names, pinned, opts = {}) {
+  return _post(`/_api/${API_V}/fs/pin`, { path: dir, names, pinned }, opts.signal)
+}
+
+// ── preferences ───────────────────────────────────────────────────────────────
 
 export function fsPreferencesPut(prefs, opts = {}) {
   return _put(`/_api/${API_V}/preferences`, prefs, opts.signal)

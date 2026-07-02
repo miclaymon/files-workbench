@@ -54,6 +54,17 @@ function sortArchiveItems(list) {
   })
 }
 
+// Client-side re-sort after an optimistic rename, matching the server's ordering:
+// pinned items first, then directories/apps, then case-insensitive name — so a
+// renamed item stays in its pinned/unpinned group before the next refresh.
+function compareDirItems(a, b) {
+  if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
+  const ad = a.kind === 'dir' || a.kind === 'app'
+  const bd = b.kind === 'dir' || b.kind === 'app'
+  if (ad !== bd) return ad ? -1 : 1
+  return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+}
+
 const props = defineProps({
   path: { type: String, required: true },
   excludedCategories: { type: Array, default: () => ['System'] },
@@ -393,15 +404,10 @@ function renameItem(oldPath, newName, newPath) {
 
   const updated = { ...items.value[idx], name: newName, path: newPath }
 
-  // Preserve sort order: dirs first, then case-insensitive by name
+  // Preserve sort order: pinned first, then dirs, then case-insensitive by name
   items.value = items.value
     .map((item, i) => (i === idx ? updated : item))
-    .sort((a, b) => {
-      const ad = a.kind === 'dir' || a.kind === 'app'
-      const bd = b.kind === 'dir' || b.kind === 'app'
-      if (ad !== bd) return ad ? -1 : 1
-      return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
-    })
+    .sort(compareDirItems)
 
   // Keep exe_info cache consistent
   if (oldPath in exeInfoCache) {
@@ -429,12 +435,7 @@ function batchRenameItems(ops) {
       }
       return updated
     })
-    .sort((a, b) => {
-      const ad = a.kind === 'dir' || a.kind === 'app'
-      const bd = b.kind === 'dir' || b.kind === 'app'
-      if (ad !== bd) return ad ? -1 : 1
-      return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
-    })
+    .sort(compareDirItems)
 }
 
 function clearOptimisticThumbnails(paths) {

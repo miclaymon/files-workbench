@@ -204,7 +204,7 @@ The Go process starts **two independent servers**: a read-only data server (port
 | `blacklist.go` | Path exclusion rules loaded from server-side config |
 | `plugins.go` | Plugin loader; `loadPlugins()` reads `config/plugins/*/plugin.json`; `iconTheme` struct with `resolve()`, `resolveOpen()`, `has()`, `pick()`; `activeIconTheme` global |
 | `icons.go` | `handleIconsManifest` — returns icon lookup tables; `handleIconsSvg` — serves SVG by definition name (404 returns `image/svg+xml` Content-Type to prevent ORB errors while firing `@error`) |
-| `customization.go` | `readDirCustomization(dirPath)` — reads `.directory`, `desktop.ini`, `.DS_Store` from inside a directory; `handleFsCustomizationGet` / `handleFsCustomizationPut` — read and write `.directory` files; bypasses blacklist intentionally (internal server read) |
+| `customization.go` | `readDirCustomization(dirPath)` — **merges** `.directory` + `desktop.ini` (app group `[X-Files-Workbench]` beats standard group; `.directory` beats `desktop.ini`), resolves relative/`~` icons to abs paths (raw kept in `icon_raw`); order-preserving `iniDoc` makes writes lossless; `handleFsCustomizationGet` (typed + raw `sections`) / `PUT` (typed) / `PATCH` (generic `ops`) / `handleFsPin` (`[X-Files-Workbench] Pinned` list); bypasses blacklist intentionally (internal server read) |
 | `perf.go` | `handlePerf` — client performance log ingestion |
 
 ## Known gotchas
