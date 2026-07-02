@@ -45,17 +45,25 @@ import FloatingMenu from '~/components/workbench/ui/FloatingMenu.vue'
 const props = defineProps({
   actions: { type: Array, default: () => [] },
   groups:  { type: Array, default: null },
+  // Optional context override. Sidebar/panel actions bind against the injected
+  // viewCtx; editor-tab actions pass a tab-aware ctx ({ ...host, tab }) instead.
+  ctx:     { type: Object, default: null },
 })
-const ctx = inject('viewCtx', null)
+const injectedCtx = inject('viewCtx', null)
+const ctx = computed(() => props.ctx ?? injectedCtx)
 
+// An action may declare `when(ctx)` to gate its visibility (vs `disabled`, which
+// still renders the button greyed out) — e.g. markdown-only editor-tab actions.
 const renderGroups = computed(() =>
-  (props.groups ?? [props.actions]).filter(g => Array.isArray(g) && g.length)
+  (props.groups ?? [props.actions])
+    .map(g => Array.isArray(g) ? g.filter(a => typeof a.when === 'function' ? a.when(ctx.value) : true) : g)
+    .filter(g => Array.isArray(g) && g.length)
 )
 
 // An action's `disabled` may be a boolean or a predicate(ctx) for reactive state
 // (e.g. Preview's "Open in Editor Tab" is disabled in multi-item mode).
 function isDisabled(a) {
-  return typeof a.disabled === 'function' ? !!a.disabled(ctx) : !!a.disabled
+  return typeof a.disabled === 'function' ? !!a.disabled(ctx.value) : !!a.disabled
 }
 
 // ── Dropdown actions ───────────────────────────────────────────────────────────
@@ -71,7 +79,7 @@ function setBtnRef(id, el) { if (el) btnRefs.set(id, el); else btnRefs.delete(id
 const openMenuItems = computed(() => {
   if (!openMenuId.value) return []
   const a = renderGroups.value.flat().find(x => x.id === openMenuId.value)
-  return a?.menu ? (a.menu(ctx) ?? []) : []
+  return a?.menu ? (a.menu(ctx.value) ?? []) : []
 })
 
 function onClick(a) {
@@ -83,7 +91,7 @@ function onClick(a) {
     openMenuId.value = a.id
     return
   }
-  if (ctx) a.run?.(ctx)
+  if (ctx.value) a.run?.(ctx.value)
 }
 </script>
 

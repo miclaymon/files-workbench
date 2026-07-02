@@ -6,9 +6,11 @@ import { loadPreview, forceLoadText } from './load.js'
 // render an item through the exact same loader (load.js) and state shape.
 //
 // `getItem` is a getter returning the current item ({ path, name, kind, size } |
-// null). Returns { preview, metadata, loading, forceLoad } — the props a
-// single-mode PreviewItem expects, plus the tooLarge "load anyway" handler.
-export function usePreviewData(getItem) {
+// null). `force` bypasses the server's size cap so the caller never hits the
+// tooLarge state (the editor tab, opened to preview the file). Returns
+// { preview, metadata, loading, forceLoad } — the props a single-mode PreviewItem
+// expects, plus the tooLarge "load anyway" handler.
+export function usePreviewData(getItem, { force = false } = {}) {
   const preview  = ref(null)
   const metadata = ref(null)
   const loading  = ref(false)
@@ -17,7 +19,7 @@ export function usePreviewData(getItem) {
     if (!item?.path) { preview.value = null; metadata.value = null; return }
     loading.value = true
     try {
-      const { preview: p, metadata: md } = await loadPreview(item)
+      const { preview: p, metadata: md } = await loadPreview(item, force)
       preview.value = p
       metadata.value = md
     } finally {

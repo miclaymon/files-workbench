@@ -59,6 +59,11 @@
         </button>
       </div>
 
+      <!-- Active tab's contributed actions (e.g. markdown "Open as Preview") -->
+      <div v-if="tabActions.length" class="tab-actions">
+        <ViewActions :actions="tabActions" :ctx="tabActionCtx" />
+      </div>
+
       <!-- Fixed right: lock indicator + group actions menu -->
       <div class="group-actions">
         <button
@@ -143,8 +148,9 @@
 import { computed, inject, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { mdiClose, mdiPin, mdiChevronDown, mdiLock, mdiDotsHorizontal } from '@mdi/js'
 import { useEditorDnd, dropRegion, regionToSide } from '~/composables/interaction/useEditorDnd.js'
-import { tabIconDescriptor } from '~/composables/useViewRegistry.js'
+import { tabIconDescriptor, tabViewForKind } from '~/composables/useViewRegistry.js'
 import ResolvedIcon from '~/components/workbench/ResolvedIcon.vue'
+import ViewActions from '~/components/workbench/layout/ViewActions.vue'
 
 // A tab's icon comes from its registered editor-view (by kind) — and, when that
 // view defines a per-tab tabIcon (e.g. Preview's thumbnail / file-type icon), from
@@ -170,10 +176,19 @@ defineEmits([
 ])
 
 const controller = inject('editorController')
+const viewCtx = inject('viewCtx', null)
 const { dragState, startTabDrag, endTabDrag } = useEditorDnd()
 
 const tabs = computed(() => props.group.tabs)
 const activeTab = computed(() => tabs.value.find(t => t.id === props.group.activeTabId) ?? tabs.value[0] ?? null)
+
+// Actions contributed by the active tab's editor-view (kind), rendered in the tab
+// bar for this group — the editor twin of a panel's ViewActions. The action ctx is
+// the host augmented with `tab` so an action can gate on / read the active tab
+// (e.g. markdown's "Open as Preview"). Clicking activates the group first (root
+// @pointerdown), so facade actions target this group.
+const tabActions = computed(() => (activeTab.value ? tabViewForKind(activeTab.value.kind)?.actions ?? [] : []))
+const tabActionCtx = computed(() => ({ ...(viewCtx ?? {}), tab: activeTab.value }))
 
 // Mounted content instances, keyed by tab id (handed back by TabContentHost with
 // its own id). A Map — not a single ref — because tabs are kept alive: switching
@@ -388,6 +403,15 @@ defineExpose({
 }
 
 .tabs-spacer { flex: 1; min-width: 0; }
+
+.tab-actions {
+  display: flex;
+  align-items: center;
+  padding-inline: 4px;
+  gap: 2px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+}
 
 .group-actions {
   display: flex;

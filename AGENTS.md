@@ -30,8 +30,16 @@ Preview's component tree (now `client/builtin-plugins/preview/src/components/`):
 
 ```
 PreviewPanel.vue               Dispatches to per-type preview components
-└── preview/{ImagePreview,VideoPreview,AudioPreview,TextPreview,HtmlPreview}.vue
+├── preview/PreviewItem.vue     Per-type dispatch (text/html/markdown/image/video/audio/tooLarge)
+└── preview/{ImagePreview,VideoPreview,AudioPreview,TextPreview,HtmlPreview,MarkdownPreview}.vue
 ```
+
+`MarkdownPreview` renders `.md` as a formatted document (markdown-it, `html:false` — raw
+HTML/`<script>` is escaped, so its output is safe to `v-html` with no sanitizer). It's a
+distinct *rendered* Preview tab (`params.rendered`) opened by the tab's **Open as Preview** /
+**Open Preview to the Side** editor-tab actions; the code (markup) view stays the default. The
+Preview **editor tab** loads text past the server size cap (`usePreviewData(..., { force:true })`)
+so it never shows the "too large" warning — only the side panel does.
 
 ## Activity system
 

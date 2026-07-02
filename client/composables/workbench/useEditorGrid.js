@@ -147,6 +147,16 @@ export function useEditorGrid({ log, getInitialEditor, saveEditor }) {
     activeGroupId.value = newLeaf.id
   }
 
+  // Open a new tab in a fresh split group beside the active one (unlike
+  // splitActiveGroup, which clones the current tab). Used by "…to the Side".
+  function openTabBeside(tab, side = 'right') {
+    const g = activeGroup.value
+    if (!g) { addTabToActiveGroup(tab); return }
+    const newLeaf = createLeaf({ tabs: [tab], activeTabId: tab.id })
+    editorRoot.value = insertLeafBeside(editorRoot.value, g.id, side, newLeaf)
+    activeGroupId.value = newLeaf.id
+  }
+
   function closeOtherTabs(groupId, keepId) {
     const g = findLeaf(editorRoot.value, groupId)
     const keep = g?.tabs.find(t => t.id === keepId)
@@ -304,6 +314,6 @@ export function useEditorGrid({ log, getInitialEditor, saveEditor }) {
     editorController,
     // tab helpers
     findTabByPath, findTabByKind, findTab, focusTab, addTabToActiveGroup, openPeekTabForDir, flashTab,
-    splitWithTab, closeOtherTabs, triggerInlineRename,
+    splitWithTab, openTabBeside, closeOtherTabs, triggerInlineRename,
   }
 }

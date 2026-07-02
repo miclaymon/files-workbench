@@ -22,21 +22,23 @@ export async function fetchTextContent(path, force = false) {
   return res.ok ? res.json() : null
 }
 
-// Classify an item (given its fetched metadata) into a preview descriptor.
-async function resolvePreview(item, metadata) {
+// Classify an item (given its fetched metadata) into a preview descriptor. `force`
+// bypasses the server's size cap, so text is loaded in full instead of resolving to
+// a tooLarge descriptor (the editor tab passes force).
+async function resolvePreview(item, metadata, force = false) {
   const mime = metadata.mime_type ?? ''
   const ext = item.name.split('.').pop()?.toLowerCase() ?? ''
   const language = EXT_LANGUAGE[ext]
   const isHtmlPage = ext === 'html' || ext === 'htm' || ext === 'xhtml'
 
   if (isHtmlPage) {
-    const textData = await fetchTextContent(item.path)
+    const textData = await fetchTextContent(item.path, force)
     return textData?.kind === 'tooLarge'
       ? { ...textData, language: 'html' }
       : { kind: 'html', text: textData?.text ?? '', language: 'html' }
   }
   if (language) {
-    const textData = await fetchTextContent(item.path)
+    const textData = await fetchTextContent(item.path, force)
     if (textData?.kind === 'tooLarge') return { ...textData, language }
     return textData ? { kind: 'text', text: textData.text, language } : { kind: 'binary' }
   }
@@ -45,7 +47,7 @@ async function resolvePreview(item, metadata) {
   if (mime.startsWith('audio/')) return { kind: 'audio' }
   if (mime.startsWith('text/') || TEXT_APP_MIMES.has(mime)) {
     const lang = mime.split('/')[1]?.replace(/^x-/, '') || 'plaintext'
-    const textData = await fetchTextContent(item.path)
+    const textData = await fetchTextContent(item.path, force)
     if (textData?.kind === 'tooLarge') return { ...textData, language: lang }
     return textData ? { kind: 'text', text: textData.text, language: lang } : { kind: 'binary' }
   }
@@ -54,12 +56,12 @@ async function resolvePreview(item, metadata) {
 
 // Load metadata + classify in one call. Returns { preview, metadata }; on any
 // failure returns { preview: { kind: 'error' }, metadata: null }.
-export async function loadPreview(item) {
+export async function loadPreview(item, force = false) {
   try {
     const response = await fetch(`${API_BASE}/metadata?path=${encodeURIComponent(item.path)}`)
     if (!response.ok) return { preview: { kind: 'error' }, metadata: null }
     const metadata = await response.json()
-    const preview = await resolvePreview(item, metadata)
+    const preview = await resolvePreview(item, metadata, force)
     return { preview, metadata }
   } catch {
     return { preview: { kind: 'error' }, metadata: null }

@@ -60,6 +60,12 @@ export function isPreviewTabbable(item) {
   return !ARCHIVE_EXTS.has(ext)
 }
 
+// Whether an item is a markdown document (gates the rendered-preview editor actions).
+export function isMarkdown(item) {
+  const ext = item?.name?.split('.').pop()?.toLowerCase() ?? ''
+  return ext === 'md' || ext === 'mdx' || ext === 'markdown'
+}
+
 // Image/video extensions the server can thumbnail (matches the directory grid).
 const THUMB_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'ico', 'avif'])
 const THUMB_VIDEO_EXTS = new Set(['mp4', 'webm', 'mkv', 'avi', 'mov', 'm4v', 'flv', 'wmv', 'ts', 'mpeg', 'mpg', 'm2ts'])

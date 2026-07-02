@@ -104,8 +104,9 @@ export function useActivityHost({ editor, prefs, services = {}, log = () => {} }
     // AND the same params: a singleton kind (no params) always matches, while a
     // per-item kind matches only the same item (so two different previews/repos
     // open two tabs, but re-opening one focuses it). Pass focusExisting:false to
-    // force a distinct tab every time.
-    openTab(kind, { title, params = null, focusExisting = true } = {}) {
+    // force a distinct tab every time. `toSide` opens the tab in a split group to
+    // the right of the active one (e.g. "Open Preview to the Side").
+    openTab(kind, { title, params = null, focusExisting = true, toSide = false } = {}) {
       if (focusExisting) {
         const existing = editor.findTab(t => t.kind === kind && sameParams(t.params, params))
         if (existing) { editor.focusTab(existing.groupId, existing.tab.id); return existing.tab.id }
@@ -116,7 +117,8 @@ export function useActivityHost({ editor, prefs, services = {}, log = () => {} }
         mode: 'normal', pinned: false, selectedItems: [], focusedItem: null, selectedPath: '', path: '',
       }
       if (params) tab.params = params
-      editor.addTabToActiveGroup(tab)
+      if (toSide) editor.openTabBeside(tab, 'right')   // new split group holds just this tab
+      else editor.addTabToActiveGroup(tab)
       return id
     },
     // A read-only snapshot of every open tab across all groups (id/kind/title/path)

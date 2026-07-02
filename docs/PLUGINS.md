@@ -138,7 +138,7 @@ api.keybindings.register({ key: 'ctrl+alt+h', command: 'hello.greet' })
 api.menus.register('directory/item', { command: 'hello.greet' })           // menu contribution
 api.hooks.add('before-rename', (value, ctx) => value)                       // transform/veto
 
-api.editor.openTab('git-graph', { title, params, focusExisting })           // open an editor tab
+api.editor.openTab('git-graph', { title, params, focusExisting, toSide })   // open an editor tab (toSide → split right)
 const tabs = api.editor.tabs()                                              // [{ id, kind, title, path }]
 
 api.modals.open('settings'); api.modals.close(); api.modals.promote('settings')
@@ -202,7 +202,7 @@ component reference (no Vue imports), so the model is framework-neutral.
 | `Activity` | a feature | `id, label, icon`; `.addView(view)` |
 | `PanelView` | sidebar/panel | `location` (`PrimarySideBar`/…), `sections[]`, `component`, `actions[]` |
 | `ViewSection` | a section in a panel | `homeView`, `component`, `actions[]`, `alwaysShowHeading` |
-| `EditorView` | an editor tab | `kind`, `component`, `props(tab, ctx)` |
+| `EditorView` | an editor tab | `kind`, `component`, `props(tab, ctx)`, `tabIcon(tab)`, `actions[]` (rendered in the tab bar for the active tab; each may declare `when(ctx)`/`disabled(ctx)`, ctx = `{ ...host, tab }`) |
 | `ModalView` | a modal editor | `component`, `width`/`height`, `props`/`on` |
 | `StatusView` | a status-bar widget | `region` (`left`/`right`), `order`, `component` |
 

@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@mdi/js": "^7.4.47",
+    "markdown-it": "^14.2.0",
     "monaco-editor": "^0.55.1",
     "uuid": "^14.0.0",
     "video.js": "^8.23.7",
@@ -38,9 +39,18 @@
       ".output/public/**/*"
     ],
     "extraResources": [
-      { "from": "../server/v1/dist", "to": "." },
-      { "from": "../server/v1/blacklist.yaml", "to": "blacklist.yaml" },
-      { "from": "../config", "to": "config" }
+      {
+        "from": "../server/v1/dist",
+        "to": "."
+      },
+      {
+        "from": "../server/v1/blacklist.yaml",
+        "to": "blacklist.yaml"
+      },
+      {
+        "from": "../config",
+        "to": "config"
+      }
     ],
     "linux": {
       "target": "AppImage"

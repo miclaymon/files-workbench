@@ -1,10 +1,10 @@
 import { markRaw, ref } from 'vue'
-import { mdiEye, mdiImage, mdiViewGrid, mdiOpenInNew } from '@mdi/js'
+import { mdiEye, mdiImage, mdiViewGrid, mdiOpenInNew, mdiBookOpenVariant, mdiViewSplitVertical } from '@mdi/js'
 import { resolveIcon } from '~/composables/useIconRegistry.js'
 
 import PreviewPanel from './components/PreviewPanel.vue'
 import PreviewTab from './components/PreviewTab.vue'
-import { singlePreviewable, isPreviewTabbable, thumbnailIconUrl } from './components/preview/utils.js'
+import { singlePreviewable, isPreviewTabbable, thumbnailIconUrl, isMarkdown } from './components/preview/utils.js'
 
 // Per-tab icon for a Preview editor tab: the item's thumbnail when it's an image
 // or video, else its file-type icon from the active icon pack (resolveIcon, layer
@@ -31,6 +31,18 @@ function previewTabIcon(tab) {
 // local single/multi view mode, exposed on the activity API as `mode`.
 export function activate(api) {
   const { Activity, EditorView, PanelView, ViewSection } = api
+
+  // Open the rendered-markdown view of an item as a Preview tab. The `rendered`
+  // param distinguishes it from the source (code) tab, so both can be open at once
+  // and re-invoking focuses the existing rendered tab (openTab matches kind+params).
+  function openRenderedPreview(item, toSide = false) {
+    if (!item?.name) return
+    api.editor.openTab('preview', {
+      title:  `Preview: ${item.name}`,
+      params: { item, rendered: true },
+      toSide,
+    })
+  }
 
   const activity = new Activity({
     id: api.manifest.id,
@@ -61,7 +73,27 @@ export function activate(api) {
       props: (tab, ctx) => ({
         item:     tab.params?.item ?? null,
         fontSize: ctx.prefs.preview?.editorFontSize ?? 13,
+        rendered: tab.params?.rendered ?? false,
       }),
+      // Editor-area actions for the active tab (rendered by EditorGroup). Shown only
+      // on a markdown *source* preview tab: open the rendered document in place or to
+      // the side. `when` gates visibility; the rendered tab itself shows neither.
+      actions: [
+        {
+          id:    'openAsPreview',
+          icon:  mdiBookOpenVariant,
+          title: 'Open as Preview',
+          when:  ctx => isMarkdown(ctx.tab?.params?.item) && !ctx.tab?.params?.rendered,
+          run:   ctx => openRenderedPreview(ctx.tab?.params?.item, false),
+        },
+        {
+          id:    'openPreviewToSide',
+          icon:  mdiViewSplitVertical,
+          title: 'Open Preview to the Side',
+          when:  ctx => isMarkdown(ctx.tab?.params?.item) && !ctx.tab?.params?.rendered,
+          run:   ctx => openRenderedPreview(ctx.tab?.params?.item, true),
+        },
+      ],
     }))
     .addView(new ViewSection({
       id: 'previewMain',

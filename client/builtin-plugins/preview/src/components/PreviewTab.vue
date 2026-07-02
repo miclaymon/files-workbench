@@ -11,6 +11,7 @@
       :index="0"
       :mode="'single'"
       :allowLightbox="allowLightbox"
+      :renderMarkdown="rendered"
       @force-load="forceLoad"
       @request-lightbox="openLightbox"
     />
@@ -34,9 +35,15 @@ const props = defineProps({
   item:          { type: Object, default: null },  // { path, name, kind, size }
   fontSize:      { type: Number, default: 13 },
   allowLightbox: { type: Boolean, default: true },
+  // Render markdown as a formatted document instead of markup (set by the
+  // "Open as Preview" action via the tab's params).
+  rendered:      { type: Boolean, default: false },
 })
 
-const { preview, metadata, loading, forceLoad } = usePreviewData(() => props.item)
+// force: bypass the server's size cap. The editor tab was opened with the intent of
+// previewing this file, so it loads the full content instead of showing the
+// "too large" warning (the side Preview panel keeps the cap + warning).
+const { preview, metadata, loading, forceLoad } = usePreviewData(() => props.item, { force: true })
 
 const viewCtx = inject('viewCtx', null)
 

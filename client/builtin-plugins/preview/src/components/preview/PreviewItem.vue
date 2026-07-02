@@ -3,8 +3,13 @@
     <PreviewItemHeader v-if="mode !== 'single'" :item="item" :index="index" @copy-name="$emit('copy-name', $event)" />
 
     <template v-if="!loading">
+      <MarkdownPreview
+        v-if="preview?.kind === 'text' && renderMarkdown && preview.language === 'markdown'"
+        :text="preview.text"
+        :item="item"
+      />
       <TextPreview
-        v-if="preview?.kind === 'text'"
+        v-else-if="preview?.kind === 'text'"
         :text="preview.text"
         :language="preview.language"
         :fontSize="fontSize"
@@ -56,6 +61,7 @@
 import { previewUrl, thumbnailUrl } from './utils.js'
 import PreviewItemHeader from './PreviewItemHeader.vue'
 import TextPreview from './TextPreview.vue'
+import MarkdownPreview from './MarkdownPreview.vue'
 import HtmlPreview from './HtmlPreview.vue'
 import ImagePreview from './ImagePreview.vue'
 import VideoPreview from './VideoPreview.vue'
@@ -72,6 +78,9 @@ defineProps({
   isLatest: { type: Boolean, default: false },
   mode:     { type: String, default: 'multi' },
   allowLightbox: { type: Boolean, default: true },
+  // Render markdown text as a formatted document (the editor tab's "Open as
+  // Preview"); the side panel leaves this false and shows the markup.
+  renderMarkdown: { type: Boolean, default: false },
 })
 
 defineEmits(['copy-name', 'force-load', 'request-lightbox'])
