@@ -109,6 +109,7 @@ export function useEditorGrid({ log, getInitialEditor, saveEditor }) {
         if (to < 0) to = target.tabs.length
         target.tabs.splice(to, 0, tab)
       }
+      reorderForPin(target)   // pinned tabs always stay grouped at the front
       target.activeTabId = tab.id
       activeGroupId.value = targetGroupId
       if (sourceGroupId !== targetGroupId) cleanupEmpty(sourceGroupId)

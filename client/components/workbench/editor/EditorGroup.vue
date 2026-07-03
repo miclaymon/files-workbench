@@ -221,7 +221,7 @@ const bodyRegion     = ref(null)
 
 function onTabDragStart(event, tab) {
   controller.setActiveGroup(props.group.id)
-  startTabDrag(event, { groupId: props.group.id, tabId: tab.id })
+  startTabDrag(event, { groupId: props.group.id, tabId: tab.id, pinned: !!tab.pinned })
 }
 function onTabDragEnd() {
   endTabDrag()
@@ -238,15 +238,30 @@ function onStripDragOver(event) {
   event.preventDefault()
   bodyRegion.value = null
   const tabEl = event.target.closest('.tab')
+  let beforeId = null, afterId = null
   if (tabEl) {
     const rect = tabEl.getBoundingClientRect()
     const before = event.clientX < rect.left + rect.width / 2
-    insertBeforeId.value = before ? tabEl.dataset.tabId : null
-    insertAfterId.value  = before ? null : tabEl.dataset.tabId
+    beforeId = before ? tabEl.dataset.tabId : null
+    afterId  = before ? null : tabEl.dataset.tabId
   } else {
-    insertBeforeId.value = null
-    insertAfterId.value = tabs.value[tabs.value.length - 1]?.id ?? null
+    afterId = tabs.value[tabs.value.length - 1]?.id ?? null
   }
+
+  // Pinned tabs stay grouped at the front: if the indicator points at a tab in the
+  // other band (pinned vs unpinned) than the dragged tab, snap it to the boundary so
+  // a pinned tab can't be dropped after unpinned ones (and vice-versa). The drop
+  // itself is re-partitioned server-side (reorderForPin), this just keeps the hint honest.
+  const hovered = tabs.value.find(t => t.id === (beforeId ?? afterId))
+  if (hovered && !!hovered.pinned !== dragState.pinned) {
+    const firstUnpinned = tabs.value.find(t => !t.pinned)
+    const pinnedTabs = tabs.value.filter(t => t.pinned)
+    const lastPinned = pinnedTabs[pinnedTabs.length - 1]
+    if (dragState.pinned) { beforeId = firstUnpinned?.id ?? null; afterId = beforeId ? null : (lastPinned?.id ?? null) }
+    else                  { afterId = lastPinned?.id ?? null; beforeId = null }
+  }
+  insertBeforeId.value = beforeId
+  insertAfterId.value = afterId
 }
 function onStripDragLeave(event) {
   if (!event.currentTarget.contains(event.relatedTarget)) { insertBeforeId.value = null; insertAfterId.value = null }
