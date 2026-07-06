@@ -52,6 +52,10 @@
         :maxBytes="preview.maxBytes"
         @force-load="$emit('force-load', item)"
       />
+      <DirectoryPreview
+        v-else-if="preview?.kind === 'directory'"
+        :item="item"
+      />
       <div v-else-if="preview" class="no-preview">No preview available</div>
     </template>
   </div>
@@ -62,6 +66,7 @@ import { previewUrl, thumbnailUrl } from './utils.js'
 import PreviewItemHeader from './PreviewItemHeader.vue'
 import TextPreview from './TextPreview.vue'
 import MarkdownPreview from './MarkdownPreview.vue'
+import DirectoryPreview from './DirectoryPreview.vue'
 import HtmlPreview from './HtmlPreview.vue'
 import ImagePreview from './ImagePreview.vue'
 import VideoPreview from './VideoPreview.vue'

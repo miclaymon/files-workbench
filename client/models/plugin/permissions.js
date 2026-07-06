@@ -27,6 +27,7 @@ export const PERMISSIONS = Object.freeze({
   query:       'Query other activities and read app-level state.',
   icons:       'Register an icon theme that resolves file/folder icons.',
   lightbox:    'Open a near-fullscreen lightbox overlay.',
+  peek:        'Open a positioned peek popup near a trigger element.',
 })
 
 // Host/backend access permissions → human description. Each gates a brokered

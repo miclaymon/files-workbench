@@ -57,6 +57,11 @@ async function resolvePreview(item, metadata, force = false) {
 // Load metadata + classify in one call. Returns { preview, metadata }; on any
 // failure returns { preview: { kind: 'error' }, metadata: null }.
 export async function loadPreview(item, force = false) {
+  // Directories preview their contents (child folders/files), fetched by the
+  // DirectoryPreview component — no metadata round-trip needed here.
+  if (item.kind === 'dir' || item.kind === 'directory') {
+    return { preview: { kind: 'directory' }, metadata: null }
+  }
   try {
     const response = await fetch(`${API_BASE}/metadata?path=${encodeURIComponent(item.path)}`)
     if (!response.ok) return { preview: { kind: 'error' }, metadata: null }

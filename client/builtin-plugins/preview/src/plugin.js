@@ -4,6 +4,7 @@ import { resolveIcon } from '~/composables/useIconRegistry.js'
 
 import PreviewPanel from './components/PreviewPanel.vue'
 import PreviewTab from './components/PreviewTab.vue'
+import PreviewPeek from './components/PreviewPeek.vue'
 import { singlePreviewable, isPreviewTabbable, thumbnailIconUrl, isMarkdown } from './components/preview/utils.js'
 
 // Per-tab icon for a Preview editor tab: the item's thumbnail when it's an image
@@ -48,8 +49,14 @@ export function activate(api) {
     id: api.manifest.id,
     label: 'Preview',
     icon: mdiEye,
-    // Local view state, shared with the section's props/actions via api('preview').
-    setup: () => ({ mode: ref('multi') }),
+    // Local view state + the peek capability, exposed on the activity API (api('preview')).
+    // `peek(item, rect)` opens a positioned rich-preview popup (the directory view's
+    // hold-Space peek); `unpeek()` closes it. Reuses the shared PreviewItem renderer.
+    setup: () => ({
+      mode: ref('multi'),
+      peek: (item, triggerRect) => api.peek?.open({ component: markRaw(PreviewPeek), props: { item }, triggerRect }),
+      unpeek: () => api.peek?.close(),
+    }),
   })
     .addView(new PanelView({
       id: 'preview',

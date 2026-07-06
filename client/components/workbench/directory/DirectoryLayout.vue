@@ -1,5 +1,5 @@
 <template>
-  <div class="dl-wrap" :style="cssVars" tabindex="0" @keydown="onKeyDown">
+  <div class="dl-wrap" :style="cssVars" tabindex="0" @keydown="onKeyDown" @keyup="onKeyUp" @blur.capture="onWrapBlur">
 
     <!-- Find widget — anchored to top-right, above scroll content -->
     <div v-if="findOpen" class="dl-find-wrap">
@@ -318,10 +318,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted, inject } from 'vue'
 import { mdiChevronDown, mdiChevronRight, mdiFile, mdiFolder, mdiLinkVariant, mdiPlayCircle, mdiPin } from '@mdi/js'
 import { useClickDebounce } from '~/composables/interaction/useClickDebounce.js'
 import { useHoverPreview } from '~/composables/interaction/useHoverPreview.js'
+import { peekActive } from '~/composables/usePeek.js'
 import { useDrag } from '~/composables/interaction/useDrag.js'
 import { useRightClickDrag } from '~/composables/interaction/useRightClickDrag.js'
 import { useIconRegistry } from '~/composables/useIconRegistry.js'
@@ -374,6 +375,7 @@ const props = defineProps({
   zoomLevel: { type: Number, default: 50 },
   hoverPreviewEnabled: { type: Boolean, default: true },
   hoverPreviewDelayMs: { type: Number, default: 2000 },
+  spaceHoldDelayMs:    { type: Number, default: 500 },
   sortField: { type: String, default: 'name' },
   sortDir: { type: String, default: 'asc' },
   filterText: { type: String, default: '' },
@@ -628,7 +630,7 @@ function _scheduleTt(item, e) {
   ttVisible.value = false
   ttPos.value = { x: e.clientX, y: e.clientY }
   _ttTimer = setTimeout(() => {
-    if (!_ttOverThumb && _ttHoverItem?.path === item.path && !hpItem.value) {
+    if (!_ttOverThumb && _ttHoverItem?.path === item.path && !hpItem.value && !peekActive.value) {
       ttItem.value = item
       ttVisible.value = true
       _loadTtMeta(item)
@@ -662,6 +664,9 @@ function hasHoverPreview(item) {
 }
 
 function onThumbEnter(item, e) {
+  // While a hold-Space peek is open, don't fire the cursor's hover preview/tooltip —
+  // they follow the mouse and would cover the peek (which is anchored to the focused item).
+  if (peekActive.value) return
   // Media items use the thumbnail for the hover preview, so suppress the tooltip
   // there to avoid overlap. Non-media items have no preview — fall through so the
   // row's tooltip may show over the icon too.
@@ -680,6 +685,10 @@ function onThumbLeave(e) {
 }
 
 watch(hpItem, (v) => { if (v) { clearTimeout(_ttTimer); ttVisible.value = false } })
+
+// A hold-Space peek covers the whole item region — hide the cursor-following tooltip
+// and hover preview while it's open so they don't overlap the peek content.
+watch(peekActive, (v) => { if (v) { clearTimeout(_ttTimer); ttVisible.value = false; endHover() } })
 
 // ── Sort / filter header ──────────────────────────────────────────────────────
 const isColumnarLayout = computed(() =>
@@ -1058,6 +1067,7 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('click', closeColumnMenu)
   document.removeEventListener('click', closeSortDropdown)
+  closeSpacePeek()   // dismiss a held peek if the view unmounts mid-hold
 })
 
 // ── Select-all ────────────────────────────────────────────────────────────
@@ -1244,8 +1254,66 @@ function commitRename(item) {
 
 function cancelRename() { renamingPath.value = null }
 
+// ── Hold-Space peek ───────────────────────────────────────────────────────
+// A Space *tap* toggles the focused item's selection checkbox; *holding* Space for
+// ≥1s opens a rich preview popup of the focused item (any type) near it, closing on
+// release. The rich renderer lives in the Preview plugin, reached through the host
+// context (`viewCtx.api('preview').peek`), so this degrades to a no-op when Preview
+// is disabled — the tap-to-select still works.
+const viewCtx = inject('viewCtx', null)
+let _spaceItem = null
+let _spaceTimer = null
+let _spaceHeld = false
+
+function isSpaceKey(e) { return e.key === ' ' || e.code === 'Space' }
+
+// The rect of the focused item's thumbnail (or its element) to anchor the peek.
+function itemRectFor(path) {
+  if (!dlRef.value || !path) return null
+  const el = dlRef.value.querySelector(`[data-path="${CSS.escape(path)}"]`)
+  if (!el) return null
+  return (el.querySelector('.dl-thumb') ?? el).getBoundingClientRect()
+}
+
+function closeSpacePeek() {
+  clearTimeout(_spaceTimer)
+  if (_spaceHeld) viewCtx?.api?.('preview')?.unpeek?.()
+  _spaceItem = null
+  _spaceHeld = false
+}
+
+function onKeyUp(event) {
+  if (!isSpaceKey(event)) return
+  clearTimeout(_spaceTimer)
+  const item = _spaceItem
+  const held = _spaceHeld
+  _spaceItem = null
+  _spaceHeld = false
+  if (held) viewCtx?.api?.('preview')?.unpeek?.()
+  else if (item) emit('select', { item, mode: isSelected(item) ? 'remove' : 'add' })   // tap → toggle selection
+}
+
+function onWrapBlur() { closeSpacePeek() }
+
 // ── Keyboard nav ──────────────────────────────────────────────────────────
 function onKeyDown(event) {
+  // Space: hold ≥1s → rich peek; tap → toggle selection (on keyup). preventDefault
+  // stops Space from scrolling the list. Ignore auto-repeat and inline-rename editing.
+  if (isSpaceKey(event) && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    if (renamingPath.value) return
+    event.preventDefault()
+    if (event.repeat) return
+    const item = props.focusedItem
+    if (!item) return
+    _spaceItem = item
+    _spaceHeld = false
+    clearTimeout(_spaceTimer)
+    _spaceTimer = setTimeout(() => {
+      const rect = itemRectFor(item.path)
+      if (rect) { _spaceHeld = true; viewCtx?.api?.('preview')?.peek?.(item, rect) }
+    }, props.spaceHoldDelayMs ?? 500)
+    return
+  }
   if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
     event.preventDefault()
     openFind()
@@ -1309,6 +1377,7 @@ function onKeyDown(event) {
     return
   }
   if (event.key === 'Escape') {
+    closeSpacePeek()
     if (selectionMode.value) {
       event.preventDefault()
       selectionMode.value = false

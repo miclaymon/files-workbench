@@ -33,19 +33,13 @@
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
 import { MEDIA_BASE } from '~/lib/api-config.js'
+import { calcPopupPosition } from '~/lib/popup-position.js'
 
 const VIDEO_EXTS = new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts'])
 
 // Popup size caps
 const MAX_W = 520
 const MAX_H = 420
-
-// Minimum distance from any viewport edge before clamping kicks in.
-const SAFE = 12
-
-// Thumbnails narrower than this threshold are treated as list/details row thumbnails
-// and get a right-side popup instead of an above popup.
-const SMALL_THUMB_PX = 48
 
 const props = defineProps({
   item:        { type: Object, default: null },
@@ -65,58 +59,11 @@ const mediaSrc = computed(() =>
   props.item ? `${MEDIA_BASE}/preview?path=${encodeURIComponent(props.item.path)}` : ''
 )
 
-/**
- * Compute where the popup should go relative to the thumbnail rect.
- * - Small thumbs (list/details ~18-24 px): slide out to the right (or left if near edge)
- * - Larger thumbs (grid/gallery):          pop up above (or below if near top)
- *
- * Returns position + placement string used for transform-origin via CSS class.
- */
-function calcPosition(popW, popH) {
-  const r = props.triggerRect
-  if (!r) return { left: -9999, top: -9999, placement: 'above' }
-
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  const pw = Math.min(popW, vw * 0.85)
-  const ph = Math.min(popH, vh * 0.82)
-
-  if (r.width < SMALL_THUMB_PX) {
-    // ── List / details / nested layout ──────────────────────────
-    // Popup slides out to the right of the thumbnail, vertically centred on it.
-    const GAP = 12
-    let left = r.right + GAP
-    let top  = Math.round(r.top + r.height / 2 - ph / 2)
-    top = Math.max(SAFE, Math.min(top, vh - ph - SAFE))
-
-    if (left + pw > vw - SAFE) {
-      // Not enough room on the right — flip to the left of the thumbnail
-      left = Math.max(SAFE, r.left - pw - GAP)
-      return { left: Math.round(left), top, placement: 'left' }
-    }
-    return { left: Math.round(left), top, placement: 'right' }
-  }
-
-  // ── Grid / gallery / mosaic layout ──────────────────────────────
-  // Popup rises above the thumbnail, horizontally centred on it.
-  const GAP = 10
-  let left = Math.round(r.left + r.width / 2 - pw / 2)
-  let top  = r.top - ph - GAP
-  left = Math.max(SAFE, Math.min(left, vw - pw - SAFE))
-
-  if (top < SAFE) {
-    // Not enough room above — flip below, clamped so bottom stays in viewport.
-    const belowTop = r.bottom + GAP
-    return { left, top: Math.round(Math.max(SAFE, Math.min(belowTop, vh - ph - SAFE))), placement: 'below' }
-  }
-  return { left, top: Math.round(top), placement: 'above' }
-}
-
 function reposition() {
   const el = popupEl.value
   if (!el || !props.triggerRect) return
   const { width, height } = el.getBoundingClientRect()
-  const pos = calcPosition(width || MAX_W, height || MAX_H)
+  const pos = calcPopupPosition(props.triggerRect, width || MAX_W, height || MAX_H)
   resolved.value  = { left: pos.left, top: pos.top }
   placement.value = pos.placement
 }
@@ -129,7 +76,7 @@ const popupStyle = computed(() => ({
 // Estimate position immediately when triggerRect appears, refine after media loads
 watch(() => props.triggerRect, async (r) => {
   if (!r) { placement.value = 'above'; return }
-  const pos = calcPosition(MAX_W, MAX_H)
+  const pos = calcPopupPosition(r, MAX_W, MAX_H)
   resolved.value  = { left: pos.left, top: pos.top }
   placement.value = pos.placement
   await nextTick()

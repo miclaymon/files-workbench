@@ -116,11 +116,15 @@ export function fsDirSize(path, signal) {
 const LIST_DIR_PAGE_SIZE = 16
 
 export async function fsListDir(path, opts = {}) {
-  const { includeMetadata = true, includeDirSize = false, showHidden = false, excludeCategories = 'System', signal } = opts
-  const params = { path, includeMetadata, includeDirSize, showHidden, excludeCategories, limit: LIST_DIR_PAGE_SIZE, offset: 0 }
+  const { includeMetadata = true, includeDirSize = false, showHidden = false, excludeCategories = 'System', limit = null, signal } = opts
+  const pageSize = limit ?? LIST_DIR_PAGE_SIZE
+  const params = { path, includeMetadata, includeDirSize, showHidden, excludeCategories, limit: pageSize, offset: 0 }
 
   const first = await _get(`/_api/${API_V}/fs/list_dir`, params, signal)
-  if (first.offset + first.items.length >= first.total) return first
+  // An explicit `limit` requests a single page (e.g. a lightweight directory peek) —
+  // return it as-is without fetching the remaining pages. `total` still reflects the
+  // full count so callers can show "+N more".
+  if (limit != null || first.offset + first.items.length >= first.total) return first
 
   // Total is known after first page — fire all remaining pages in parallel
   const offsets = []

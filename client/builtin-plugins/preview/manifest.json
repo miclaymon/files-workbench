@@ -7,5 +7,5 @@
   "author": "Files Workbench",
   "icon": "mdiEye",
   "main": "src/plugin.js",
-  "permissions": ["activities", "selection", "editor"]
+  "permissions": ["activities", "selection", "editor", "peek"]
 }

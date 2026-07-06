@@ -31,6 +31,7 @@ const FACADE_SLICE = {
   query:       (f) => ({ query: f.query, peer: f.peer }),
   icons:       (f) => ({ icons: f.icons }),
   lightbox:    (f) => ({ lightbox: f.lightbox }),
+  peek:        (f) => ({ peek: f.peek }),
 }
 
 export function createPluginApi(manifest, host) {

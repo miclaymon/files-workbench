@@ -5,6 +5,7 @@ import { collectLeaves } from '~/composables/useLayoutGrid.js'
 import { registerPreferences } from '~/composables/usePreferenceSchema.js'
 import { registerIconTheme, setActiveIconTheme, listIconThemes } from '~/composables/useIconRegistry.js'
 import { openLightbox, closeLightbox, lightboxActive } from '~/composables/useLightbox.js'
+import { openPeek, closePeek, peekActive } from '~/composables/usePeek.js'
 import { createEmitter } from './useEmitter.js'
 import { createCommandRegistry } from './useCommandRegistry.js'
 import { createKeybindingRegistry } from './useKeybindingRegistry.js'
@@ -213,6 +214,9 @@ export function useActivityHost({ editor, prefs, services = {}, log = () => {} }
     // lightbox: open a near-fullscreen overlay with a component + props (e.g. the
     // Preview plugin's single-item media viewer). `active` is a readonly ref.
     lightbox: { open: openLightbox, close: closeLightbox, active: lightboxActive },
+    // peek: open a positioned popup near a trigger rect (the keyboard hold-Space
+    // preview). `active` is a readonly ref.
+    peek: { open: openPeek, close: closePeek, active: peekActive },
     // dynamic activity registration. First-party activities use the bootstrap
     // below; a plugin calls register() at runtime to add an activity's API and its
     // surfaces together, and gets a disposer that removes both.

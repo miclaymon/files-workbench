@@ -94,6 +94,7 @@
       :zoomLevel="zoomLevel"
       :hoverPreviewEnabled="hoverPreviewEnabled"
       :hoverPreviewDelayMs="hoverPreviewDelayMs"
+      :spaceHoldDelayMs="spaceHoldDelayMs"
       :sortField="sortField"
       :sortDir="sortDir"
       :filterText="filterText"
@@ -216,6 +217,7 @@ const props = defineProps({
   alwaysShowCheckboxes: { type: Boolean, default: false },
   hoverPreviewEnabled: { type: Boolean, default: true },
   hoverPreviewDelayMs: { type: Number, default: 2000 },
+  spaceHoldDelayMs:    { type: Number, default: 500 },
   currentPath: { type: String, default: '' },
   navigationHistory: { type: Object, default: () => ({ previous: [], next: [] }) },
   changeTabPath: { type: Function, default: null },

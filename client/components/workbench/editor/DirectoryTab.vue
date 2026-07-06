@@ -14,6 +14,7 @@
       :alwaysShowCheckboxes="prefs.alwaysShowCheckboxes"
       :hoverPreviewEnabled="prefs.hoverPreviewEnabled ?? true"
       :hoverPreviewDelayMs="prefs.hoverPreviewDelayMs ?? 2000"
+      :spaceHoldDelayMs="prefs.spaceHoldPreviewMs ?? 500"
       :currentPath="props.path"
       :navigationHistory="navigationHistory"
       :changeTabPath="changeTabPath"

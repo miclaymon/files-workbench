@@ -224,6 +224,7 @@
 
     <!-- Near-fullscreen lightbox overlay (opened via facade.lightbox) -->
     <LightboxHost />
+    <PeekHost />
 
   </div>
 </template>
@@ -234,6 +235,7 @@ import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
 import CommandPalette from './ui/CommandPalette.vue'
 import ModalHost from './ui/ModalHost.vue'
 import LightboxHost from './LightboxHost.vue'
+import PeekHost from './PeekHost.vue'
 import { useEditorGrid } from '~/composables/workbench/useEditorGrid.js'
 import { useStatusBar } from '~/composables/workbench/useStatusBar.js'
 import { useNotifications } from '~/composables/workbench/useNotifications.js'

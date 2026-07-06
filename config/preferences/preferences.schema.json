@@ -97,6 +97,14 @@
           "maximum": 5000,
           "description": "How long the cursor must rest on a thumbnail before the hover preview appears.",
           "default": 1000
+        },
+        "spaceHoldPreviewMs": {
+          "title": "Hold-Space Preview Delay (ms)",
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 3000,
+          "description": "How long to hold Space on the focused item before its preview popup appears. A quick Space tap toggles the item's selection instead.",
+          "default": 500
         }
       }
     },
