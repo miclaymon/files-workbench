@@ -61,7 +61,7 @@
             <dt>Size</dt>
             <dd>
               <span v-if="dirSizeLoading" class="dsi-shimmer dsi-shimmer--inline" />
-              <template v-else>{{ sizeDisplay }}</template>
+              <PendingValue v-else :pending="dirSizeInProgress">{{ sizeDisplay }}</PendingValue>
             </dd>
           </div>
           <div v-if="details.mtime" class="dsi-row">
@@ -89,9 +89,10 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { mdiFile, mdiFolder, mdiArchive, mdiInformationOutline } from '@mdi/js'
 import { useIconRegistry } from '~/composables/useIconRegistry.js'
 import { resolveCustomIcon } from '~/composables/useCustomIcon.js'
-import { API_BASE, API_V, MEDIA_BASE } from '~/lib/api-config.js'
-import { fsOpenWithSystem } from '~/lib/fs-api.js'
+import { MEDIA_BASE } from '~/lib/api-config.js'
+import { fsOpenWithSystem, watchDirSize } from '~/lib/fs-api.js'
 import ResolvedIcon from '~/components/workbench/ResolvedIcon.vue'
+import PendingValue from '~/components/workbench/PendingValue.vue'
 
 const props = defineProps({
   selectedPath: { type: String, default: '' },
@@ -107,9 +108,11 @@ const { resolveIcon } = useIconRegistry()
 
 // ── Fetched data ──────────────────────────────────────────────────────────────
 
-const meta           = ref(null)
-const dirSize        = ref(null)   // { size: number, files: number }
-const dirSizeLoading = ref(false)
+const meta              = ref(null)
+const dirSize           = ref(null)   // { size: number, files: number } — may be a running total
+const dirSizeLoading    = ref(false)  // no value yet (initial shimmer)
+const dirSizeInProgress = ref(false)  // value is a partial that's still counting up
+let _dirSizeCtrl = null
 const thumbLoaded    = ref(false)
 const thumbFailed    = ref(false)
 const packIconFailed = ref(false)
@@ -241,8 +244,11 @@ watch(
   async ([path, kind]) => {
     meta.value       = null
     dirSize.value    = null
+    dirSizeLoading.value    = false
+    dirSizeInProgress.value = false
     packIconFailed.value = false
     isRenaming.value = false
+    _dirSizeCtrl?.abort()
     if (!path) return
 
     if (kind && kind !== 'dir') {
@@ -253,12 +259,16 @@ watch(
     }
 
     if (kind === 'dir') {
+      // Poll the recursive size so it counts up live (pulsing) until final.
       dirSizeLoading.value = true
-      try {
-        const r = await fetch(`${API_BASE}/_api/${API_V}/fs/dir_size?path=${encodeURIComponent(path)}`)
-        if (r.ok) dirSize.value = await r.json()
-      } catch { /* silent */ }
-      finally { dirSizeLoading.value = false }
+      const ctrl = new AbortController()
+      _dirSizeCtrl = ctrl
+      await watchDirSize(path, (size, files, done) => {
+        if (ctrl.signal.aborted) return
+        dirSize.value = { size, files }
+        dirSizeLoading.value = false
+        dirSizeInProgress.value = !done
+      }, { signal: ctrl.signal })
     }
   },
   { immediate: true },

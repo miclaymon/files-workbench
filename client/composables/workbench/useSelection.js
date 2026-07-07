@@ -22,7 +22,7 @@ export function useSelection({ editor, statusbar, log, fsStat, fsOpenWithSystem,
       focusedItem.value   = tab.focusedItem ?? null
       selectedPath.value  = tab.selectedPath ?? tab.path ?? ''
     } else {
-      dirStats.value = { count: 0, totalSize: 0 }
+      dirStats.value = { count: 0, totalSize: 0, inProgress: false, selectedCount: 0, selectedSize: 0, selectedInProgress: false }
       selectedItems.value = []
       focusedItem.value   = null
       selectedPath.value  = ''

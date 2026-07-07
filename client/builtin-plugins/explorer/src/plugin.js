@@ -36,7 +36,7 @@ export function activate(api) {
   // wrapping useSelection and publishing the selection capability. Receives the
   // host's internal wiring (editor/services/log) via instantiateActivity.
   function setup({ editor, services, log }) {
-    const dirStats = ref({ count: 0, totalSize: 0 })
+    const dirStats = ref({ count: 0, totalSize: 0, inProgress: false, selectedCount: 0, selectedSize: 0, selectedInProgress: false })
 
     const sel = useSelection({
       editor,

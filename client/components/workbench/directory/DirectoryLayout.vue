@@ -304,7 +304,7 @@
     </div><!-- end .dl -->
 
     <!-- Directory info / selection status — bottom-left overlay -->
-    <div v-if="infoText" class="dl-info-widget">{{ infoText }}</div>
+    <div v-if="infoCountText" class="dl-info-widget"><span>{{ infoCountText }}</span><template v-if="totalSize > 0"> (<PendingValue :pending="sizePending">{{ formatBytes(totalSize) }}</PendingValue>)</template><span>{{ infoSelectedText }}</span></div>
 
     <!-- Item hover tooltip — fixed, populated async for extra metadata -->
     <div v-if="ttVisible && ttItem" class="dl-tooltip" :style="ttStyle">
@@ -332,6 +332,7 @@ import { MEDIA_BASE } from '~/lib/api-config.js'
 import DirectoryFindWidget from './DirectoryFindWidget.vue'
 import DirSizeCell from './DirSizeCell.vue'
 import ResolvedIcon from '~/components/workbench/ResolvedIcon.vue'
+import PendingValue from '~/components/workbench/PendingValue.vue'
 
 const MEDIA_EXTS = new Set([
   'png','jpg','jpeg','webp','gif','bmp','ico','avif',
@@ -554,18 +555,20 @@ const totalSize    = computed(() => props.items.reduce((s, i) =>
 const selectedSize = computed(() => props.selectedItems.reduce((s, i) =>
   s + (i.kind === 'dir' ? (props.dirSizes[i.path]?.size ?? 0) : (i.size ?? 0)), 0))
 
-const infoText = computed(() => {
+// The info widget is composed of segments so the total size can pulse on its own while
+// directory sizes are still being summed (the aggregate counts up).
+const infoCountText = computed(() => {
   const c = props.items.length
-  if (c === 0) return ''
-  let t = `${c.toLocaleString()} ${c === 1 ? 'item' : 'items'}`
-  if (totalSize.value > 0) t += ` (${formatBytes(totalSize.value)})`
+  return c === 0 ? '' : `${c.toLocaleString()} ${c === 1 ? 'item' : 'items'}`
+})
+const infoSelectedText = computed(() => {
   const sc = props.selectedItems.length
-  if (sc > 0) {
-    t += ` | ${sc.toLocaleString()} selected`
-    if (selectedSize.value > 0) t += ` (${formatBytes(selectedSize.value)})`
-  }
+  if (sc === 0) return ''
+  let t = ` | ${sc.toLocaleString()} selected`
+  if (selectedSize.value > 0) t += ` (${formatBytes(selectedSize.value)})`
   return t
 })
+const sizePending = computed(() => props.items.some(i => i.kind === 'dir' && props.dirSizes[i.path]?.inProgress))
 
 // ── Item hover tooltip ────────────────────────────────────────────────────────
 const ttItem    = ref(null)

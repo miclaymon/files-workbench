@@ -108,8 +108,32 @@ export function fsStat(path) {
   return _get(`/_api/${API_V}/fs/stat`, { path })
 }
 
+// One-shot dir-size read: { size, files, done }. `done` is false while the server is
+// still walking the tree (the size is a running total — "at least this much").
 export function fsDirSize(path, signal) {
   return _get(`/_api/${API_V}/fs/dir_size`, { path }, signal)
+}
+
+// Poll a directory's size until the walk finishes, invoking onUpdate(size, files, done)
+// on each tick so the UI can count up live. Resolves when done or when `signal` aborts;
+// an already-cached (done) path resolves on the first tick — instant. Network/abort
+// errors quietly stop the loop.
+export async function watchDirSize(path, onUpdate, { signal, intervalMs = 250 } = {}) {
+  while (!signal?.aborted) {
+    let res
+    try {
+      res = await fsDirSize(path, signal)
+    } catch {
+      return   // aborted or unreachable
+    }
+    const done = !!res?.done
+    onUpdate(res?.size ?? 0, res?.files ?? 0, done)
+    if (done || signal?.aborted) return
+    await new Promise((resolve) => {
+      const t = setTimeout(resolve, intervalMs)
+      signal?.addEventListener('abort', () => { clearTimeout(t); resolve() }, { once: true })
+    })
+  }
 }
 
 // opts: { includeMetadata, includeDirSize, showHidden, excludeCategories, signal }

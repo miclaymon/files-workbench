@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -16,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 )
@@ -29,29 +31,95 @@ import (
 
 const dirSizeTTL = 5 * time.Minute
 
-type dirSizeEntry struct {
-	size  int64
-	files int64
-	at    time.Time
+// dirSizeIdleAbort aborts a background walk when no client has polled its progress for
+// this long — so navigating away from a huge directory doesn't leave a runaway walk.
+const dirSizeIdleAbort = 5 * time.Second
+
+// dirSizeJob is one directory's size computation: a background walk that atomically
+// accumulates the running total while readers poll it. A finished job is cached (done)
+// and reused until dirSizeTTL. `at` is written before `done` is set, and readers read
+// it only after observing `done`, so the atomic store/load pair orders that access.
+type dirSizeJob struct {
+	size       atomic.Int64
+	files      atomic.Int64
+	done       atomic.Bool
+	at         time.Time
+	lastAccess atomic.Int64 // unix-nano of the most recent read, for idle-abort
 }
 
-var dirSizeCache sync.Map // path → dirSizeEntry
+var dirSizeCache sync.Map // path → *dirSizeJob
+var errWalkAbort = errors.New("dir-size walk aborted (idle)")
 
+// getDirSizeProgress returns path's current running total and whether the walk has
+// finished. It starts a background walk on the first request (or after the cached
+// result expires); concurrent/repeat callers share the one job and read its live
+// counters. A completed (cached) path returns done=true immediately.
+func getDirSizeProgress(path string) (size, files int64, done bool) {
+	nowNano := time.Now().UnixNano()
+	if v, ok := dirSizeCache.Load(path); ok {
+		j := v.(*dirSizeJob)
+		j.lastAccess.Store(nowNano)
+		if j.done.Load() {
+			if time.Since(j.at) < dirSizeTTL {
+				return j.size.Load(), j.files.Load(), true
+			}
+			dirSizeCache.Delete(path) // stale — recompute below
+		} else {
+			return j.size.Load(), j.files.Load(), false
+		}
+	}
+	job := &dirSizeJob{}
+	job.lastAccess.Store(nowNano)
+	actual, loaded := dirSizeCache.LoadOrStore(path, job)
+	j := actual.(*dirSizeJob)
+	if loaded {
+		j.lastAccess.Store(nowNano) // someone else created it first
+		return j.size.Load(), j.files.Load(), j.done.Load()
+	}
+	go walkDirSize(path, j)
+	return 0, 0, false
+}
+
+func walkDirSize(path string, j *dirSizeJob) {
+	var seen int64
+	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err == nil && info != nil && !info.IsDir() {
+			j.size.Add(info.Size())
+			j.files.Add(1)
+		}
+		if seen++; seen%2000 == 0 && time.Since(time.Unix(0, j.lastAccess.Load())) > dirSizeIdleAbort {
+			return errWalkAbort
+		}
+		return nil
+	})
+	if err != nil { // aborted — drop the partial so a later request restarts cleanly
+		dirSizeCache.Delete(path)
+		return
+	}
+	j.at = time.Now()
+	j.done.Store(true)
+}
+
+// getDirSize returns path's final size, blocking until the walk completes. For internal
+// callers (simpleListDir's includeDirSize); reuses a cached complete job when present.
 func getDirSize(path string) (size, files int64) {
 	if v, ok := dirSizeCache.Load(path); ok {
-		e := v.(dirSizeEntry)
-		if time.Since(e.at) < dirSizeTTL {
-			return e.size, e.files
+		if j := v.(*dirSizeJob); j.done.Load() && time.Since(j.at) < dirSizeTTL {
+			return j.size.Load(), j.files.Load()
 		}
 	}
 	filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
-		if err == nil && !info.IsDir() {
+		if err == nil && info != nil && !info.IsDir() {
 			size += info.Size()
 			files++
 		}
 		return nil
 	})
-	dirSizeCache.Store(path, dirSizeEntry{size: size, files: files, at: time.Now()})
+	j := &dirSizeJob{at: time.Now()}
+	j.size.Store(size)
+	j.files.Store(files)
+	j.done.Store(true)
+	dirSizeCache.Store(path, j)
 	return
 }
 
@@ -302,8 +370,8 @@ func handleFsDirSize(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusForbidden, "Path is blacklisted")
 		return
 	}
-	size, files := getDirSize(path)
-	jsonOK(w, map[string]any{"size": size, "files": files})
+	size, files, done := getDirSizeProgress(path)
+	jsonOK(w, map[string]any{"size": size, "files": files, "done": done})
 }
 
 func handleFsPreview(w http.ResponseWriter, r *http.Request) {

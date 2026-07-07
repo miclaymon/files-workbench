@@ -36,7 +36,7 @@
 <script setup>
 import { ref, computed, watch, reactive, shallowReactive, onMounted, onUnmounted, onActivated } from 'vue'
 import { MEDIA_BASE } from '~/lib/api-config.js'
-import { fsStat, fsListDir, fsDirSize, fsArchiveList, fsExeInfo } from '~/lib/fs-api.js'
+import { fsStat, fsListDir, watchDirSize, fsArchiveList, fsExeInfo } from '~/lib/fs-api.js'
 import { perfStart, perfMark, perfFlush } from '~/lib/perf-log.js'
 
 const ARCHIVE_EXTS = ['.zip', '.tar', '.tar.gz', '.tar.bz2', '.tgz', '.tbz2', '.7z', '.rar', '.gz', '.bz2', '.xz', '.tar.xz']
@@ -157,13 +157,35 @@ async function fetchItems(path) {
 }
 
 // Emit directory stats: file sizes are known up front, directory sizes are folded
-// in from `dirSizes` as they resolve.
+// in from `dirSizes` as they resolve — using their running (partial) totals, so the
+// aggregate counts up. `inProgress` is true while any directory is still calculating.
 function emitStats() {
   let total = 0
+  let inProgress = false
   for (const it of items.value) {
-    total += it.kind === 'dir' ? (dirSizes[it.path]?.size ?? 0) : (it.size ?? 0)
+    if (it.kind === 'dir') {
+      total += dirSizes[it.path]?.size ?? 0
+      if (dirSizes[it.path]?.inProgress) inProgress = true
+    } else {
+      total += it.size ?? 0
+    }
   }
-  emit('stats', { count: items.value.length, totalSize: total })
+  // Selected total, with selected directories contributing their (running) recursive
+  // size — so the status bar's "Selected" reflects folder sizes and pulses/counts up.
+  let selSize = 0
+  let selInProgress = false
+  for (const it of props.selectedItems) {
+    if (it.kind === 'dir') {
+      selSize += dirSizes[it.path]?.size ?? 0
+      if (dirSizes[it.path]?.inProgress) selInProgress = true
+    } else {
+      selSize += it.size ?? 0
+    }
+  }
+  emit('stats', {
+    count: items.value.length, totalSize: total, inProgress,
+    selectedCount: props.selectedItems.length, selectedSize: selSize, selectedInProgress: selInProgress,
+  })
 }
 
 // Mark the current directories as pending (the previous directory's entries were
@@ -171,7 +193,7 @@ function emitStats() {
 // phase 2 begins fetching.
 function seedDirSizePlaceholders() {
   for (const it of items.value) {
-    if (it.kind === 'dir') dirSizes[it.path] = { size: null, files: null, loading: true }
+    if (it.kind === 'dir') dirSizes[it.path] = { size: null, files: null, loading: true, inProgress: true }
   }
 }
 
@@ -192,16 +214,13 @@ async function fetchDirSizesFor(dirPaths, gen, ctrl) {
     while (idx < dirPaths.length) {
       if (gen !== _gen) return
       const path = dirPaths[idx++]
-      try {
-        const { size, files } = await fsDirSize(path, ctrl.signal)
+      // Poll the size until the walk finishes: each tick updates the running total so
+      // the cell (and the summed aggregate) counts up, pulsing while inProgress.
+      await watchDirSize(path, (size, files, done) => {
         if (gen !== _gen) return
-        dirSizes[path] = { size, files, loading: false }
+        dirSizes[path] = { size, files, loading: false, inProgress: !done }
         emitStats()
-      } catch {
-        // Aborted or network error — clear the pending flag so the cell stops
-        // shimmering (falls back to '—') instead of spinning forever.
-        if (gen === _gen && dirSizes[path]) dirSizes[path] = { ...dirSizes[path], loading: false }
-      }
+      }, { signal: ctrl.signal })
     }
   }
   await Promise.all(Array.from({ length: Math.min(DIRS_CONCURRENCY, dirPaths.length) }, worker))
@@ -275,6 +294,9 @@ async function softRefresh() {
 
 watch(() => props.path, (newPath) => { fetchItems(newPath) })
 watch(() => props.prefs?.showHiddenFiles, () => { fetchItems(props.path) })
+// Recompute stats when the selection changes so the status bar's selected total (incl.
+// selected directory sizes) updates immediately, not only when a size resolves.
+watch(() => props.selectedItems, () => emitStats())
 
 const IMAGE_EXTS = new Set(['png','jpg','jpeg','webp','gif','bmp','ico','avif'])
 const VIDEO_EXTS = new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts'])

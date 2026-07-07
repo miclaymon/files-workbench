@@ -4,11 +4,13 @@
        the item object itself never changes, so the row (icon/thumbnail/selection)
        is untouched. Files use their inline size from the listing. -->
   <span v-if="isDir && entry?.loading" class="dsz-shimmer" />
+  <PendingValue v-else-if="isDir" :pending="!!entry?.inProgress">{{ display }}</PendingValue>
   <template v-else>{{ display }}</template>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import PendingValue from '~/components/workbench/PendingValue.vue'
 
 const props = defineProps({
   item:     { type: Object, required: true },
