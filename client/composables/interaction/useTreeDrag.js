@@ -67,7 +67,7 @@ function createGhost(node) {
 }
 
 // Module-level drop callback so all TreeItem instances can share it.
-// Registered once by ExplorerTree; fires when a drag is released over a valid target.
+// Registered once by the tree host (ExplorerPanel); fires when a drag is released over a valid target.
 let _onDropCallback = null
 
 export function useTreeDrag({ delay = 200, onDrop } = {}) {

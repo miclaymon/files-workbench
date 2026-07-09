@@ -42,7 +42,7 @@
           <path :d="iconPath" />
         </svg>
         <!-- 3. Icon pack -->
-        <img v-else-if="packIconUrl && !packIconFailed" :src="packIconUrl" width="16" height="16" class="pack-icon" @error="packIconFailed = true" />
+        <ResolvedIcon v-else-if="packResult && !packIconFailed" :result="packResult" :size="16" icon-class="pack-icon" @fail="packIconFailed = true" />
         <!-- 4. MDI default -->
         <svg v-else :width="16" :height="16" viewBox="0 0 24 24" fill="currentColor">
           <path :d="iconPath" />
@@ -82,6 +82,7 @@
         @select="$emit('select', $event)"
         @toggleExpand="$emit('toggleExpand', $event)"
         @dblclick="$emit('dblclick', $event)"
+        @rename="$emit('rename', $event)"
       />
     </ul>
   </li>
@@ -92,8 +93,9 @@ import { computed, ref, nextTick } from 'vue'
 import { mdiFile, mdiFolder, mdiFolderOpen, mdiHarddisk, mdiLinkVariant } from '@mdi/js'
 import { useClickDebounce } from '~/composables/interaction/useClickDebounce.js'
 import { useTreeDrag } from '~/composables/interaction/useTreeDrag.js'
-import { useIconPack } from '~/composables/useIconPack.js'
+import { useIconRegistry } from '~/composables/useIconRegistry.js'
 import { resolveCustomIcon } from '~/composables/useCustomIcon.js'
+import ResolvedIcon from '~/components/workbench/ResolvedIcon.vue'
 
 const props = defineProps({
   node: { type: Object, required: true },
@@ -119,6 +121,9 @@ const shouldShowChildren = computed(() =>
 )
 
 const iconPath = computed(() => {
+  // A node may pin its own MDI icon (virtual roots: Root/Home/Drives) — used as the
+  // icon when it has no custom or icon-pack image.
+  if (props.node.mdiPath) return props.node.mdiPath
   switch (props.node.type) {
     case 'root':
     case 'drive': return mdiHarddisk
@@ -129,24 +134,27 @@ const iconPath = computed(() => {
   }
 })
 
-const { ensureLoaded: ensureIconPack, iconUrl, isAvailable: iconPackAvailable } = useIconPack()
-ensureIconPack()
-
-const packIconUrl = computed(() => {
-  if (!iconPackAvailable.value) return null
-  const name = isExpanded.value ? (props.node.icon_open ?? props.node.icon) : props.node.icon
-  return name ? iconUrl(name) : null
-})
-
-const packIconFailed = ref(false)
-watch(packIconUrl, () => { packIconFailed.value = false })
-
-// Custom icon from .directory / desktop.ini
+// Custom icon from .directory / desktop.ini (layer 1 — wins over the icon pack)
 const customIconDescriptor = computed(() => resolveCustomIcon(props.node.customization?.icon))
 const customIconUrl = computed(() => customIconDescriptor.value?.type === 'url' ? customIconDescriptor.value.url : null)
 const customIconColor = computed(() => customIconDescriptor.value?.type === 'folder-color' ? customIconDescriptor.value.color : null)
 const customIconFailed = ref(false)
 watch(customIconDescriptor, () => { customIconFailed.value = false })
+
+// Icon pack (layer 2) — the active icon theme resolves a descriptor for this node.
+// Virtual roots (Root/Home/Drives) pin their own MDI icon and skip the pack.
+const { resolveIcon } = useIconRegistry()
+const packResult = computed(() => props.node.mdiPath ? null : resolveIcon({
+  path: props.node.path,
+  name: props.node.name,
+  kind: props.node.type,
+  isDir: props.node.type === 'directory' || props.node.type === 'drive' || props.node.type === 'root',
+  expanded: isExpanded.value,
+  hasCustomIcon: !!customIconDescriptor.value,
+  activityName: 'explorer',
+}))
+const packIconFailed = ref(false)
+watch(packResult, () => { packIconFailed.value = false })
 
 const displayName = computed(() => props.node.customization?.name || props.node.name)
 

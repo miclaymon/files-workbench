@@ -86,6 +86,7 @@
     <component
       :is="currentLayout"
       :items="processedItems"
+      :dir-sizes="dirSizes"
       :selectedItems="localSelectedItems"
       :focusedItem="localFocusedItem"
       :alwaysShowCheckboxes="alwaysShowCheckboxes"
@@ -93,6 +94,7 @@
       :zoomLevel="zoomLevel"
       :hoverPreviewEnabled="hoverPreviewEnabled"
       :hoverPreviewDelayMs="hoverPreviewDelayMs"
+      :spaceHoldDelayMs="spaceHoldDelayMs"
       :sortField="sortField"
       :sortDir="sortDir"
       :filterText="filterText"
@@ -104,6 +106,7 @@
       @right-drag-drop="$emit('right-drag-drop', $event)"
       @navigate="handleNavigate"
       @rename="$emit('rename', $event)"
+      @rename-batch="$emit('rename-batch', $event)"
       @zoom-change="zoomLevel = $event"
       @sort-change="handleSortChange"
       @filter-change="filterText = $event"
@@ -214,12 +217,15 @@ const props = defineProps({
   alwaysShowCheckboxes: { type: Boolean, default: false },
   hoverPreviewEnabled: { type: Boolean, default: true },
   hoverPreviewDelayMs: { type: Number, default: 2000 },
+  spaceHoldDelayMs:    { type: Number, default: 500 },
   currentPath: { type: String, default: '' },
   navigationHistory: { type: Object, default: () => ({ previous: [], next: [] }) },
   changeTabPath: { type: Function, default: null },
+  // path → { size, files, loading } for directories; async from DirectoryTab.
+  dirSizes: { type: Object, default: () => ({}) },
 })
 
-const emit = defineEmits(['select', 'focus', 'contextmenu', 'background-contextmenu', 'right-drag-drop', 'navigate', 'navigate-up', 'navigate-previous', 'navigate-next', 'update:layout', 'rename', 'copy', 'cut', 'paste'])
+const emit = defineEmits(['select', 'focus', 'contextmenu', 'background-contextmenu', 'right-drag-drop', 'navigate', 'navigate-up', 'navigate-previous', 'navigate-next', 'update:layout', 'rename', 'rename-batch', 'copy', 'cut', 'paste'])
 
 const currentLayout = DirectoryLayout
 
@@ -404,8 +410,13 @@ const processedItems = computed(() => {
     result = result.filter(item => item.name.toLowerCase().includes(q))
   }
 
-  // Sort — dirs always first unless sorting by size (then sort everything together)
+  // Sort — pinned items always grouped first, then dirs first (unless sorting by
+  // size), then the chosen field. Within each group the normal rules below apply.
   result.sort((a, b) => {
+    const aPin = !!a.pinned
+    const bPin = !!b.pinned
+    if (aPin !== bPin) return aPin ? -1 : 1
+
     if (sortField.value !== 'size') {
       const aIsDir = a.kind === 'dir' || a.kind === 'archive'
       const bIsDir = b.kind === 'dir' || b.kind === 'archive'
@@ -421,8 +432,12 @@ const processedItems = computed(() => {
         const nb = b.name?.toLowerCase() ?? ''
         return dir * na.localeCompare(nb)
       }
-      case 'size':
-        return dir * ((a.size ?? -1) - (b.size ?? -1))
+      case 'size': {
+        // Directories' sizes live in the async map; files carry their own.
+        const as = a.kind === 'dir' ? (props.dirSizes[a.path]?.size ?? -1) : (a.size ?? -1)
+        const bs = b.kind === 'dir' ? (props.dirSizes[b.path]?.size ?? -1) : (b.size ?? -1)
+        return dir * (as - bs)
+      }
       case 'type': {
         const ea = a.name.split('.').pop()?.toLowerCase() ?? ''
         const eb = b.name.split('.').pop()?.toLowerCase() ?? ''
@@ -650,14 +665,16 @@ onUnmounted(() => {
   transition: all 0.15s;
   font-size: 14px;
   flex-shrink: 0;
+
+  &:hover:not(:disabled) { background: var(--hover-background); border-color: var(--border); color: var(--text); }
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+  &.active { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 }
-.nav-button:hover:not(:disabled) { background: var(--hover-background); border-color: var(--border); color: var(--text); }
-.nav-button:disabled { opacity: 0.4; cursor: not-allowed; }
-.nav-button.active { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 
 .layout-buttons { display: flex; gap: 2px; flex-shrink: 0; }
 
-/* ── Active sort/filter bar ───────────────────────────────────────────── */
+/* ── Active sort/filter bar ───────────────────────────────────────────────── */
+
 .active-bar {
   display: flex;
   align-items: center;
@@ -698,8 +715,9 @@ onUnmounted(() => {
   width: 14px;
   height: 14px;
   justify-content: center;
+
+  &:hover { color: var(--text); background: rgba(255,255,255,0.12); }
 }
-.chip-remove:hover { color: var(--text); background: rgba(255,255,255,0.12); }
 
 .clear-all-btn {
   background: transparent;
@@ -710,10 +728,12 @@ onUnmounted(() => {
   padding: 2px 6px;
   border-radius: 4px;
   margin-left: 4px;
-}
-.clear-all-btn:hover { color: var(--text); background: rgba(255,255,255,0.08); }
 
-/* ── Filter panel (floating) ──────────────────────────────────────────── */
+  &:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+}
+
+/* ── Filter panel (floating) ──────────────────────────────────────────────── */
+
 .dp-floating-panel {
   position: fixed;
   z-index: 300;
@@ -725,8 +745,10 @@ onUnmounted(() => {
   width: 280px;
 }
 
-.dp-panel-section { margin-bottom: 14px; }
-.dp-panel-section:last-of-type { margin-bottom: 0; }
+.dp-panel-section {
+  margin-bottom: 14px;
+  &:last-of-type { margin-bottom: 0; }
+}
 
 .dp-panel-title {
   font-size: 10px;
@@ -737,13 +759,10 @@ onUnmounted(() => {
   margin-bottom: 7px;
 }
 
-.dp-type-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
+.dp-type-grid { display: flex; flex-wrap: wrap; gap: 5px; }
 
-.dp-type-btn, .dp-size-btn {
+.dp-type-btn,
+.dp-size-btn {
   padding: 3px 10px;
   border-radius: 12px;
   border: 1px solid var(--border);
@@ -752,19 +771,18 @@ onUnmounted(() => {
   font-size: 12px;
   cursor: pointer;
   transition: all 0.1s;
-}
-.dp-type-btn:hover, .dp-size-btn:hover { border-color: var(--accent); color: var(--text); }
-.dp-type-btn--active, .dp-size-btn--active {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  border-color: var(--accent);
-  color: var(--accent);
+
+  &:hover { border-color: var(--accent); color: var(--text); }
+  &.dp-type-btn--active,
+  &.dp-size-btn--active {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
 }
 
-.dp-size-options, .dp-date-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
+.dp-size-options,
+.dp-date-options { display: flex; flex-wrap: wrap; gap: 5px; }
 
 .dp-panel-footer {
   margin-top: 12px;
@@ -781,7 +799,8 @@ onUnmounted(() => {
   color: var(--text-muted);
   cursor: pointer;
   width: 100%;
+
+  &:hover { border-color: var(--accent); color: var(--accent); }
 }
-.dp-clear-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 </style>

@@ -1,6 +1,6 @@
 import { ref, computed, watch } from 'vue'
-import { mdiMessage, mdiEye, mdiInformation, mdiBug, mdiFileTree } from '@mdi/js'
-import { getViewEntry, viewAllowsDuplicateSections } from '~/composables/useViewRegistry.js'
+import { mdiMessage, mdiEye, mdiInformation, mdiBug } from '@mdi/js'
+import { getViewEntry, viewAllowsDuplicateSections, listPrimaryViews } from '~/composables/useViewRegistry.js'
 
 // ── View layout slice ─────────────────────────────────────────────────────────
 // The whole panel/sidebar layout engine: per-container view-id lists, merge groups
@@ -22,8 +22,9 @@ export function useViewLayout({ workspaces, prefs, savePrefs }) {
     getViewSections, saveViewSections,
   } = workspaces
 
-  // Primary sidebar view container definitions
-  const primarySidebarViews = [{ id: 'explorer', icon: mdiFileTree, label: 'Explorer' }]
+  // Primary sidebar entries (the Activity Bar): the registry's PrimarySideBar
+  // panels, so plugin-contributed activities appear automatically.
+  const primarySidebarViews = computed(() => listPrimaryViews())
 
   // Per-view section state for each container (the SplitSectionArea level). The
   // primary sidebar's Explorer view owns Places + Open Editors; the movable
@@ -35,6 +36,59 @@ export function useViewLayout({ workspaces, prefs, savePrefs }) {
   watch(() => JSON.stringify(primaryViewSections.value),   () => saveViewSections('primarySidebar',   primaryViewSections.value))
   watch(() => JSON.stringify(secondaryViewSections.value), () => saveViewSections('secondarySidebar', secondaryViewSections.value))
   watch(() => JSON.stringify(panelViewSections.value),     () => saveViewSections('panel',             panelViewSections.value))
+
+  // Seed declared sections for any primary view lacking saved state (e.g. a
+  // plugin's activity, which the workspace-default seed doesn't cover) into the
+  // reactive state — so its sections become real, draggable/mergeable instances
+  // like Explorer's, not just display-derived. Runs now and whenever a new primary
+  // view appears (a plugin loads after this composable is created).
+  let _seedSeq = 0
+  // True if a section id currently lives in a movable container (Secondary Side Bar
+  // or Bottom Panel) — i.e. the user adopted it there. Used so the primary-sidebar
+  // reconcile below doesn't re-add (duplicate) a section that was moved out.
+  const _placedInMovableContainer = (sid) => {
+    const scan = (map) => Object.values(map ?? {}).some(arr => arr?.some?.(s => s.id === sid))
+    return scan(secondaryViewSections.value) || scan(panelViewSections.value)
+  }
+  const _makeSection = (sid, viewId) => ({
+    id:         sid,
+    homeViewId: getViewEntry(sid)?.homeView ?? viewId,
+    collapsed:  false,
+    size:       1,
+    instanceId: `${sid}-${++_seedSeq}`,
+  })
+  watch(primarySidebarViews, (views) => {
+    let changed = false
+    const next = { ...primaryViewSections.value }
+    for (const v of views) {
+      const declared = getViewEntry(v.id)?.sections
+      if (!declared?.length) continue
+      let list = next[v.id]
+      if (!list) {
+        next[v.id] = declared.map(sid => _makeSection(sid, v.id))
+        changed = true
+        continue
+      }
+      // Reconcile: insert any declared section missing from saved state right after
+      // its declared predecessor — so a section added to a panel after the workspace
+      // was created (e.g. Places (New)) appears in its declared spot, without
+      // reordering the user's existing sections or their adopted foreign ones. A
+      // declared section the user has dragged into another container is left there
+      // (don't re-add it here — that would duplicate it).
+      const have = new Set(list.map(s => s.id))
+      let mutated = false
+      declared.forEach((sid, i) => {
+        if (have.has(sid) || _placedInMovableContainer(sid)) return
+        const predIdx = i > 0 ? list.findIndex(s => s.id === declared[i - 1]) : -1
+        const at = predIdx >= 0 ? predIdx + 1 : list.length
+        list = [...list.slice(0, at), _makeSection(sid, v.id), ...list.slice(at)]
+        have.add(sid)
+        mutated = true
+      })
+      if (mutated) { next[v.id] = list; changed = true }
+    }
+    if (changed) primaryViewSections.value = next
+  }, { immediate: true })
 
   // Icon registry for well-known panel views
   // `shortcut` strings are display-only hints in the header context menu; the

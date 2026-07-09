@@ -1,195 +1,141 @@
 <template>
-  <Teleport to="body">
-    <Transition name="ks">
-      <div v-if="visible" class="ks-backdrop" @mousedown.self="$emit('close')">
-        <div class="ks-dialog" role="dialog" aria-label="Keyboard Shortcuts">
+  <div class="ks-root">
+    <!-- Top search bar -->
+    <div class="ks-search-row">
+      <svg class="ks-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+        <path d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z" />
+      </svg>
+      <input
+        ref="searchRef"
+        v-model="searchQuery"
+        class="ks-search-input"
+        placeholder="Search keybindings"
+        autocomplete="off"
+        spellcheck="false"
+        @keydown.stop
+      />
+      <button v-if="searchQuery" class="ks-search-clear" @click="searchQuery = ''">✕</button>
+    </div>
 
-          <!-- Top search bar -->
-          <div class="ks-search-row">
-            <svg class="ks-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-              <path d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z" />
-            </svg>
-            <input
-              ref="searchRef"
-              v-model="searchQuery"
-              class="ks-search-input"
-              placeholder="Search keybindings"
-              autocomplete="off"
-              spellcheck="false"
-              @keydown.stop
-            />
-            <button v-if="searchQuery" class="ks-search-clear" @click="searchQuery = ''">✕</button>
-            <button class="ks-close-btn" title="Close (Esc)" @click="$emit('close')" @keydown.stop>
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
-              </svg>
-            </button>
-          </div>
+    <!-- Table header -->
+    <div class="ks-table-head">
+      <div class="ks-col-command">Command</div>
+      <div class="ks-col-keybinding">Keybinding</div>
+      <div class="ks-col-when">When</div>
+      <div class="ks-col-source">Source</div>
+    </div>
 
-          <!-- Table header -->
-          <div class="ks-table-head">
-            <div class="ks-col-command">Command</div>
-            <div class="ks-col-keybinding">Keybinding</div>
-            <div class="ks-col-when">When</div>
-            <div class="ks-col-source">Source</div>
-          </div>
-
-          <!-- Rows -->
-          <div class="ks-table-body" @keydown.stop>
-            <div v-if="filteredShortcuts.length === 0" class="ks-no-results">
-              No keybindings found for "{{ searchQuery }}"
-            </div>
-
-            <template v-for="(group, gi) in filteredGroups" :key="gi">
-              <div class="ks-group-header">{{ group.label }}</div>
-              <div
-                v-for="(sc, i) in group.shortcuts"
-                :key="i"
-                class="ks-row"
-                :class="{ 'ks-row--alt': i % 2 === 1 }"
-              >
-                <div class="ks-col-command">{{ sc.command }}</div>
-                <div class="ks-col-keybinding">
-                  <span v-for="(chord, ci) in sc.keys" :key="ci" class="ks-key-group">
-                    <kbd v-for="(k, ki) in chord" :key="ki" class="ks-key">{{ k }}</kbd>
-                    <span v-if="ci < sc.keys.length - 1" class="ks-chord-sep">then</span>
-                  </span>
-                </div>
-                <div class="ks-col-when ks-when-text">{{ sc.when ?? '' }}</div>
-                <div class="ks-col-source ks-source-text">{{ sc.source ?? 'Default' }}</div>
-              </div>
-            </template>
-          </div>
-
-        </div>
+    <!-- Rows -->
+    <div class="ks-table-body" @keydown.stop>
+      <div v-if="filteredGroups.length === 0" class="ks-no-results">
+        No keybindings found for "{{ searchQuery }}"
       </div>
-    </Transition>
-  </Teleport>
+
+      <template v-for="(group, gi) in filteredGroups" :key="gi">
+        <div class="ks-group-header">{{ group.label }}</div>
+        <div
+          v-for="(sc, i) in group.shortcuts"
+          :key="i"
+          class="ks-row"
+          :class="{ 'ks-row--alt': i % 2 === 1 }"
+        >
+          <div class="ks-col-command">{{ sc.command }}</div>
+          <div class="ks-col-keybinding">
+            <span v-for="(chord, ci) in sc.keys" :key="ci" class="ks-key-group">
+              <kbd v-for="(k, ki) in chord" :key="ki" class="ks-key">{{ k }}</kbd>
+              <span v-if="ci < sc.keys.length - 1" class="ks-chord-sep">then</span>
+            </span>
+            <span v-if="sc.keys.length === 0" class="ks-unbound">—</span>
+          </div>
+          <div class="ks-col-when ks-when-text">{{ sc.when ?? '' }}</div>
+          <div class="ks-col-source ks-source-text">{{ sc.source ?? 'Built-in' }}</div>
+        </div>
+      </template>
+    </div>
+  </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, inject } from 'vue'
+import { formatChord } from '~/composables/activity/useKeybindingRegistry.js'
 
+// Read-only viewer over the live command + keybinding registries. Every command
+// is listed (grouped by its category); a command with multiple bindings produces
+// one row per binding (e.g. Focus Editor Group → Ctrl+1…9), an unbound command a
+// single row with no keybinding — mirroring VS Code's full keybindings list.
+// Works in both presentations of the same EditorView: ModalHost binds `host` in;
+// as a promoted editor tab it isn't bound, so we fall back to `viewCtx` (the host).
 const props = defineProps({
-  visible: { type: Boolean, required: true },
+  host: { type: Object, default: null },
 })
-defineEmits(['close'])
+// Honor the `host` prop only when it really is the host (ModalHost binds it). In a
+// promoted tab, TabContentHost's props hook passes the tab object instead, so fall
+// back to the injected host.
+const ctx = (props.host?.facade ? props.host : null) ?? inject('viewCtx', null)
 
 const searchRef  = ref(null)
 const searchQuery = ref('')
 
-watch(() => props.visible, async (v) => {
-  if (v) {
-    searchQuery.value = ''
-    await nextTick()
-    searchRef.value?.focus()
+onMounted(async () => {
+  await nextTick()
+  searchRef.value?.focus()
+})
+
+// ── Live rows from the registries ─────────────────────────────────────────────
+// One row per (command × binding); `keys` is an array of chords, each chord an
+// array of display tokens. `when` flags conditionally-enabled commands (our
+// predicate `when()` can't be stringified, so we show a generic marker).
+const rows = computed(() => {
+  const { commands, keybindings } = ctx.facade
+  const out = []
+  for (const cmd of commands.list()) {
+    const binds = keybindings.forCommand(cmd.id)
+    const base = {
+      command:  cmd.title,
+      category: cmd.category || 'Other',
+      when:     cmd.when ? 'contextual' : '',
+      source:   'Built-in',
+    }
+    if (binds.length) {
+      for (const b of binds) out.push({ ...base, keys: [formatChord(b.chord)] })
+    } else {
+      out.push({ ...base, keys: [] })
+    }
   }
+  return out
 })
 
-// ── Shortcut definitions ──────────────────────────────────────────────────────
-// keys: array of chords; each chord is an array of key tokens
+function matches(sc, q) {
+  return sc.command.toLowerCase().includes(q) ||
+    sc.keys.flat().join(' ').toLowerCase().includes(q) ||
+    sc.category.toLowerCase().includes(q)
+}
 
-const SHORTCUT_GROUPS = [
-  {
-    label: 'General',
-    shortcuts: [
-      { command: 'Command Palette',       keys: [['Ctrl', 'Shift', 'P']], when: 'Always' },
-      { command: 'Settings',              keys: [['Ctrl', ',']], when: 'Always' },
-    ],
-  },
-  {
-    label: 'Editing',
-    shortcuts: [
-      { command: 'Undo',                  keys: [['Ctrl', 'Z']] },
-      { command: 'Redo',                  keys: [['Ctrl', 'Y']] },
-      { command: 'Copy',                  keys: [['Ctrl', 'C']] },
-      { command: 'Cut',                   keys: [['Ctrl', 'X']] },
-      { command: 'Paste',                 keys: [['Ctrl', 'V']] },
-      { command: 'Select All',            keys: [['Ctrl', 'A']], when: 'Directory focused' },
-    ],
-  },
-  {
-    label: 'Files',
-    shortcuts: [
-      { command: 'Rename',                keys: [['F2']],              when: 'File selected' },
-      { command: 'Move to Trash',         keys: [['Delete']],          when: 'File selected' },
-      { command: 'Delete Permanently',    keys: [['Shift', 'Delete']], when: 'File selected' },
-    ],
-  },
-  {
-    label: 'View',
-    shortcuts: [
-      { command: 'Zoom In',               keys: [['Ctrl', '+']], when: 'Directory focused' },
-      { command: 'Zoom Out',              keys: [['Ctrl', '-']], when: 'Directory focused' },
-      { command: 'Reset Zoom',            keys: [['Ctrl', '0']], when: 'Directory focused' },
-    ],
-  },
-  {
-    label: 'Editor',
-    shortcuts: [
-      { command: 'Split Editor Right',    keys: [['Ctrl', '\\']] },
-      { command: 'Close Tab',             keys: [['Ctrl', 'W']] },
-      { command: 'Focus Editor Group 1',  keys: [['Ctrl', '1']] },
-      { command: 'Focus Editor Group 2',  keys: [['Ctrl', '2']] },
-      { command: 'Focus Editor Group 3',  keys: [['Ctrl', '3']] },
-      { command: 'Focus Editor Group 4',  keys: [['Ctrl', '4']] },
-      { command: 'Focus Editor Group 5',  keys: [['Ctrl', '5']] },
-    ],
-  },
-]
-
-// ── Filtered view ─────────────────────────────────────────────────────────────
-
-const filteredShortcuts = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return SHORTCUT_GROUPS.flatMap(g => g.shortcuts)
-  return SHORTCUT_GROUPS.flatMap(g =>
-    g.shortcuts.filter(sc =>
-      sc.command.toLowerCase().includes(q) ||
-      sc.keys.flat().join(' ').toLowerCase().includes(q) ||
-      (sc.when ?? '').toLowerCase().includes(q)
-    )
-  )
-})
-
+// Group rows by category, filtered by the search query; groups sorted
+// alphabetically and rows within a group by command title.
 const filteredGroups = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return SHORTCUT_GROUPS
-  return SHORTCUT_GROUPS
-    .map(g => ({
-      ...g,
-      shortcuts: g.shortcuts.filter(sc =>
-        sc.command.toLowerCase().includes(q) ||
-        sc.keys.flat().join(' ').toLowerCase().includes(q) ||
-        (sc.when ?? '').toLowerCase().includes(q)
-      ),
+  const byCategory = new Map()
+  for (const sc of rows.value) {
+    if (q && !matches(sc, q)) continue
+    if (!byCategory.has(sc.category)) byCategory.set(sc.category, [])
+    byCategory.get(sc.category).push(sc)
+  }
+  return [...byCategory.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([label, shortcuts]) => ({
+      label,
+      shortcuts: shortcuts.sort((a, b) => a.command.localeCompare(b.command)),
     }))
-    .filter(g => g.shortcuts.length > 0)
 })
 </script>
 
 <style scoped>
-/* ── Backdrop ──────────────────────────────────────────────────────────────── */
-.ks-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 8000;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* ── Dialog ────────────────────────────────────────────────────────────────── */
-.ks-dialog {
-  width: min(860px, 90vw);
-  height: min(640px, 88vh);
-  background: var(--sidebar-bg, #252526);
-  border: 1px solid var(--border, #454545);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+.ks-root {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  min-height: 0;
 }
 
 /* ── Search row ────────────────────────────────────────────────────────────── */
@@ -228,20 +174,6 @@ const filteredGroups = computed(() => {
   flex-shrink: 0;
 }
 .ks-search-clear:hover { color: var(--text, #ccc); }
-
-.ks-close-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted, #888);
-  cursor: pointer;
-  padding: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-left: 4px;
-}
-.ks-close-btn:hover { color: var(--text, #ccc); background: var(--hover, rgba(255,255,255,0.07)); }
 
 /* ── Table header ──────────────────────────────────────────────────────────── */
 .ks-table-head {
@@ -341,6 +273,11 @@ const filteredGroups = computed(() => {
   margin: 0 2px;
 }
 
+.ks-unbound {
+  font-size: 12px;
+  color: var(--text-muted, #666);
+}
+
 .ks-when-text {
   font-size: 12px;
   color: var(--text-muted, #888);
@@ -354,8 +291,4 @@ const filteredGroups = computed(() => {
   font-size: 12px;
   color: var(--text-muted, #666);
 }
-
-/* ── Transition ────────────────────────────────────────────────────────────── */
-.ks-enter-active, .ks-leave-active { transition: opacity 0.12s, transform 0.12s; }
-.ks-enter-from, .ks-leave-to { opacity: 0; transform: scale(0.97); }
 </style>

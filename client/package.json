@@ -1,40 +1,56 @@
 {
-  "name": "files-workbench2-client",
+  "name": "files-workbench-client",
   "version": "0.1.0",
   "private": true,
   "main": "electron/main.js",
   "scripts": {
-    "dev": "node scripts/dev.js",
-    "dev:web": "nuxt dev",
-    "build": "nuxt build",
-    "build:electron": "nuxt generate && electron-builder",
+    "dev:web:client": "nuxt dev",
+    "dev:electron:client": "node scripts/dev.js",
+    "build:web": "nuxt build",
+    "build:electron": "node scripts/build-server.js && nuxt generate && electron-builder",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
     "@mdi/js": "^7.4.47",
+    "markdown-it": "^14.2.0",
     "monaco-editor": "^0.55.1",
+    "uuid": "^14.0.0",
     "video.js": "^8.23.7",
-    "wavesurfer.js": "^7.12.7",
-    "uuid": "^14.0.0"
+    "wavesurfer.js": "^7.12.7"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "electron": "^34.0.0",
+    "electron": "^34.5.8",
     "electron-builder": "^25.0.0",
     "nuxt": "~3.13.2",
     "vue": "^3.5.0"
   },
   "build": {
-    "appId": "com.files-workbench2.app",
-    "productName": "Files Workbench 2",
+    "appId": "com.files-workbench.app",
+    "productName": "Files Workbench",
     "directories": {
       "output": "dist-electron"
     },
+    "artifactName": "FilesWorkbench-${version}-${arch}.${ext}",
     "files": [
       "electron/**/*",
       ".output/public/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../server/v1/dist",
+        "to": "."
+      },
+      {
+        "from": "../server/v1/blacklist.yaml",
+        "to": "blacklist.yaml"
+      },
+      {
+        "from": "../config",
+        "to": "config"
+      }
     ],
     "linux": {
       "target": "AppImage"
@@ -45,5 +61,8 @@
     "win": {
       "target": "nsis"
     }
+  },
+  "allowScripts": {
+    "electron@34.5.8": true
   }
 }

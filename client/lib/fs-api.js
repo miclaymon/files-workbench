@@ -63,6 +63,15 @@ async function _post(path, body = {}, signal = null) {
 }
 
 async function _put(path, body = {}, signal = null) {
+  return _mutate('PUT', path, body, signal)
+}
+
+async function _patch(path, body = {}, signal = null) {
+  return _mutate('PATCH', path, body, signal)
+}
+
+// Shared PUT/PATCH sender against the control server.
+async function _mutate(method, path, body = {}, signal = null) {
   const url = `${CONTROL_BASE}${path}`
   const timeoutController = new AbortController()
   const timer = setTimeout(() => timeoutController.abort(), API_TIMEOUT_MS)
@@ -72,7 +81,7 @@ async function _put(path, body = {}, signal = null) {
 
   try {
     const res = await fetch(url, {
-      method: 'PUT',
+      method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: fetchSignal,
@@ -99,19 +108,47 @@ export function fsStat(path) {
   return _get(`/_api/${API_V}/fs/stat`, { path })
 }
 
+// One-shot dir-size read: { size, files, done }. `done` is false while the server is
+// still walking the tree (the size is a running total — "at least this much").
 export function fsDirSize(path, signal) {
   return _get(`/_api/${API_V}/fs/dir_size`, { path }, signal)
+}
+
+// Poll a directory's size until the walk finishes, invoking onUpdate(size, files, done)
+// on each tick so the UI can count up live. Resolves when done or when `signal` aborts;
+// an already-cached (done) path resolves on the first tick — instant. Network/abort
+// errors quietly stop the loop.
+export async function watchDirSize(path, onUpdate, { signal, intervalMs = 250 } = {}) {
+  while (!signal?.aborted) {
+    let res
+    try {
+      res = await fsDirSize(path, signal)
+    } catch {
+      return   // aborted or unreachable
+    }
+    const done = !!res?.done
+    onUpdate(res?.size ?? 0, res?.files ?? 0, done)
+    if (done || signal?.aborted) return
+    await new Promise((resolve) => {
+      const t = setTimeout(resolve, intervalMs)
+      signal?.addEventListener('abort', () => { clearTimeout(t); resolve() }, { once: true })
+    })
+  }
 }
 
 // opts: { includeMetadata, includeDirSize, showHidden, excludeCategories, signal }
 const LIST_DIR_PAGE_SIZE = 16
 
 export async function fsListDir(path, opts = {}) {
-  const { includeMetadata = true, includeDirSize = false, showHidden = false, excludeCategories = 'System', signal } = opts
-  const params = { path, includeMetadata, includeDirSize, showHidden, excludeCategories, limit: LIST_DIR_PAGE_SIZE, offset: 0 }
+  const { includeMetadata = true, includeDirSize = false, showHidden = false, excludeCategories = 'System', limit = null, signal } = opts
+  const pageSize = limit ?? LIST_DIR_PAGE_SIZE
+  const params = { path, includeMetadata, includeDirSize, showHidden, excludeCategories, limit: pageSize, offset: 0 }
 
   const first = await _get(`/_api/${API_V}/fs/list_dir`, params, signal)
-  if (first.offset + first.items.length >= first.total) return first
+  // An explicit `limit` requests a single page (e.g. a lightweight directory peek) —
+  // return it as-is without fetching the remaining pages. `total` still reflects the
+  // full count so callers can show "+N more".
+  if (limit != null || first.offset + first.items.length >= first.total) return first
 
   // Total is known after first page — fire all remaining pages in parallel
   const offsets = []
@@ -257,11 +294,38 @@ export async function fsDecompress(path, destDir, opts = {}) {
   return data
 }
 
-// ── preferences / customization writes ───────────────────────────────────────
+// ── directory customization (.directory reads / writes) ──────────────────────
+// The server reads the directory from the `path` query param on every method.
 
-export function fsCustomizationPut(path, customization, opts = {}) {
-  return _put(`/_api/${API_V}/fs/customization`, { path, ...customization }, opts.signal)
+// Full customization for a directory: the resolved typed summary (name/icon/comment,
+// icon resolved to an absolute path for relative/~ file icons) plus the raw editable
+// groups (`sections`) from its .directory file.
+export function fsCustomizationGet(path, opts = {}) {
+  return _get(`/_api/${API_V}/fs/customization`, { path }, opts.signal)
 }
+
+// Set the common typed [Desktop Entry] fields, losslessly (other keys/sections/comments
+// are preserved). Omit a field to keep it; pass "" to remove it.
+//   customization: { name?, icon?, comment? }
+export function fsCustomizationPut(path, customization, opts = {}) {
+  return _put(`/_api/${API_V}/fs/customization?path=${encodeURIComponent(path)}`, customization, opts.signal)
+}
+
+// Apply generic set/delete operations to arbitrary keys, losslessly. Ops without a
+// section default to the app group ([X-Files-Workbench]).
+//   ops: [{ op: 'set' | 'delete', section?, key, value? }]
+export function fsCustomizationPatch(path, ops, opts = {}) {
+  return _patch(`/_api/${API_V}/fs/customization?path=${encodeURIComponent(path)}`, { ops }, opts.signal)
+}
+
+// Pin or unpin item names within a directory (stored in .directory
+// [X-Files-Workbench] Pinned). Pinned items are grouped first in listings.
+//   dir: directory path · names: item basenames · pinned: true to pin, false to unpin
+export function fsPin(dir, names, pinned, opts = {}) {
+  return _post(`/_api/${API_V}/fs/pin`, { path: dir, names, pinned }, opts.signal)
+}
+
+// ── preferences ───────────────────────────────────────────────────────────────
 
 export function fsPreferencesPut(prefs, opts = {}) {
   return _put(`/_api/${API_V}/preferences`, prefs, opts.signal)

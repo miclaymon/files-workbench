@@ -44,10 +44,11 @@ export function resolveCustomIcon(iconStr) {
   }
 
   // Dolphin color variant: "folder-violet", "folder-open-red", etc.
+  // Restrict to known palette entries so XDG icon theme names like "folder-android"
+  // are not misinterpreted as folder colors (they should fall through to the icon pack).
   const m = iconStr.match(/^folder(?:-open)?-(.+)$/)
-  if (m) {
-    const color = FOLDER_COLORS[m[1]] ?? m[1] // fall back to raw CSS name
-    return { type: 'folder-color', color }
+  if (m && m[1] in FOLDER_COLORS) {
+    return { type: 'folder-color', color: FOLDER_COLORS[m[1]] }
   }
 
   return null

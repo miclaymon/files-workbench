@@ -16,6 +16,7 @@
           @background-contextmenu="$emit('background-contextmenu', $event)"
           @right-drag-drop="$emit('right-drag-drop', $event)"
           @rename="$emit('rename', $event)"
+          @rename-batch="$emit('rename-batch', $event)"
           @stats="$emit('stats', $event)"
           @update:layout="$emit('update:layout', $event)"
           @tab-contextmenu="$emit('tab-contextmenu', $event)"
@@ -44,7 +45,7 @@ defineProps({
 })
 defineEmits([
   'select', 'open', 'navigate', 'contextmenu', 'background-contextmenu',
-  'right-drag-drop', 'rename', 'stats', 'update:layout', 'tab-contextmenu',
+  'right-drag-drop', 'rename', 'rename-batch', 'stats', 'update:layout', 'tab-contextmenu',
 ])
 </script>
 

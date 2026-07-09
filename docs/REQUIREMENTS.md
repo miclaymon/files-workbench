@@ -64,6 +64,26 @@
 - All colors defined as CSS custom properties
 - User-defined themes via `config/themes/`
 
+## Extensibility (activities)
+
+- The workbench is composed of **activities** — self-contained feature modules that declare the surfaces they contribute (editor **tab views**, sidebar/panel **views + sections**, and **status-bar widgets**) and an optional runtime **API**
+- Activities collaborate only through an internal API, never by reaching into each other directly:
+  - **Query** another activity's API (`host.api(id)`)
+  - **Capabilities** — read the active activity's published context (e.g. the `selection` capability that Preview and Details consume) without knowing which activity produced it
+  - **Pub/sub** — subscribe to app-level events (`active-tab-change`) and per-activity events (Explorer's `selection-change`); a provider activity (Debug) can expose a service (logging) others call
+- Activities also **contribute** through the same internal facade (`host.facade`): **commands** (the single source of truth for invokable behaviour — menus, keybindings, and the command palette all reference commands by id), **keybindings**, **menu items** (appended into app-level menus by menu id, while an activity controls its own menus directly), **hooks** (a synchronous ordered transform/veto chain the menu API is built on), **modal editors**, **editor tabs**, and **preference sections** (merged into the Settings panel)
+- The command, view, panel, status, and modal registries are **dynamic** — contributions (including whole activities, via `facade.activities.register`) can be added or removed at runtime, the basis for runtime plugin load/unload
+- Selection / directory-stats context lives in the activity that owns it (Explorer), shared via its API rather than held globally
+- First-party activities use the same internal API a plugin does
+
+## Extensibility (plugins)
+
+- A **plugin** is an out-of-core activity loaded at runtime through a *permission-scoped* view of the Workbench API — the same contribution path as a first-party activity, narrowed by declared permissions
+- Each plugin ships a `manifest.json` (id, version, entry, declared `permissions` + `host_permissions`, dependencies) and a `src/plugin.js` entry exporting `activate(api)` / optional `deactivate(api)`; `activate` contributes through `api` and returns a disposer that unwinds everything
+- Permissions are two-tier: **front-end** capabilities gate facade slices (`activities`, `commands`, `keybindings`, `menus`, `hooks`, `modals`, `editor`, `preferences`, `events`, `selection`, `query`); **host** permissions gate brokered backend services (`scm:read`/`scm:write`, …) — plugins never touch the filesystem or control server directly
+- Plugins are loaded as `{ manifest, module }` pairs with dependency ordering and lifecycle; built-ins ship in-tree today, the archive/sandbox runtime is planned (see Roadmap → Plugin system)
+- A first-party **Source Control** plugin (git changes panel, commit graph, branch status) is built entirely through this API as the reference implementation; authoring is documented in `docs/PLUGINS.md`
+
 ## Non-functional
 
 - Fast directory listing for large directories (thousands of files)

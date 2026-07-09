@@ -1,6 +1,7 @@
 node_modules/
 .nuxt/
 .output/
+dist/
 dist-electron/
 .env
 .env.local
@@ -9,13 +10,18 @@ dist-electron/
 config/preferences/user-preferences.json
 config/keybindings/user-keybindings.json
 
-# Python virtualenv and bytecode
-server/v1/.venv/
-**/__pycache__/
-*.pyc
+# Client-side build artifacts
+client/.nuxt/
+client/dist
+client/dist/
+client/dist-electron/
 
 # Go build artifacts
-server/v2/files-workbench
+server/v1/dist/
+server/v1/files-workbench
+
+# Generated icon-pack assets (run scripts/install-material-icon-theme.sh)
+config/plugins/material-icon-theme/vscode-material-icon-theme/
 
 # Claude Code local settings
 .claude/

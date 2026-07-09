@@ -7,17 +7,18 @@
     <DirectoryPanel
       ref="directoryPanelRef"
       :items="itemsWithThumbnails"
+      :dir-sizes="dirSizes"
       :selectedItems="props.selectedItems"
       :focusedItem="props.focusedItem"
       :layout="prefs.layout ?? 'grid'"
       :alwaysShowCheckboxes="prefs.alwaysShowCheckboxes"
       :hoverPreviewEnabled="prefs.hoverPreviewEnabled ?? true"
       :hoverPreviewDelayMs="prefs.hoverPreviewDelayMs ?? 2000"
+      :spaceHoldDelayMs="prefs.spaceHoldPreviewMs ?? 500"
       :currentPath="props.path"
       :navigationHistory="navigationHistory"
       :changeTabPath="changeTabPath"
       @select="handleSelect"
-      @focus="handleFocus"
       @contextmenu="showContextMenu"
       @background-contextmenu="$emit('background-contextmenu', $event)"
       @right-drag-drop="$emit('right-drag-drop', $event)"
@@ -27,20 +28,42 @@
       @navigate-next="handleNavigateNext"
       @update:layout="$emit('update:layout', $event)"
       @rename="$emit('rename', $event)"
+      @rename-batch="$emit('rename-batch', $event)"
     />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, shallowReactive, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, reactive, shallowReactive, onMounted, onUnmounted, onActivated } from 'vue'
 import { MEDIA_BASE } from '~/lib/api-config.js'
-import { fsStat, fsListDir, fsArchiveList, fsExeInfo } from '~/lib/fs-api.js'
+import { fsStat, fsListDir, watchDirSize, fsArchiveList, fsExeInfo } from '~/lib/fs-api.js'
 import { perfStart, perfMark, perfFlush } from '~/lib/perf-log.js'
 
 const ARCHIVE_EXTS = ['.zip', '.tar', '.tar.gz', '.tar.bz2', '.tgz', '.tbz2', '.7z', '.rar', '.gz', '.bz2', '.xz', '.tar.xz']
 function isArchivePath(p) {
   const lower = p.toLowerCase()
   return ARCHIVE_EXTS.some(ext => lower.endsWith(ext))
+}
+
+// Archive listings are sorted client-side (dirs first, then case-insensitive name).
+// Regular directory listings arrive already sorted from the server, so they are not
+// re-sorted here. Shared by the initial fetch and the background soft-refresh.
+function sortArchiveItems(list) {
+  return list.sort((a, b) => {
+    if ((a.kind === 'dir') !== (b.kind === 'dir')) return a.kind === 'dir' ? -1 : 1
+    return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+  })
+}
+
+// Client-side re-sort after an optimistic rename, matching the server's ordering:
+// pinned items first, then directories/apps, then case-insensitive name — so a
+// renamed item stays in its pinned/unpinned group before the next refresh.
+function compareDirItems(a, b) {
+  if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
+  const ad = a.kind === 'dir' || a.kind === 'app'
+  const bd = b.kind === 'dir' || b.kind === 'app'
+  if (ad !== bd) return ad ? -1 : 1
+  return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
 }
 
 const props = defineProps({
@@ -52,7 +75,7 @@ const props = defineProps({
   focusedItem: { type: Object, default: null },
 })
 
-const emit = defineEmits(['select', 'open', 'navigate', 'contextmenu', 'background-contextmenu', 'right-drag-drop', 'update:layout', 'rename', 'stats'])
+const emit = defineEmits(['select', 'open', 'navigate', 'contextmenu', 'background-contextmenu', 'right-drag-drop', 'update:layout', 'rename', 'rename-batch', 'stats'])
 
 const directoryPanelRef = ref(null)
 const navigationHistory = ref({ previous: [], next: [] })
@@ -67,7 +90,18 @@ const archiveInfo = computed(() => {
 // Internal fetch state
 const items = ref([])
 const loading = ref(false)
+// Async directory sizes kept OFF the items array, keyed by path:
+//   path → { size, files, loading }
+// Storing them on the items would make the `itemsWithThumbnails` spread recompute
+// every item (new identities → grid flicker, thumbnail churn). A separate reactive
+// map lets each <DirSizeCell> track only its own key and re-render in isolation.
+const dirSizes = reactive({})
 let _gen = 0
+// Stable per-item identity, assigned at fetch time and preserved across renames so
+// the directory grid's v-for key never changes for an existing item. Without this,
+// an optimistic rename (path change) would change the key and force Vue to remount
+// the item — reloading its thumbnail and causing flicker / 404s mid-rename.
+let _uid = 0
 let _ctrl = null
 
 async function fetchItems(path) {
@@ -77,6 +111,7 @@ async function fetchItems(path) {
   _ctrl = ctrl
   loading.value = true
   items.value = []
+  for (const k of Object.keys(dirSizes)) delete dirSizes[k]
   emit('stats', { count: 0, totalSize: 0 })
 
   try {
@@ -85,32 +120,28 @@ async function fetchItems(path) {
       // Virtual archive path: list archive contents
       const result = await fsArchiveList(info.archiveFile, info.innerPath, { signal: ctrl.signal })
       if (gen !== _gen) return
-      items.value = (result.items ?? [])
-        .map(item => ({
-          ...item,
-          path: info.archiveFile + '::' + info.innerPath + item.name + (item.kind === 'dir' ? '/' : ''),
-        }))
-        .sort((a, b) => {
-          if ((a.kind === 'dir') !== (b.kind === 'dir')) return a.kind === 'dir' ? -1 : 1
-          return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
-        })
+      items.value = sortArchiveItems((result.items ?? []).map(item => ({
+        ...item,
+        _id: ++_uid,
+        path: info.archiveFile + '::' + info.innerPath + item.name + (item.kind === 'dir' ? '/' : ''),
+      })))
     } else {
-      // Normal filesystem path
+      // Phase 1: fetch listing without dir sizes — renders immediately
       const excl = (props.excludedCategories ?? ['System']).join(',')
       const showHidden = props.prefs?.showHiddenFiles ?? false
       perfStart(`list_dir:${path}`)
       perfMark('mount')
-      const result = await fsListDir(path, { includeMetadata: true, includeDirSize: true, showHidden, excludeCategories: excl, signal: ctrl.signal })
+      const result = await fsListDir(path, { includeMetadata: true, showHidden, excludeCategories: excl, signal: ctrl.signal })
       if (gen !== _gen) return
-      items.value = result.items ?? []
+      items.value = (result.items ?? []).map(item => ({ ...item, _id: ++_uid }))
+      seedDirSizePlaceholders()
     }
-    const totalSize = items.value.reduce((sum, i) => sum + (i.size ?? 0), 0)
-    emit('stats', { count: items.value.length, totalSize })
+    emitStats()
   } catch {
     if (!ctrl.signal.aborted) items.value = []
   } finally {
     if (_ctrl === ctrl) {
-      _ctrl = null
+      // Keep _ctrl live through phase 2 so the next navigation can abort it.
       loading.value = false
     }
   }
@@ -118,10 +149,154 @@ async function fetchItems(path) {
   if (!archiveInfo.value) {
     perfMark('items-ready')
     perfFlush()
+    // Phase 2: backfill directory sizes concurrently (shimmer shows while pending)
+    await fetchDirSizes(gen, ctrl)
+  }
+
+  if (_ctrl === ctrl) _ctrl = null
+}
+
+// Emit directory stats: file sizes are known up front, directory sizes are folded
+// in from `dirSizes` as they resolve — using their running (partial) totals, so the
+// aggregate counts up. `inProgress` is true while any directory is still calculating.
+function emitStats() {
+  let total = 0
+  let inProgress = false
+  for (const it of items.value) {
+    if (it.kind === 'dir') {
+      total += dirSizes[it.path]?.size ?? 0
+      if (dirSizes[it.path]?.inProgress) inProgress = true
+    } else {
+      total += it.size ?? 0
+    }
+  }
+  // Selected total, with selected directories contributing their (running) recursive
+  // size — so the status bar's "Selected" reflects folder sizes and pulses/counts up.
+  let selSize = 0
+  let selInProgress = false
+  for (const it of props.selectedItems) {
+    if (it.kind === 'dir') {
+      selSize += dirSizes[it.path]?.size ?? 0
+      if (dirSizes[it.path]?.inProgress) selInProgress = true
+    } else {
+      selSize += it.size ?? 0
+    }
+  }
+  emit('stats', {
+    count: items.value.length, totalSize: total, inProgress,
+    selectedCount: props.selectedItems.length, selectedSize: selSize, selectedInProgress: selInProgress,
+  })
+}
+
+// Mark the current directories as pending (the previous directory's entries were
+// already cleared on reset) so their cells show the shimmer immediately, before
+// phase 2 begins fetching.
+function seedDirSizePlaceholders() {
+  for (const it of items.value) {
+    if (it.kind === 'dir') dirSizes[it.path] = { size: null, files: null, loading: true, inProgress: true }
+  }
+}
+
+// Resolve directory sizes in the background, capped at DIRS_CONCURRENCY in-flight
+// requests. Each result updates only its own `dirSizes` entry, so only that one
+// <DirSizeCell> re-renders — the item objects (and thus the grid rows) are untouched.
+const DIRS_CONCURRENCY = 4
+
+function fetchDirSizes(gen, ctrl) {
+  const dirPaths = items.value.filter(i => i.kind === 'dir').map(i => i.path)
+  return fetchDirSizesFor(dirPaths, gen, ctrl)
+}
+
+async function fetchDirSizesFor(dirPaths, gen, ctrl) {
+  if (!dirPaths.length) return
+  let idx = 0
+  async function worker() {
+    while (idx < dirPaths.length) {
+      if (gen !== _gen) return
+      const path = dirPaths[idx++]
+      // Poll the size until the walk finishes: each tick updates the running total so
+      // the cell (and the summed aggregate) counts up, pulsing while inProgress.
+      await watchDirSize(path, (size, files, done) => {
+        if (gen !== _gen) return
+        dirSizes[path] = { size, files, loading: false, inProgress: !done }
+        emitStats()
+      }, { signal: ctrl.signal })
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(DIRS_CONCURRENCY, dirPaths.length) }, worker))
+}
+
+// Non-destructive background refresh, used when a kept-alive tab is re-revealed (see
+// onActivated). Re-lists the current directory and reconciles it against the existing
+// items by path: unchanged entries keep their object identity (and _id), so their grid
+// cells and thumbnails are NOT remounted; only added / removed / changed entries move.
+// Bails early when nothing changed, so an unchanged folder costs one listing call and
+// no DOM work. Mirrors the directory tree's diff-merge (useDirectoryFileTree).
+async function softRefresh() {
+  const path = props.path
+  const info = archiveInfo.value
+  const gen = ++_gen
+  _ctrl?.abort()
+  const ctrl = new AbortController()
+  _ctrl = ctrl
+  try {
+    let fresh
+    if (info) {
+      const result = await fsArchiveList(info.archiveFile, info.innerPath, { signal: ctrl.signal })
+      if (gen !== _gen) return
+      fresh = (result.items ?? []).map(item => ({
+        ...item,
+        path: info.archiveFile + '::' + info.innerPath + item.name + (item.kind === 'dir' ? '/' : ''),
+      }))
+    } else {
+      const excl = (props.excludedCategories ?? ['System']).join(',')
+      const showHidden = props.prefs?.showHiddenFiles ?? false
+      const result = await fsListDir(path, { includeMetadata: true, showHidden, excludeCategories: excl, signal: ctrl.signal })
+      if (gen !== _gen) return
+      fresh = result.items ?? []
+    }
+
+    // Reconcile by path, reusing existing objects where the entry is unchanged.
+    const prevByPath = new Map(items.value.map(it => [it.path, it]))
+    let changed = fresh.length !== items.value.length
+    let merged = fresh.map((f) => {
+      const prev = prevByPath.get(f.path)
+      if (!prev) { changed = true; return { ...f, _id: ++_uid } }
+      if (prev.size !== f.size || prev.date_modified !== f.date_modified) {
+        changed = true
+        return { ...prev, ...f, _id: prev._id }   // patch metadata, keep identity
+      }
+      return prev   // unchanged — same reference, Vue skips its DOM
+    })
+    if (!changed) return   // folder is identical; don't touch items / dirSizes
+
+    if (info) merged = sortArchiveItems(merged)   // regular listings keep server order
+    items.value = merged
+
+    // Reconcile the directory-size cache: drop vanished paths, seed + fetch the new
+    // dirs only (existing dirs keep their resolved sizes).
+    const livePaths = new Set(merged.map(i => i.path))
+    for (const k of Object.keys(dirSizes)) if (!livePaths.has(k)) delete dirSizes[k]
+    if (!info) {
+      const newDirPaths = merged.filter(i => i.kind === 'dir' && !(i.path in dirSizes)).map(i => i.path)
+      for (const p of newDirPaths) dirSizes[p] = { size: null, files: null, loading: true }
+      emitStats()
+      if (newDirPaths.length) await fetchDirSizesFor(newDirPaths, gen, ctrl)
+    } else {
+      emitStats()
+    }
+  } catch {
+    // aborted or network error — keep the current items as-is
+  } finally {
+    if (_ctrl === ctrl) _ctrl = null
   }
 }
 
 watch(() => props.path, (newPath) => { fetchItems(newPath) })
+watch(() => props.prefs?.showHiddenFiles, () => { fetchItems(props.path) })
+// Recompute stats when the selection changes so the status bar's selected total (incl.
+// selected directory sizes) updates immediately, not only when a size resolves.
+watch(() => props.selectedItems, () => emitStats())
 
 const IMAGE_EXTS = new Set(['png','jpg','jpeg','webp','gif','bmp','ico','avif'])
 const VIDEO_EXTS = new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts'])
@@ -164,13 +339,16 @@ const itemsWithThumbnails = computed(() => items.value.map(item => {
   const inArchive = item.path.includes('::')
   let thumbnail = null
   if (!inArchive) {
+    // During optimistic rename, thumbnailPath holds the old (still-existing) path so the
+    // thumbnail URL remains valid until the server-side rename completes.
+    const srcPath = item.thumbnailPath ?? item.path
     if (ext === 'exe') {
-      thumbnail = `${MEDIA_BASE}/exe_icon?path=${encodeURIComponent(item.path)}`
+      thumbnail = `${MEDIA_BASE}/exe_icon?path=${encodeURIComponent(srcPath)}`
     } else if (thumbnailsEnabled.value) {
       thumbnail = IMAGE_EXTS.has(ext)
-        ? `${MEDIA_BASE}/image?path=${encodeURIComponent(item.path)}&size=${THUMB_SIZE}`
+        ? `${MEDIA_BASE}/image?path=${encodeURIComponent(srcPath)}&size=${THUMB_SIZE}`
         : (VIDEO_EXTS.has(ext) || AUDIO_EXTS.has(ext))
-          ? `${MEDIA_BASE}/thumbnail?path=${encodeURIComponent(item.path)}&size=${THUMB_SIZE}`
+          ? `${MEDIA_BASE}/thumbnail?path=${encodeURIComponent(srcPath)}&size=${THUMB_SIZE}`
           : null
     }
   }
@@ -208,6 +386,16 @@ onMounted(() => {
   fetchItems(props.path)
 })
 
+// The tab is kept alive, so re-revealing it from the cache fires onActivated. Skip the
+// first one (it coincides with the initial mount, which already fetched) and on every
+// later reveal run a background diff-refresh to pick up filesystem changes without a
+// full reload.
+let _activatedOnce = false
+onActivated(() => {
+  if (!_activatedOnce) { _activatedOnce = true; return }
+  softRefresh()
+})
+
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeyDown)
   _ctrl?.abort()
@@ -239,15 +427,10 @@ function renameItem(oldPath, newName, newPath) {
 
   const updated = { ...items.value[idx], name: newName, path: newPath }
 
-  // Preserve sort order: dirs first, then case-insensitive by name
+  // Preserve sort order: pinned first, then dirs, then case-insensitive by name
   items.value = items.value
     .map((item, i) => (i === idx ? updated : item))
-    .sort((a, b) => {
-      const ad = a.kind === 'dir' || a.kind === 'app'
-      const bd = b.kind === 'dir' || b.kind === 'app'
-      if (ad !== bd) return ad ? -1 : 1
-      return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
-    })
+    .sort(compareDirItems)
 
   // Keep exe_info cache consistent
   if (oldPath in exeInfoCache) {
@@ -258,7 +441,37 @@ function renameItem(oldPath, newName, newPath) {
   return true
 }
 
-defineExpose({ changeTabPath, navigationHistory, refresh: () => fetchItems(props.path), renameItem })
+function batchRenameItems(ops) {
+  // Map of oldPath → op for quick lookup
+  const opMap = new Map(ops.map(o => [o.oldPath, o]))
+  const anyMatch = items.value.some(item => opMap.has(item.path))
+  if (!anyMatch) return
+
+  items.value = items.value
+    .map(item => {
+      const o = opMap.get(item.path)
+      if (!o) return item  // same object reference — Vue skips DOM diff
+      const updated = { ...item, name: o.newName, path: o.newPath, thumbnailPath: item.path }
+      if (item.path in exeInfoCache) {
+        exeInfoCache[o.newPath] = exeInfoCache[item.path]
+        delete exeInfoCache[item.path]
+      }
+      return updated
+    })
+    .sort(compareDirItems)
+}
+
+function clearOptimisticThumbnails(paths) {
+  const pathSet = new Set(paths)
+  if (!items.value.some(item => pathSet.has(item.path) && item.thumbnailPath)) return
+  items.value = items.value.map(item =>
+    pathSet.has(item.path) && item.thumbnailPath
+      ? { ...item, thumbnailPath: undefined }
+      : item
+  )
+}
+
+defineExpose({ changeTabPath, navigationHistory, refresh: () => fetchItems(props.path), renameItem, batchRenameItems, clearOptimisticThumbnails })
 
 function showContextMenu({ event, item }) { emit('contextmenu', { event, item }) }
 

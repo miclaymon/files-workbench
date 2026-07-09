@@ -109,6 +109,7 @@ export function useEditorGrid({ log, getInitialEditor, saveEditor }) {
         if (to < 0) to = target.tabs.length
         target.tabs.splice(to, 0, tab)
       }
+      reorderForPin(target)   // pinned tabs always stay grouped at the front
       target.activeTabId = tab.id
       activeGroupId.value = targetGroupId
       if (sourceGroupId !== targetGroupId) cleanupEmpty(sourceGroupId)
@@ -144,6 +145,16 @@ export function useEditorGrid({ log, getInitialEditor, saveEditor }) {
     const clone = { ...src, id: uuid(), mode: 'normal', pinned: false, selectedItems: [...(src.selectedItems ?? [])] }
     const newLeaf = createLeaf({ tabs: [clone], activeTabId: clone.id })
     editorRoot.value = insertLeafBeside(editorRoot.value, groupId, side, newLeaf)
+    activeGroupId.value = newLeaf.id
+  }
+
+  // Open a new tab in a fresh split group beside the active one (unlike
+  // splitActiveGroup, which clones the current tab). Used by "…to the Side".
+  function openTabBeside(tab, side = 'right') {
+    const g = activeGroup.value
+    if (!g) { addTabToActiveGroup(tab); return }
+    const newLeaf = createLeaf({ tabs: [tab], activeTabId: tab.id })
+    editorRoot.value = insertLeafBeside(editorRoot.value, g.id, side, newLeaf)
     activeGroupId.value = newLeaf.id
   }
 
@@ -237,8 +248,15 @@ export function useEditorGrid({ log, getInitialEditor, saveEditor }) {
   }
 
   function findTabByKind(kind) {
+    return findTab(t => t.kind === kind)
+  }
+
+  // Generic tab search across all groups: returns { groupId, tab } for the first
+  // tab matching `predicate(tab)`, or null. The kind/path finders delegate here;
+  // openTab uses it for kind+params identity matching.
+  function findTab(predicate) {
     for (const leaf of collectLeaves(editorRoot.value)) {
-      const tab = leaf.tabs.find(t => t.kind === kind)
+      const tab = leaf.tabs.find(predicate)
       if (tab) return { groupId: leaf.id, tab }
     }
     return null
@@ -296,7 +314,7 @@ export function useEditorGrid({ log, getInitialEditor, saveEditor }) {
     // controller
     editorController,
     // tab helpers
-    findTabByPath, findTabByKind, focusTab, addTabToActiveGroup, openPeekTabForDir, flashTab,
-    splitWithTab, closeOtherTabs, triggerInlineRename,
+    findTabByPath, findTabByKind, findTab, focusTab, addTabToActiveGroup, openPeekTabForDir, flashTab,
+    splitWithTab, openTabBeside, closeOtherTabs, triggerInlineRename,
   }
 }

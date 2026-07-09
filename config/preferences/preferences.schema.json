@@ -18,6 +18,14 @@
       "description": "Built-in UI theme. 'system' follows the OS preference. Custom themes can be added to config/themes/.",
       "default": "dark"
     },
+    "iconTheme": {
+      "title": "Icon Theme",
+      "type": "string",
+      "x-control": "select",
+      "x-options": "iconThemes",
+      "description": "Active icon pack, provided by an icon-pack plugin (e.g. Material Icon Theme). Resolves file/folder icons. Options are the installed icon-pack plugins; falls back to the first one, then to the built-in glyphs.",
+      "default": "material-icon-theme"
+    },
     "explorer": {
       "title": "Explorer",
       "type": "object",
@@ -89,6 +97,14 @@
           "maximum": 5000,
           "description": "How long the cursor must rest on a thumbnail before the hover preview appears.",
           "default": 1000
+        },
+        "spaceHoldPreviewMs": {
+          "title": "Hold-Space Preview Delay (ms)",
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 3000,
+          "description": "How long to hold Space on the focused item before its preview popup appears. A quick Space tap toggles the item's selection instead.",
+          "default": 500
         }
       }
     },

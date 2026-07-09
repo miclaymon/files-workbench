@@ -21,46 +21,45 @@ This installs root npm dependencies (`concurrently`) and client npm dependencies
 
 ## Starting the dev environment
 
-### Full stack (recommended)
+The Go process runs **two** servers: a data server on port **8001** (`PORT`,
+read-only GETs) and a control server on port **8002** (`CONTROL_PORT`, mutating
+POST/PUTs). The Nuxt dev server runs on port 3000.
+
+### Full stack with Electron (recommended)
 
 ```bash
-npm run dev:v2
+npm run dev          # alias for dev:electron — Go server + Nuxt + Electron window
 ```
 
-Starts the Go server on port 8000 and the Nuxt dev server on port 3000. Open http://localhost:3000 in a browser.
-
-To also open an Electron window:
+### Full stack in the browser (no Electron window)
 
 ```bash
-./start-dev.sh
+npm run dev:web      # Go server + Nuxt; open http://localhost:3000
 ```
 
-### Web browser only (no Electron window)
+### Web (client) only — no Go server
 
 ```bash
-npm run dev:client
-# or
-cd client && npm run dev:web
+npm run dev:web:client
 ```
-
-Open http://localhost:3000 in a browser.
 
 ### Go server only
 
 ```bash
-npm run dev:server:v2
+npm run dev:server
 # or
-cd server/v2 && PORT=8000 go run .
+cd server/v1 && go run .          # PORT/CONTROL_PORT override the 8001/8002 defaults
 ```
 
-There is no Swagger UI. Refer to `server/v2/main.go` for the full route list or use `curl`/`httpie` against `http://localhost:8000/health` to verify the server is up.
+There is no Swagger UI. Refer to `server/v1/main.go` for the full route list or
+`curl http://localhost:8001/health` to verify the data server is up.
 
 ## Project-specific dev notes
 
 ### Hot reload
 
 - The Nuxt dev server reloads Vue components instantly on save.
-- The Go server does **not** hot-reload; restart `npm run dev:server:v2` after changing any `.go` file.
+- The Go server does **not** hot-reload; restart `npm run dev:server` after changing any `.go` file.
 - Electron does **not** hot-reload automatically; restart `./start-dev.sh` after changing `client/electron/`.
 
 ### Vite dev proxy size limit
@@ -72,18 +71,18 @@ Vite's HTTP proxy silently drops response bodies larger than ~3–4 KB. File con
 After adding a new `import` in a `.go` file:
 
 ```bash
-cd server/v2 && go mod tidy
+cd server/v1 && go mod tidy
 ```
 
 ### Adding a new API endpoint
 
-1. Add the route handler function to the appropriate `.go` file in `server/v2/`.
-2. Register it on the mux in `server/v2/main.go` (`registerRoutes` function) with the `/_api/v2/` prefix.
+1. Add the route handler function to the appropriate `.go` file in `server/v1/`.
+2. Register it in `server/v1/main.go` — `registerDataRoutes` for read-only GETs (port 8001) or `registerControlRoutes` for mutating POST/PUTs (port 8002) — with the `/_api/v1/` prefix.
 3. Add a matching client helper in `client/lib/` (see `fs-api.js` or `explorer-api.js` as examples).
 
 ### Monaco Editor workers
 
-Monaco requires worker scripts to be bundled separately. They are configured in `client/components/workbench/MonacoEditor.vue` via `window.MonacoEnvironment.getWorker()` using `new URL('monaco-editor/esm/vs/...', import.meta.url)`. Vite handles the bundling automatically — do not change this pattern.
+Monaco requires worker scripts to be bundled separately. They are configured in `client/components/workbench/editor/MonacoEditor.vue` via `window.MonacoEnvironment.getWorker()`, instantiating workers imported with Vite's `?worker` query (e.g. `import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'`). Use `?worker` rather than `new Worker(new URL('monaco-editor/…', import.meta.url))` — the bare-specifier `new URL` form resolves in the dev server but **fails the production `nuxt generate` build** (Rollup can't resolve the package specifier in its worker plugin).
 
 ## Building for production
 
@@ -95,20 +94,52 @@ cd client && npm run generate
 
 Output goes to `client/.output/public/`.
 
-### Electron desktop app
+### Electron desktop app (self-contained)
 
 ```bash
-cd client && npm run build:electron
+npm run build:electron        # from the repo root (or: cd client && npm run build:electron)
 ```
 
-Output goes to `client/dist-electron/`. Targets: `.AppImage` (Linux), `.dmg` (macOS), `.exe` (Windows) depending on the build platform.
+This runs three steps: compiles the Go server (`client/scripts/build-server.js` →
+`server/v1/dist/`), generates the static client (`nuxt generate` → `.output/public`),
+and packages everything with electron-builder. Output goes to `client/dist-electron/`.
+Targets depend on the build platform: `.AppImage` (Linux), `.dmg` (macOS),
+`.exe`/NSIS (Windows) — electron-builder can only build each OS's installer on that OS.
+
+The Go server binary, the read-only `config/` tree, and `blacklist.yaml` are bundled
+into the app via electron-builder `extraResources`. At launch the Electron main
+process spawns the server (fixed ports **8001**/**8002**) and points it at the
+bundled config (`FW_CONFIG_DIR`) and a writable user-data dir
+(`FW_DATA_DIR` = Electron's `userData`, where `user-preferences.json` and logs go),
+then waits for `/health` before opening the window.
+
+> The Material icon-theme assets (`config/plugins/material-icon-theme/vscode-material-icon-theme/`)
+> are generated, not committed — run `scripts/install-material-icon-theme.sh` before
+> building so they get bundled.
+
+### Installing a release
+
+End users don't build — they run the one-line installer, which downloads the latest
+AppImage / installer from GitHub Releases:
+
+```bash
+# Linux
+curl -fsSL https://raw.githubusercontent.com/miclaymon/files-workbench/main/install.sh | bash
+```
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/miclaymon/files-workbench/main/install.ps1 | iex
+```
+
+Releases are built and uploaded manually for now; a tag-triggered CI workflow is on
+the roadmap (see [`ROADMAP.md`](ROADMAP.md)).
 
 ## Troubleshooting
 
-**Port 8000 already in use**
+**Port 8001 or 8002 already in use**
 
 ```bash
-lsof -i :8000
+lsof -i :8001   # data server  (or :8002 for the control server)
 kill <PID>
 ```
 
@@ -121,7 +152,7 @@ npm install && npm install --prefix client
 **Go module cache issues**
 
 ```bash
-cd server/v2 && go clean -modcache && go mod download
+cd server/v1 && go clean -modcache && go mod download
 ```
 
 **Electron window doesn't open**

@@ -1,14 +1,16 @@
 import { ref, nextTick } from 'vue'
+import { fsPin } from '~/lib/fs-api.js'
 
 // ── File operations slice ─────────────────────────────────────────────────────
 // Create / rename / trash / delete / compress / extract / paste / move / undo /
 // redo, plus the clipboard, the elevation dialog, and the missing-tool install
 // prompt. Consumes the editor grid (refresh + active tab), selection (clear +
 // rename reconciliation), the status bar, and the ops queue / history.
-export function useFileOperations({ editor, selection, statusbar, enqueue, history, log, explorerPanelRef }) {
+export function useFileOperations({ editor, selection, statusbar, notifications, enqueue, history, log, explorerPanelRef }) {
   const { refreshAllDirs, forEachGroup, activeTab } = editor
-  const { selectedItems, focusedItem, updateSelectionAfterRename } = selection
+  const { selectedItems, focusedItem, updateSelectionAfterRename, updateSelectionAfterBatchRename } = selection
   const { flashStatus } = statusbar
+  const { notify, startJob } = notifications ?? {}
 
   // Clipboard
   const clipboard = ref({ mode: 'Copy', count: 0, items: [] })
@@ -22,6 +24,27 @@ export function useFileOperations({ editor, selection, statusbar, enqueue, histo
   // Install-tool prompt state
   const installPrompt = ref(null)  // { tool, message, installApt, ... }
 
+  // Consistent notification helpers for completed file operations. Multi-item ops
+  // attach an expandable per-item breakdown; failures attach a Retry action.
+  // `silent` notifications appear in the panel but don't light the unread dot.
+  function notifyOpSuccess(title, itemNames = [], { silent = false } = {}) {
+    notify?.({
+      type: 'success',
+      title,
+      silent,
+      items: itemNames.length > 1 ? itemNames.map(n => ({ label: n, status: 'success' })) : null,
+    })
+  }
+  function notifyOpError(title, error, retry, { silent = false } = {}) {
+    notify?.({
+      type: 'error',
+      title,
+      message: error?.message ?? String(error),
+      silent,
+      actions: retry ? [{ id: 'retry', label: 'Retry', primary: true, handler: retry }] : null,
+    })
+  }
+
   async function createNewFolder() {
     const name = prompt('Enter folder name:')
     if (!name) return
@@ -30,8 +53,10 @@ export function useFileOperations({ editor, selection, statusbar, enqueue, histo
     try {
       await enqueue({ label: `Create folder "${name}"`, kind: 'create_dir', params: { path: dir + sep + name } })
       refreshAllDirs()
+      notifyOpSuccess(`Created folder "${name}"`, [], { silent: true })
     } catch (e) {
       flashStatus(`Error: ${e?.message ?? e}`, 2000)
+      notifyOpError(`Failed to create folder "${name}"`, e, null, { silent: true })
     }
   }
 
@@ -43,8 +68,10 @@ export function useFileOperations({ editor, selection, statusbar, enqueue, histo
     try {
       await enqueue({ label: `Create file "${name}"`, kind: 'create_file', params: { path: dir + sep + name } })
       refreshAllDirs()
+      notifyOpSuccess(`Created file "${name}"`, [], { silent: true })
     } catch (e) {
       flashStatus(`Error: ${e?.message ?? e}`, 2000)
+      notifyOpError(`Failed to create file "${name}"`, e, null, { silent: true })
     }
   }
 
@@ -81,17 +108,104 @@ export function useFileOperations({ editor, selection, statusbar, enqueue, histo
         redo: () => enqueue({ label: `Redo ${label}`, kind: 'rename', params: { path, new_name: newName } }),
       })
       explorerPanelRef.value?.refresh()
+      notifyOpSuccess(`Renamed "${oldName}" → "${newName}"`, [], { silent: true })
     } catch (e) {
       // Roll back the optimistic update
       forEachGroup(r => r.renameItem?.(optimisticPath, oldName, path))
       updateSelectionAfterRename(optimisticPath, oldName, path)
       flashStatus(`Rename failed: ${e?.message ?? e}`, 2500)
+      notifyOpError(`Failed to rename "${oldName}"`, e, () => handleRename({ path, newName }), { silent: true })
+    }
+  }
+
+  // Batch rename — receives [{ path, newName }] from find-replace-all.
+  // Applies one optimistic update for all items, fires all server calls in parallel.
+  async function handleRenameBatch(renames) {
+    if (!renames?.length) return
+    const sep = renames[0].path.includes('\\') ? '\\' : '/'
+
+    // Build the rename map with computed new paths
+    const ops = renames.map(({ path, newName }) => {
+      const dir = path.slice(0, path.lastIndexOf(sep))
+      return { oldPath: path, newName, newPath: dir + sep + newName, oldName: path.split(/[/\\]/).pop() }
+    })
+
+    const renameMap = new Map(ops.map(o => [o.oldPath, o]))
+
+    // Single optimistic update — unchanged items keep same object reference
+    forEachGroup(r => r.batchRenameItems?.(ops))
+    updateSelectionAfterBatchRename(renameMap)
+
+    // Live job notification — title/progress/per-op status recompute as each settles.
+    const job = startJob?.({
+      verb: 'rename',
+      kind: 'rename',
+      progressLabel: `Renaming ${ops.length} item${ops.length > 1 ? 's' : ''}…`,
+      operations: ops.map(o => ({ id: o.oldPath, from: o.oldName, to: o.newName })),
+    })
+
+    // Fire all server renames in parallel; report each outcome as it settles
+    const results = await Promise.allSettled(
+      ops.map(async (o) => {
+        try {
+          const r = await enqueue({ label: `Rename "${o.oldName}" → "${o.newName}"`, kind: 'rename', params: { path: o.oldPath, new_name: o.newName } })
+          job?.succeed(o.oldPath)
+          return r
+        } catch (e) {
+          job?.fail(o.oldPath, e)
+          throw e
+        }
+      })
+    )
+
+    const failed = []
+    for (let i = 0; i < ops.length; i++) {
+      const o = ops[i]
+      const res = results[i]
+      if (res.status === 'fulfilled') {
+        // Reconcile if server returned a different path (e.g. case normalization)
+        const serverPath = res.value?.path
+        if (serverPath && serverPath !== o.newPath) {
+          const serverName = serverPath.split(/[/\\]/).pop()
+          forEachGroup(r => r.renameItem?.(o.newPath, serverName, serverPath))
+          updateSelectionAfterRename(o.newPath, serverName, serverPath)
+        }
+      } else {
+        failed.push(o)
+      }
+    }
+
+    // Roll back only the failed items
+    if (failed.length) {
+      const rollbackOps = failed.map(o => ({ oldPath: o.newPath, newName: o.oldName, newPath: o.oldPath }))
+      forEachGroup(r => r.batchRenameItems?.(rollbackOps))
+      const rollbackMap = new Map(failed.map(o => [o.newPath, { newName: o.oldName, newPath: o.oldPath }]))
+      updateSelectionAfterBatchRename(rollbackMap)
+      flashStatus(`${failed.length} rename${failed.length > 1 ? 's' : ''} failed`, 2500)
+    }
+
+    // All server ops have settled — clear thumbnailPath so every item's thumbnail uses its
+    // final, now-existing path: newPath for successes, the rolled-back oldPath for failures.
+    const finalPaths = ops.map((o, i) => results[i].status === 'fulfilled' ? o.newPath : o.oldPath)
+    forEachGroup(r => r.clearOptimisticThumbnails?.(finalPaths))
+
+    explorerPanelRef.value?.refresh()
+
+    if (job && failed.length) {
+      job.setActions([{
+        id: 'retry',
+        label: `Retry ${failed.length} failed`,
+        primary: true,
+        handler: () => handleRenameBatch(failed.map(o => ({ path: o.oldPath, newName: o.newName }))),
+      }])
     }
   }
 
   async function doTrash(items) {
     if (!items.length) return
     const paths = items.map(i => i.path)
+    const names = items.map(i => i.name)
+    const what = items.length === 1 ? `"${items[0].name}"` : `${items.length} items`
     const label = items.length === 1 ? `Trash "${items[0].name}"` : `Trash ${items.length} items`
     try {
       const result = await enqueue({ label, kind: 'trash', params: { paths } })
@@ -102,22 +216,26 @@ export function useFileOperations({ editor, selection, statusbar, enqueue, histo
           onConfirm: async (password) => {
             await enqueue({ label: label + ' (elevated)', kind: 'trash_elevated', params: { paths, password } })
             afterDelete()
+            notifyOpSuccess(`Moved ${what} to trash`, names)
           }
         })
         return
       }
       afterDelete()
+      notifyOpSuccess(`Moved ${what} to trash`, names)
     } catch (e) {
       flashStatus(`Trash failed: ${e?.message ?? e}`, 2500)
+      notifyOpError(`Failed to trash ${what}`, e, () => doTrash(items))
     }
   }
 
   async function doDelete(items) {
     if (!items.length) return
-    const names = items.length === 1 ? `"${items[0].name}"` : `${items.length} items`
-    if (!confirm(`Permanently delete ${names}? This cannot be undone.`)) return
+    const what = items.length === 1 ? `"${items[0].name}"` : `${items.length} items`
+    if (!confirm(`Permanently delete ${what}? This cannot be undone.`)) return
     const paths = items.map(i => i.path)
-    const label = `Permanently delete ${names}`
+    const itemNames = items.map(i => i.name)
+    const label = `Permanently delete ${what}`
     try {
       const result = await enqueue({ label, kind: 'delete', params: { paths } })
       if (result?.requiresElevation) {
@@ -127,13 +245,16 @@ export function useFileOperations({ editor, selection, statusbar, enqueue, histo
           onConfirm: async (password) => {
             await enqueue({ label: label + ' (elevated)', kind: 'delete_elevated', params: { paths, password } })
             afterDelete()
+            notifyOpSuccess(`Deleted ${what}`, itemNames)
           }
         })
         return
       }
       afterDelete()
+      notifyOpSuccess(`Deleted ${what}`, itemNames)
     } catch (e) {
       flashStatus(`Delete failed: ${e?.message ?? e}`, 2500)
+      notifyOpError(`Failed to delete ${what}`, e, () => doDelete(items))
     }
   }
 
@@ -197,13 +318,17 @@ export function useFileOperations({ editor, selection, statusbar, enqueue, histo
     if (!name) return
     const dest = destDir + '/' + name
     const paths = items.map(i => i.path)
+    const itemNames = items.map(i => i.name)
+    const what = items.length === 1 ? `"${items[0].name}"` : `${items.length} items`
     const label = `Compress to ${name}`
     try {
       await enqueue({ label, kind: 'compress', params: { paths, format, dest } })
       refreshAllDirs()
       log('ops-queue', 'Compressed', { dest, format, count: paths.length, sources: paths })
+      notifyOpSuccess(`Compressed ${what} to "${name}"`, itemNames)
     } catch (e) {
       flashStatus(`Compress failed: ${e?.message ?? e}`, 2500)
+      notifyOpError(`Failed to compress ${what}`, e, () => doCompress(items, format))
     }
   }
 
@@ -235,8 +360,10 @@ export function useFileOperations({ editor, selection, statusbar, enqueue, histo
       }
       refreshAllDirs()
       log('ops-queue', 'Extracted', { source: item.path, dest: destDir, toNewFolder })
+      notifyOpSuccess(`Extracted "${item.name}"`)
     } catch (e) {
       flashStatus(`Extract failed: ${e?.message ?? e}`, 2500)
+      notifyOpError(`Failed to extract "${item.name}"`, e, () => doDecompress(item, toNewFolder))
     }
   }
 
@@ -246,7 +373,11 @@ export function useFileOperations({ editor, selection, statusbar, enqueue, histo
     const destDir = activeTab.value?.kind === 'dir' ? activeTab.value.path : null
     if (!destDir) return
     const paths = cb.items.map(i => i.path)
-    const label = `${cb.mode} ${cb.count} item(s) into "${destDir.split(/[/\\]/).filter(Boolean).pop()}"`
+    const pasteNames = cb.items.map(i => i.name)
+    const pasteVerb = cb.mode === 'Cut' ? 'Moved' : 'Copied'
+    const destName = destDir.split(/[/\\]/).filter(Boolean).pop() || destDir
+    const pasteWhat = cb.count === 1 ? `"${cb.items[0].name}"` : `${cb.count} items`
+    const label = `${cb.mode} ${cb.count} item(s) into "${destName}"`
     try {
       let result
       if (cb.mode === 'Cut') {
@@ -269,21 +400,25 @@ export function useFileOperations({ editor, selection, statusbar, enqueue, histo
           redo: () => enqueue({ label: `Redo ${label}`, kind: 'copy', params: { paths, dest_dir: destDir } }),
         })
       }
-      const destName = destDir.split(/[/\\]/).filter(Boolean).pop() || destDir
       log('clipboard', `Paste (${cb.mode}) → ${destName}`, {
         _type: 'item-table',
         items: cb.items.map(i => ({ name: i.name, kind: i.kind, size: i.size, path: i.path, thumbnail: i.thumbnail ?? null })),
       })
       refreshAllDirs()
+      notifyOpSuccess(`${pasteVerb} ${pasteWhat} to "${destName}"`, pasteNames)
     } catch (e) {
       flashStatus(`Paste failed: ${e?.message ?? e}`, 2500)
+      notifyOpError(`Failed to ${pasteVerb === 'Moved' ? 'move' : 'copy'} ${pasteWhat}`, e, () => doPaste())
     }
   }
 
   async function doMove(items, destDir) {
     if (!items.length || !destDir) return
     const paths = items.map(i => i.path)
-    const label = `Move ${items.length === 1 ? `"${items[0].name}"` : `${items.length} items`} → "${destDir.split(/[/\\]/).filter(Boolean).pop()}"`
+    const itemNames = items.map(i => i.name)
+    const destName = destDir.split(/[/\\]/).filter(Boolean).pop()
+    const what = items.length === 1 ? `"${items[0].name}"` : `${items.length} items`
+    const label = `Move ${what} → "${destName}"`
     try {
       const result = await enqueue({ label, kind: 'move', params: { paths, dest_dir: destDir } })
       const movedPaths = result.moved.map(m => m.path)
@@ -296,8 +431,29 @@ export function useFileOperations({ editor, selection, statusbar, enqueue, histo
       refreshAllDirs()
       selectedItems.value = []
       focusedItem.value = null
+      notifyOpSuccess(`Moved ${what} to "${destName}"`, itemNames)
     } catch (e) {
       flashStatus(`Move failed: ${e?.message ?? e}`, 2500)
+      notifyOpError(`Failed to move ${what}`, e, () => doMove(items, destDir))
+    }
+  }
+
+  // Pin / unpin items in their directory (grouped first in the directory view).
+  // All targets in a directory view share one parent dir; pins are stored by name.
+  async function doPin(items, pinned) {
+    if (!items?.length) return
+    const p = items[0].path
+    const sep = p.includes('\\') ? '\\' : '/'
+    const dir = p.slice(0, p.lastIndexOf(sep)) || '/'
+    const names = items.map(i => i.name)
+    const what = items.length === 1 ? `"${items[0].name}"` : `${items.length} items`
+    try {
+      await fsPin(dir, names, pinned)
+      refreshAllDirs()
+      notifyOpSuccess(`${pinned ? 'Pinned' : 'Unpinned'} ${what}`, [], { silent: true })
+    } catch (e) {
+      flashStatus(`${pinned ? 'Pin' : 'Unpin'} failed: ${e?.message ?? e}`, 2500)
+      notifyOpError(`Failed to ${pinned ? 'pin' : 'unpin'} ${what}`, e, () => doPin(items, pinned), { silent: true })
     }
   }
 
@@ -331,8 +487,8 @@ export function useFileOperations({ editor, selection, statusbar, enqueue, histo
     // clipboard
     clipboard, copyToClipboard, cutToClipboard,
     // create / mutate
-    createNewFolder, createNewFile, handleRename,
-    doTrash, doDelete, doCompress, doDecompress, doPaste, doMove, doUndo, doRedo,
+    createNewFolder, createNewFile, handleRename, handleRenameBatch,
+    doTrash, doDelete, doCompress, doDecompress, doPaste, doMove, doPin, doUndo, doRedo,
     // elevation dialog (bound by the modal in Workbench)
     elevationPasswordRef, elevationPrompt, elevationPassword, elevationError,
     cancelElevation, confirmElevation,

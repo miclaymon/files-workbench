@@ -12,9 +12,7 @@
         }"
         @click="controller.setActiveGroup(leaf.id); controller.activateTab(leaf.id, tab.id)"
       >
-        <svg class="oe-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-          <path :d="tabIcon(tab)" />
-        </svg>
+        <ResolvedIcon :result="iconResult(tab)" :size="14" icon-class="oe-icon" @fail="onIconFail(tab.id)" />
         <span class="oe-label">{{ tab.title }}</span>
         <button class="oe-close" title="Close" @click.stop="controller.closeTab(leaf.id, tab.id)">×</button>
       </div>
@@ -23,9 +21,11 @@
 </template>
 
 <script setup>
-import { computed, inject } from 'vue'
-import { mdiFolder, mdiHome, mdiCog } from '@mdi/js'
+import { computed, inject, ref } from 'vue'
+import { mdiHome, mdiCog } from '@mdi/js'
 import { collectLeaves } from '~/composables/useLayoutGrid.js'
+import { tabIconDescriptor } from '~/composables/useViewRegistry.js'
+import ResolvedIcon from '~/components/workbench/ResolvedIcon.vue'
 
 const props = defineProps({
   editorRoot:    { type: Object, required: true },
@@ -36,10 +36,15 @@ const controller = inject('editorController')
 
 const leaves = computed(() => collectLeaves(props.editorRoot))
 
-function tabIcon(tab) {
-  if (tab.kind === 'dir')         return mdiFolder
-  if (tab.kind === 'preferences') return mdiCog
-  return mdiHome
+// Same icon source as the editor tab strip: the tab kind's registered editor-view
+// icon, or the view's per-tab tabIcon (Preview's thumbnail / file-type icon). On a
+// dynamic <img> load failure, fall back to the static kind glyph. The literal
+// fallbacks cover legacy kinds with no registered view.
+const iconFailed = ref(new Set())
+function onIconFail(id) { iconFailed.value = new Set(iconFailed.value).add(id) }
+function iconResult(tab) {
+  return tabIconDescriptor(tab, { dynamic: !iconFailed.value.has(tab.id) })
+    ?? { type: 'svg.path', icon: tab.kind === 'preferences' ? mdiCog : mdiHome }
 }
 </script>
 

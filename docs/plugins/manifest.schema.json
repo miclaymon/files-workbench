@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://files-workbench/schemas/plugin-manifest.json",
+  "title": "Files Workbench Plugin Manifest",
+  "description": "manifest.json shipped at the root of a plugin archive (.zip/.vsix). Modelled on a Chrome extension manifest.",
+  "type": "object",
+  "required": ["manifest_version", "id", "name", "version", "main"],
+  "additionalProperties": false,
+  "properties": {
+    "manifest_version": {
+      "description": "Manifest format version. Only 1 is supported today.",
+      "type": "integer",
+      "enum": [1]
+    },
+    "id": {
+      "description": "Unique, kebab-case plugin id (a-z, 0-9, hyphen).",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "name": { "description": "Human display name.", "type": "string", "minLength": 1 },
+    "version": {
+      "description": "Semver version.",
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+].+)?$"
+    },
+    "description": { "type": "string" },
+    "author": { "type": "string" },
+    "icon": { "description": "MDI path string or asset reference shown in the plugin UI.", "type": "string" },
+    "main": {
+      "description": "Entry module relative to the plugin root, e.g. \"src/plugin.js\". Exports activate(api) and optional deactivate(api).",
+      "type": "string",
+      "minLength": 1
+    },
+    "permissions": {
+      "description": "Front-end capabilities. Each gates a slice of the WorkbenchAPI. Unknown values are ignored with a warning.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["activities", "commands", "keybindings", "menus", "hooks", "modals", "editor", "preferences", "events", "selection", "query"]
+      },
+      "uniqueItems": true
+    },
+    "host_permissions": {
+      "description": "Host/backend access. Surfaced now; enforced once the backend bridge lands.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["fs:read", "fs:write", "scm:read", "scm:write", "control", "clipboard"]
+      },
+      "uniqueItems": true
+    },
+    "dependencies": {
+      "description": "Other plugins that must load first: { pluginId: semverRange }.",
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "engines": {
+      "description": "Host compatibility, e.g. { \"workbench\": \"^2.0.0\" }.",
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

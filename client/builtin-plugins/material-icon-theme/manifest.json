@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "id": "material-icon-theme",
+  "name": "Material Icon Theme",
+  "version": "1.0.0",
+  "description": "File and folder icons from the VS Code Material Icon Theme, resolved against the icon pack served by the workbench backend.",
+  "author": "Files Workbench",
+  "icon": "mdiPalette",
+  "main": "src/plugin.js",
+  "permissions": ["icons"]
+}

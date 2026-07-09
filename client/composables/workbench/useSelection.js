@@ -22,7 +22,7 @@ export function useSelection({ editor, statusbar, log, fsStat, fsOpenWithSystem,
       focusedItem.value   = tab.focusedItem ?? null
       selectedPath.value  = tab.selectedPath ?? tab.path ?? ''
     } else {
-      dirStats.value = { count: 0, totalSize: 0 }
+      dirStats.value = { count: 0, totalSize: 0, inProgress: false, selectedCount: 0, selectedSize: 0, selectedInProgress: false }
       selectedItems.value = []
       focusedItem.value   = null
       selectedPath.value  = ''
@@ -37,6 +37,19 @@ export function useSelection({ editor, statusbar, log, fsStat, fsOpenWithSystem,
     )
     if (focusedItem.value?.path === oldPath) {
       focusedItem.value = { ...focusedItem.value, name: newName, path: newPath }
+    }
+  }
+
+  function updateSelectionAfterBatchRename(renameMap) {
+    if (selectedItems.value.some(item => renameMap.has(item.path))) {
+      selectedItems.value = selectedItems.value.map(item => {
+        const r = renameMap.get(item.path)
+        return r ? { ...item, name: r.newName, path: r.newPath } : item
+      })
+    }
+    if (focusedItem.value && renameMap.has(focusedItem.value.path)) {
+      const r = renameMap.get(focusedItem.value.path)
+      focusedItem.value = { ...focusedItem.value, name: r.newName, path: r.newPath }
     }
   }
 
@@ -78,7 +91,9 @@ export function useSelection({ editor, statusbar, log, fsStat, fsOpenWithSystem,
       selectedItems.value = payload.selectedItems
       focusedItem.value = payload.focusedItem ?? null
       const path = payload.focusedItem?.path ?? payload.selectedItems[0]?.path
-      if (path) selectedPath.value = path
+      // Clear (not just skip) when the selection empties, so consumers like Details
+      // reset instead of showing the previously-selected item.
+      selectedPath.value = path ?? ''
       if (activeTab.value) {
         activeTab.value.selectedItems = payload.selectedItems
         activeTab.value.focusedItem = payload.focusedItem ?? null
@@ -148,7 +163,7 @@ export function useSelection({ editor, statusbar, log, fsStat, fsOpenWithSystem,
 
   return {
     selectedPath, selectedItems, focusedItem, selectedDetails,
-    updateSelectionAfterRename,
+    updateSelectionAfterRename, updateSelectionAfterBatchRename,
     handleExplorerSelect, handleSelectFromDirectory, handleDoubleClick,
     navigateInCurrentTab, handleOpenFromTab,
   }

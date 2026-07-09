@@ -93,7 +93,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -118,9 +118,25 @@ const submenuPosition = ref({ x: 0, y: 0 })
 let hideTimer = null
 let submenuHideTimer = null
 
+const clampedPos = ref({ x: props.x, y: props.y })
+
+watch(() => [props.x, props.y, props.visible], async ([x, y, vis]) => {
+  if (!vis) return
+  const baseX = props.relativeToCursor ? x + 10 : x
+  const baseY = props.relativeToCursor ? y + 10 : y
+  clampedPos.value = { x: baseX, y: baseY }
+  await nextTick()
+  if (!menuRef.value) return
+  const rect = menuRef.value.getBoundingClientRect()
+  clampedPos.value = {
+    x: Math.max(4, Math.min(baseX, window.innerWidth  - rect.width  - 4)),
+    y: Math.max(4, Math.min(baseY, window.innerHeight - rect.height - 4)),
+  }
+}, { immediate: true })
+
 const menuStyle = computed(() => ({
-  left: props.relativeToCursor ? `${props.x + 10}px` : `${props.x}px`,
-  top: props.relativeToCursor ? `${props.y + 10}px` : `${props.y}px`,
+  left: `${clampedPos.value.x}px`,
+  top: `${clampedPos.value.y}px`,
   maxWidth: `${props.maxWidth}px`
 }))
 
@@ -180,7 +196,9 @@ function onItemClick(item) {
   if (item.disabled) return
   item.action?.()
   emit('item-click', item)
-  if (props.type === 'menu' && !item.submenu) close()
+  // `keepOpen` items (e.g. multi-select filter toggles) leave the menu open so
+  // several can be flipped in one go; everything else closes after acting.
+  if (props.type === 'menu' && !item.submenu && !item.keepOpen) close()
 }
 
 function close() {
@@ -227,21 +245,16 @@ onUnmounted(() => {
   clip: auto !important;
   clip-path: none !important;
   overflow: visible !important;
-}
 
-.floating-menu--tooltip {
-  background: var(--tooltip-background, #1e1e1e);
-  padding: 6px 10px;
-  font-size: 12px;
-  max-width: 200px;
-  pointer-events: none;
-}
-
-.floating-menu--popover { padding: 12px; max-width: 400px; }
-
-.floating-menu--submenu {
-  position: fixed !important;
-  z-index: 100000 !important;
+  &.floating-menu--tooltip {
+    background: var(--tooltip-background, #1e1e1e);
+    padding: 6px 10px;
+    font-size: 12px;
+    max-width: 200px;
+    pointer-events: none;
+  }
+  &.floating-menu--popover  { padding: 12px; max-width: 400px; }
+  &.floating-menu--submenu  { z-index: 100000 !important; }
 }
 
 .tooltip-content { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -258,8 +271,9 @@ onUnmounted(() => {
   border-radius: 4px;
   cursor: pointer;
   color: var(--text-muted);
+
+  &:hover { background: var(--hover-background); }
 }
-.popover-close:hover { background: var(--hover-background); }
 
 .menu-content { display: flex; flex-direction: column; }
 
@@ -270,24 +284,25 @@ onUnmounted(() => {
   cursor: pointer;
   white-space: nowrap;
   min-height: 24px;
-}
-.menu-item:hover:not(.menu-item--disabled) { background: var(--hover-background, #2a2d2e); }
-.menu-item--disabled { color: var(--text-disabled, #5a5a5a); cursor: not-allowed; }
 
-.menu-item__check {
-  width: 16px;
-  height: 16px;
-  margin-right: 4px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text);
+  &:hover:not(.menu-item--disabled) { background: var(--hover-background, #2a2d2e); }
+  &.menu-item--disabled { color: var(--text-disabled, #5a5a5a); cursor: not-allowed; }
+
+  .menu-item__check {
+    width: 16px;
+    height: 16px;
+    margin-right: 4px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text);
+  }
+  .menu-item__icon           { margin-right: 8px; width: 16px; text-align: center; flex-shrink: 0; }
+  .menu-item__label          { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .menu-item__shortcut       { margin-left: 12px; color: var(--text-muted); font-size: 11px; flex-shrink: 0; }
+  .menu-item__submenu-arrow  { margin-left: 8px; font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
 }
-.menu-item__icon { margin-right: 8px; width: 16px; text-align: center; flex-shrink: 0; }
-.menu-item__label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
-.menu-item__shortcut { margin-left: 12px; color: var(--text-muted); font-size: 11px; flex-shrink: 0; }
-.menu-item__submenu-arrow { margin-left: 8px; font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
 
 .menu-separator { height: 1px; background: var(--border, #3e3e42); margin: 4px 0; }
 </style>

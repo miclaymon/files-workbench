@@ -1,31 +1,23 @@
 <template>
-  <Teleport to="body">
-    <Transition name="sm">
-      <div v-if="visible" class="sm-backdrop" @mousedown.self="$emit('close')">
-        <div class="sm-dialog" role="dialog" aria-label="Settings">
+  <div class="sm-root">
 
-          <!-- Top search bar -->
-          <div class="sm-search-row">
-            <svg class="sm-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-              <path d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z" />
-            </svg>
-            <input
-              ref="searchRef"
-              v-model="searchQuery"
-              class="sm-search-input"
-              placeholder="Search settings"
-              autocomplete="off"
-              spellcheck="false"
-            />
-            <button v-if="searchQuery" class="sm-search-clear" @click="searchQuery = ''">✕</button>
-            <button class="sm-close-btn" title="Close (Esc)" @click="$emit('close')">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
-              </svg>
-            </button>
-          </div>
+      <!-- Top search bar -->
+      <div class="sm-search-row">
+        <svg class="sm-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+          <path d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z" />
+        </svg>
+        <input
+          ref="searchRef"
+          v-model="searchQuery"
+          class="sm-search-input"
+          placeholder="Search settings"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button v-if="searchQuery" class="sm-search-clear" @click="searchQuery = ''">✕</button>
+      </div>
 
-          <div class="sm-body">
+      <div class="sm-body">
 
             <!-- Left sidebar -->
             <nav class="sm-sidebar" @keydown.stop>
@@ -95,7 +87,7 @@
                         @change="e => setVal(item.path, e.target.value)"
                       >
                         <option v-for="opt in item.enum" :key="opt" :value="opt">
-                          {{ ENUM_LABELS[opt] ?? opt }}
+                          {{ item._optionLabels?.[opt] ?? ENUM_LABELS[opt] ?? opt }}
                         </option>
                       </select>
 
@@ -131,48 +123,62 @@
             </div>
           </div>
 
-          <!-- Save status indicator -->
-          <Transition name="saved">
-            <div v-if="saveStatus" class="sm-save-status">{{ saveStatus }}</div>
-          </Transition>
+      <!-- Save status indicator -->
+      <Transition name="saved">
+        <div v-if="saveStatus" class="sm-save-status">{{ saveStatus }}</div>
+      </Transition>
 
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted, inject, useAttrs } from 'vue'
 import schemaData from '#preferences-schema'
+import { contributedSchemaProperties } from '~/composables/usePreferenceSchema.js'
+import { listIconThemes } from '~/composables/useIconRegistry.js'
 
+// Works in both presentations of the same EditorView. As a modal, ModalHost binds
+// `prefs` in and a `save` listener out (Workbench.js modal def). As a promoted
+// editor tab, neither is bound, so we fall back to the host (`viewCtx`): prefs from
+// `viewCtx.prefs`, and saving through `viewCtx.savePreferences`.
 const props = defineProps({
-  visible: { type: Boolean, required: true },
-  prefs:   { type: Object,  required: true },
+  prefs: { type: Object, default: null },
 })
-const emit = defineEmits(['close', 'save'])
+const emit = defineEmits(['save'])
+
+const viewCtx = inject('viewCtx', null)
+const attrs = useAttrs()
+const sourcePrefs = computed(() => props.prefs ?? viewCtx?.prefs ?? {})
+
+// Persist edited prefs: through the modal's `save` listener when bound, else (as a
+// promoted tab, where none is) straight to the host's savePreferences.
+function persist(p) {
+  if (attrs.onSave) emit('save', p)
+  else viewCtx?.savePreferences?.(p)
+}
 
 // ── Local prefs copy ──────────────────────────────────────────────────────────
 
-const localPrefs = ref(JSON.parse(JSON.stringify(props.prefs)))
+const localPrefs = ref(JSON.parse(JSON.stringify(sourcePrefs.value)))
 
-watch(() => props.prefs, (p) => {
+watch(sourcePrefs, (p) => {
   localPrefs.value = JSON.parse(JSON.stringify(p))
 }, { deep: true })
 
-watch(() => props.visible, async (v) => {
-  if (v) {
-    searchQuery.value  = ''
-    activeSection.value = visibleSections.value[0]?.key ?? ''
-    await nextTick()
-    searchRef.value?.focus()
-  }
+onMounted(async () => {
+  searchQuery.value   = ''
+  activeSection.value = visibleSections.value[0]?.key ?? ''
+  await nextTick()
+  searchRef.value?.focus()
 })
 
 // ── Value helpers ─────────────────────────────────────────────────────────────
 
 function getVal(path) {
-  return path.split('.').reduce((o, k) => o?.[k], localPrefs.value)
+  // Fall back to the schema default so contributed settings (not present in the
+  // user's prefs until changed) render at their declared default.
+  const v = path.split('.').reduce((o, k) => o?.[k], localPrefs.value)
+  return v !== undefined ? v : getDefault(path)
 }
 
 function getDefault(path) {
@@ -190,19 +196,23 @@ let _saveTimer = null
 const saveStatus = ref('')
 
 function setVal(path, value) {
-  const parts  = path.split('.')
-  const last   = parts.pop()
-  const target = parts.reduce((o, k) => o?.[k], localPrefs.value)
-  if (target != null) {
-    target[last] = value
-    scheduleSave()
+  const parts = path.split('.')
+  const last  = parts.pop()
+  // Create intermediate namespaces so a contributed section's first write
+  // (e.g. sourceControl.changesViewMode) doesn't no-op.
+  let target = localPrefs.value
+  for (const k of parts) {
+    if (target[k] == null || typeof target[k] !== 'object') target[k] = {}
+    target = target[k]
   }
+  target[last] = value
+  scheduleSave()
 }
 
 function scheduleSave() {
   clearTimeout(_saveTimer)
   _saveTimer = setTimeout(async () => {
-    await emit('save', localPrefs.value)
+    await persist(localPrefs.value)
     saveStatus.value = '✓ Saved'
     clearTimeout(_statusTimer)
     _statusTimer = setTimeout(() => { saveStatus.value = '' }, 1500)
@@ -242,6 +252,30 @@ function controlType(prop) {
   return null
 }
 
+// Some selects are populated at runtime from a dynamic registry rather than a
+// static schema `enum` (e.g. the installed icon-pack plugins). `x-options` names
+// the source; returns { enum, labels } merged onto the item, or null.
+function dynamicOptions(prop) {
+  if (prop['x-options'] === 'iconThemes') {
+    const themes = listIconThemes()
+    return { enum: themes.map(t => t.id), labels: Object.fromEntries(themes.map(t => [t.id, t.label])) }
+  }
+  return null
+}
+
+function buildItem(prop, path, sectionTitle) {
+  const ctrl = controlType(prop)
+  if (!ctrl) return null
+  const opts = dynamicOptions(prop)
+  return {
+    ...prop,
+    path,
+    _control:      ctrl,
+    _sectionTitle: sectionTitle,
+    ...(opts ? { enum: opts.enum, _optionLabels: opts.labels } : {}),
+  }
+}
+
 function extractDefaults(schema, path = '') {
   const out = {}
   if (!schema?.properties) return out
@@ -253,8 +287,12 @@ function extractDefaults(schema, path = '') {
   return out
 }
 
+// The static base schema merged with sections contributed by activities/plugins
+// (the configuration contribution point), so their settings render here too.
+const schemaProps = computed(() => ({ ...(schemaData?.properties ?? {}), ...contributedSchemaProperties() }))
+
 const defaults = computed(() => {
-  const flat = extractDefaults(schemaData)
+  const flat = extractDefaults({ properties: schemaProps.value })
   // Reconstruct nested object from flat paths
   const out = {}
   for (const [path, val] of Object.entries(flat)) {
@@ -270,24 +308,19 @@ const defaults = computed(() => {
 })
 
 const sections = computed(() => {
-  if (!schemaData?.properties) return []
+  const props = schemaProps.value
+  if (!Object.keys(props).length) return []
   const result = []
   const generalItems = []
 
-  for (const [key, prop] of Object.entries(schemaData.properties)) {
+  for (const [key, prop] of Object.entries(props)) {
     if (prop.type === 'array') continue
 
     if (prop.type === 'object' && prop.properties) {
       const items = []
       for (const [subKey, subProp] of Object.entries(prop.properties)) {
-        const ctrl = controlType(subProp)
-        if (!ctrl) continue
-        items.push({
-          ...subProp,
-          path:          `${key}.${subKey}`,
-          _control:      ctrl,
-          _sectionTitle: prop.title,
-        })
+        const item = buildItem(subProp, `${key}.${subKey}`, prop.title)
+        if (item) items.push(item)
       }
       if (items.length) {
         result.push({
@@ -298,9 +331,8 @@ const sections = computed(() => {
         })
       }
     } else {
-      const ctrl = controlType(prop)
-      if (!ctrl) continue
-      generalItems.push({ ...prop, path: key, _control: ctrl, _sectionTitle: '' })
+      const item = buildItem(prop, key, '')
+      if (item) generalItems.push(item)
     }
   }
 
@@ -378,28 +410,14 @@ function onScroll() {
 </script>
 
 <style scoped>
-/* ── Backdrop ──────────────────────────────────────────────────────────────── */
-.sm-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 8000;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* ── Dialog ────────────────────────────────────────────────────────────────── */
-.sm-dialog {
-  width: min(960px, 90vw);
-  height: min(700px, 88vh);
-  background: var(--sidebar-bg, #252526);
-  border: 1px solid var(--border, #454545);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+/* ── Root (fills the ModalEditor body; positions the save indicator) ─────────── */
+.sm-root {
+  position: relative;
+  flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   overflow: hidden;
-  position: relative;
 }
 
 /* ── Search row ────────────────────────────────────────────────────────────── */
@@ -439,20 +457,6 @@ function onScroll() {
   flex-shrink: 0;
 }
 .sm-search-clear:hover { color: var(--text, #ccc); }
-
-.sm-close-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted, #888);
-  cursor: pointer;
-  padding: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-left: 4px;
-}
-.sm-close-btn:hover { color: var(--text, #ccc); background: var(--hover, rgba(255,255,255,0.07)); }
 
 /* ── Body (sidebar + content) ──────────────────────────────────────────────── */
 .sm-body {
@@ -612,8 +616,4 @@ function onScroll() {
 }
 .saved-enter-active, .saved-leave-active { transition: opacity 0.2s; }
 .saved-enter-from, .saved-leave-to { opacity: 0; }
-
-/* ── Dialog transition ─────────────────────────────────────────────────────── */
-.sm-enter-active, .sm-leave-active { transition: opacity 0.12s, transform 0.12s; }
-.sm-enter-from, .sm-leave-to { opacity: 0; transform: scale(0.97); }
 </style>

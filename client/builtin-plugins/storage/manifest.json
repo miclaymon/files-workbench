@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "id": "storage",
+  "name": "Storage",
+  "version": "1.0.0",
+  "description": "Placeholder for disk-usage and storage management, contributed to the Activity Bar.",
+  "author": "Files Workbench",
+  "icon": "mdiHarddisk",
+  "main": "src/plugin.js",
+  "permissions": ["activities"]
+}

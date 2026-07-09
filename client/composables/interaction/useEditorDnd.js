@@ -8,13 +8,15 @@ const dragState = reactive({
   active: false,
   sourceGroupId: null,
   tabId: null,
+  pinned: false,   // whether the dragged tab is pinned (constrains where it can drop)
 })
 
 export function useEditorDnd() {
-  function startTabDrag(event, { groupId, tabId }) {
+  function startTabDrag(event, { groupId, tabId, pinned = false }) {
     dragState.active = true
     dragState.sourceGroupId = groupId
     dragState.tabId = tabId
+    dragState.pinned = pinned
     try {
       event.dataTransfer.setData(TAB_MIME, JSON.stringify({ groupId, tabId }))
       event.dataTransfer.effectAllowed = 'move'
@@ -25,6 +27,7 @@ export function useEditorDnd() {
     dragState.active = false
     dragState.sourceGroupId = null
     dragState.tabId = null
+    dragState.pinned = false
   }
 
   return { dragState, startTabDrag, endTabDrag }
