@@ -17,6 +17,11 @@ type pluginManifest struct {
 	Adapter string `json:"adapter"` // "vscode-icon-theme"
 	Source  string `json:"source"`  // path to the cloned repo/VSIX dir, relative to plugin dir
 	Theme   string `json:"theme"`   // path to the theme JSON, relative to Source (auto-detected if empty)
+
+	// Server, when present, declares a sandboxed WASM backend for this plugin. It is
+	// loaded and run by plugin_host.go; the client reaches it through the generic
+	// POST /_api/v1/plugins/<id>/rpc endpoint. See serverPluginDef.
+	Server *serverPluginDef `json:"server,omitempty"`
 }
 
 // iconTheme holds the resolved icon pack data.

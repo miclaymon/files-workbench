@@ -136,7 +136,11 @@ export function useFileContextMenus({ host, editor, selection, fileOps, archive,
     }
   }
 
-  function showItemContextMenu({ event, item }) {
+  function showItemContextMenu({ event, item } = {}) {
+    // Ignore payloads that aren't a directory-item right-click. A tab whose component
+    // doesn't emit the structured { event, item } (e.g. the Preview tab) lets the raw
+    // native `contextmenu` fall through here; without this guard `event.shiftKey` throws.
+    if (!event || !item) return
     const targets = selectedItems.value.some(s => s.path === item.path)
       ? selectedItems.value
       : [item]

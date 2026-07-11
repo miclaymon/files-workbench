@@ -243,6 +243,8 @@ import { useActivityHost } from '~/composables/activity/useActivityHost.js'
 import { formatChord } from '~/composables/activity/useKeybindingRegistry.js'
 import { createPluginHost } from '~/composables/plugins/usePluginHost.js'
 import { EXPLORER_PLUGIN, OPTIONAL_PLUGIN_LOADERS } from '~/builtin-plugins/index.js'
+import { installFwSdk } from '~/plugin-sdk/client/index.js'
+import { loadRuntimePlugins } from '~/composables/plugins/useRuntimePlugins.js'
 import { useArchive } from '~/composables/workbench/useArchive.js'
 import { useFileOperations } from '~/composables/workbench/useFileOperations.js'
 import { useFileContextMenus } from '~/composables/workbench/useFileContextMenus.js'
@@ -367,6 +369,11 @@ const host = useActivityHost({
 // here (right after the host) rather than later because Explorer is now one of
 // them and owns the selection API the file-op / menu / keyboard slices below
 // consume synchronously — it must be registered before host.requireApi('explorer').
+// Publish the SDK global before any runtime plugin is imported — its externalized
+// `vue` / `@fw/sdk` bindings resolve to globalThis.__FW_SDK at load, so plugins share
+// the host's single Vue instance and live models/components.
+installFwSdk()
+
 const pluginHost = createPluginHost({ host, log })
 pluginHost.load(EXPLORER_PLUGIN.manifest, EXPLORER_PLUGIN.module)
 // Optional plugins load asynchronously (dynamic import per plugin). An import
@@ -374,6 +381,11 @@ pluginHost.load(EXPLORER_PLUGIN.manifest, EXPLORER_PLUGIN.module)
 // plugin without affecting peers or the host. Fire-and-forget: Vue reactivity
 // propagates each plugin's registrations as they resolve.
 pluginHost.loadAllAsync(OPTIONAL_PLUGIN_LOADERS)
+// Runtime (unbundled) plugins from /plugins/<id>/: fetched, hash-verified, and
+// dynamic-imported through the same host. Fire-and-forget + isolated like the above;
+// prod verifies pinned hashes strictly, dev warns. (This is the path first-party and
+// third-party plugins share — e.g. Chat now loads here rather than being compiled in.)
+loadRuntimePlugins({ pluginHost, log, strict: !import.meta.dev })
 if (import.meta.dev) window.__plugins = pluginHost
 
 // Selection now lives in the Explorer activity (a first-party plugin). Pull the

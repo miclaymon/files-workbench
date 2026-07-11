@@ -1,4 +1,4 @@
-import { isKnownPermission, isKnownHostPermission } from './permissions.js'
+import { isKnownPermission, isKnownHostPermission, isKnownServerPermission } from './permissions.js'
 
 // ── Plugin manifest ───────────────────────────────────────────────────────────
 //
@@ -13,11 +13,17 @@ import { isKnownPermission, isKnownHostPermission } from './permissions.js'
 // @property {string}   [description]
 // @property {string}   [author]
 // @property {string}   [icon]             MDI path or asset reference.
-// @property {string}   main               Entry module, relative to the plugin root (e.g. "src/plugin.js").
+// @property {Object}   [client]           Client (renderer) target: { entry } — the entry module,
+//                                          relative to the plugin root (e.g. "client/plugin.js"),
+//                                          exporting activate(api) and optional deactivate(api).
+// @property {Object}   [server]           Sandboxed WASM backend: { entry, runtime, permissions[] }.
+//                                          `entry` is the JS source compiled to WASM (build-plugins.js);
+//                                          `permissions` are SERVER_PERMISSIONS (e.g. exec:git, fs:read).
+//                                          A plugin must declare a `client` and/or a `server` target.
 // @property {string[]} [permissions]      Front-end capabilities (see PERMISSIONS).
 // @property {string[]} [host_permissions] Host/backend access (see HOST_PERMISSIONS).
 // @property {Object<string,string>} [dependencies]  Plugin id → semver range that must load first.
-// @property {Object}   [engines]          e.g. { workbench: "^2.0.0" }.
+// @property {Object}   [engines]          e.g. { sdk: "^1.0.0" } — the @fw/sdk contract version.
 
 export const SUPPORTED_MANIFEST_VERSION = 1
 
@@ -49,8 +55,18 @@ export function validateManifest(manifest) {
   if (typeof manifest.version !== 'string' || !SEMVER_RE.test(manifest.version)) {
     errors.push('version must be a semver string (e.g. "1.0.0")')
   }
-  if (typeof manifest.main !== 'string' || !manifest.main.trim()) {
-    errors.push('main (entry module path) is required')
+  // A plugin must declare at least one runnable target: a `client` UI entry and/or a
+  // `server` WASM backend. (Loaders read `client.entry`/`server.entry`, not a `main`.)
+  if (manifest.client == null && manifest.server == null) {
+    errors.push('a plugin must declare a client and/or server target')
+  }
+  if (manifest.client != null) {
+    const c = manifest.client
+    if (typeof c !== 'object' || Array.isArray(c)) {
+      errors.push('client must be an object { entry }')
+    } else if (typeof c.entry !== 'string' || !c.entry.trim()) {
+      errors.push('client.entry (entry module path) is required')
+    }
   }
 
   if (manifest.permissions != null) {
@@ -67,6 +83,22 @@ export function validateManifest(manifest) {
   }
   if (manifest.dependencies != null && (typeof manifest.dependencies !== 'object' || Array.isArray(manifest.dependencies))) {
     errors.push('dependencies must be an object of { pluginId: versionRange }')
+  }
+
+  if (manifest.server != null) {
+    const s = manifest.server
+    if (typeof s !== 'object' || Array.isArray(s)) {
+      errors.push('server must be an object { entry, runtime, permissions }')
+    } else {
+      if (typeof s.entry !== 'string' || !s.entry.trim()) errors.push('server.entry (backend source path) is required')
+      if (s.runtime != null && s.runtime !== 'wasm-js') warnings.push(`unknown server.runtime "${s.runtime}" (only "wasm-js" is supported)`)
+      if (s.permissions != null) {
+        if (!Array.isArray(s.permissions)) errors.push('server.permissions must be an array')
+        else for (const p of s.permissions) {
+          if (!isKnownServerPermission(p)) warnings.push(`unknown server permission "${p}" (ignored)`)
+        }
+      }
+    }
   }
 
   return { valid: errors.length === 0, errors, warnings }

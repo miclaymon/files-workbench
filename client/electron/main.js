@@ -29,6 +29,9 @@ function startServer() {
       FW_DATA_DIR: userData,
       FW_LOGS_DIR: path.join(userData, 'logs'),
       FW_BLACKLIST: path.join(process.resourcesPath, 'blacklist.yaml'),
+      // Bundled first-party plugin artifacts (client.js + manifests). Third-party
+      // plugins load from the writable <userData>/plugins (the Go server scans both).
+      FW_PLUGINS_DIR: path.join(process.resourcesPath, 'plugins'),
     },
     stdio: 'ignore',
   })

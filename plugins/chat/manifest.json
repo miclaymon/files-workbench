@@ -1,0 +1,12 @@
+{
+  "manifest_version": 1,
+  "id": "chat",
+  "name": "Chat",
+  "version": "1.0.0",
+  "description": "Placeholder for the planned LLM chat assistant, contributed to the Secondary Side Bar.",
+  "author": "Files Workbench",
+  "icon": "mdiMessage",
+  "engines": { "sdk": "^1.0.0" },
+  "permissions": ["activities"],
+  "client": { "entry": "client/plugin.js" }
+}

@@ -1,0 +1,31 @@
+{
+  "manifest_version": 1,
+  "id": "source-control",
+  "name": "Source Control",
+  "version": "1.0.0",
+  "description": "Git source control: a changes panel, a commit-graph editor tab, and a branch status widget.",
+  "author": "Files Workbench",
+  "icon": "mdiSourceBranch",
+  "permissions": [
+    "activities",
+    "commands",
+    "editor",
+    "preferences",
+    "events",
+    "server"
+  ],
+  "engines": {
+    "sdk": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/plugin.js"
+  },
+  "server": {
+    "entry": "server/git.plugin.js",
+    "runtime": "wasm-js",
+    "permissions": [
+      "exec:git",
+      "fs:read"
+    ]
+  }
+}

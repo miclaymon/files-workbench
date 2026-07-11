@@ -1,0 +1,19 @@
+{
+  "manifest_version": 1,
+  "id": "details",
+  "name": "Details",
+  "version": "1.0.0",
+  "description": "File details: identity, metadata (EXIF/XMP/IPTC), permissions, and checksums for the selected file.",
+  "author": "Files Workbench",
+  "icon": "mdiInformation",
+  "permissions": [
+    "activities",
+    "selection"
+  ],
+  "engines": {
+    "sdk": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/plugin.js"
+  }
+}

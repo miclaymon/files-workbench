@@ -57,11 +57,17 @@ func main() {
 	logsDir = envOr("FW_LOGS_DIR", filepath.Join(repoRoot, "server", "logs"))
 	blacklistPath = envOr("FW_BLACKLIST", filepath.Join(repoRoot, "server", "v1", "blacklist.yaml"))
 
+	// Runtime plugin artifacts: first-party built output (FW_PLUGINS_DIR, or the repo
+	// .fw/plugins dir in dev) + user-installed third-party plugins (writable data dir).
+	pluginsDistDir = envOr("FW_PLUGINS_DIR", filepath.Join(repoRoot, ".fw", "plugins"))
+	thirdPartyPluginsDir = filepath.Join(dataDir, "plugins")
+
 	if err := loadBlacklist(blacklistPath); err != nil {
 		log.Printf("warn: could not load blacklist: %v", err)
 	}
 
 	loadPlugins()
+	loadServerPlugins()
 
 	dataPort := os.Getenv("PORT")
 	if dataPort == "" {
@@ -148,13 +154,17 @@ func registerDataRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+apiPrefix+"/preferences/schema", handlePreferencesSchema)
 	mux.HandleFunc("GET "+apiPrefix+"/preferences", handlePreferencesGet)
 
-	// Source control — reads
-	mux.HandleFunc("POST "+apiPrefix+"/scm/detect", handleScmDetect)
-	mux.HandleFunc("GET "+apiPrefix+"/scm/info", handleScmInfo)
-
 	// Icon packs
 	mux.HandleFunc("GET "+apiPrefix+"/icons/manifest", handleIconsManifest)
 	mux.HandleFunc("GET "+apiPrefix+"/icons/svg", handleIconsSvg)
+
+	// Server plugins — generic RPC broker (read-side). One handler serves every
+	// plugin backend; a new server plugin needs no new Go code.
+	mux.HandleFunc("POST "+apiPrefix+"/plugins/{id}/rpc", handlePluginRpc)
+
+	// Runtime plugin loading — discovery manifest + artifact serving (client.js, wasm).
+	mux.HandleFunc("GET "+apiPrefix+"/plugins/manifest", handlePluginsManifest)
+	mux.HandleFunc("GET "+apiPrefix+"/plugins/{id}/{artifact}", handlePluginArtifact)
 }
 
 // registerControlRoutes registers all mutating POST/PUT endpoints on the control server.
@@ -183,12 +193,11 @@ func registerControlRoutes(mux *http.ServeMux) {
 	// Preferences — writes
 	mux.HandleFunc("PUT "+apiPrefix+"/preferences", handlePreferencesPut)
 
-	// Source control — writes
-	mux.HandleFunc("POST "+apiPrefix+"/scm/commit", handleScmCommit)
-	mux.HandleFunc("POST "+apiPrefix+"/scm/init", handleScmInit)
-
 	// Perf logging
 	mux.HandleFunc("POST "+apiPrefix+"/perf", handlePerf)
+
+	// Server plugins — generic RPC broker (write-side, same handler).
+	mux.HandleFunc("POST "+apiPrefix+"/plugins/{id}/rpc", handlePluginRpc)
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {

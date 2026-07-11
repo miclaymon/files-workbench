@@ -79,9 +79,9 @@
 ## Extensibility (plugins)
 
 - A **plugin** is an out-of-core activity loaded at runtime through a *permission-scoped* view of the Workbench API — the same contribution path as a first-party activity, narrowed by declared permissions
-- Each plugin ships a `manifest.json` (id, version, entry, declared `permissions` + `host_permissions`, dependencies) and a `src/plugin.js` entry exporting `activate(api)` / optional `deactivate(api)`; `activate` contributes through `api` and returns a disposer that unwinds everything
-- Permissions are two-tier: **front-end** capabilities gate facade slices (`activities`, `commands`, `keybindings`, `menus`, `hooks`, `modals`, `editor`, `preferences`, `events`, `selection`, `query`); **host** permissions gate brokered backend services (`scm:read`/`scm:write`, …) — plugins never touch the filesystem or control server directly
-- Plugins are loaded as `{ manifest, module }` pairs with dependency ordering and lifecycle; built-ins ship in-tree today, the archive/sandbox runtime is planned (see Roadmap → Plugin system)
+- Each plugin's source lives under `/plugins/<id>/` — a `manifest.json` (id, version, `client`/`server` target entries, declared `permissions`, `engines.sdk`, dependencies) plus a `client/` entry exporting `activate(api)` / optional `deactivate(api)`; `activate` contributes through `api` and returns a disposer that unwinds everything
+- Front-end permissions gate facade slices per capability (`activities`, `commands`, `keybindings`, `menus`, `hooks`, `modals`, `editor`, `preferences`, `events`, `selection`, `query`, `icons`, `lightbox`, `peek`, `server`); a plugin adds backend functionality through its own **sandboxed WASM `server` backend** (the `server` permission → `api.server`), not by touching the filesystem or control server directly
+- Client plugins are compiled to self-contained ES modules and loaded at **runtime** — fetched from the server, content-hash-verified against `plugins.lock.json`, then dynamically imported into the `{ manifest, module }` pair the host consumes (dependency-ordered, with lifecycle); first-party plugins use the exact same path as third-party. **Explorer** is the one exception, compiled in-tree (see Roadmap → Plugin system)
 - A first-party **Source Control** plugin (git changes panel, commit graph, branch status) is built entirely through this API as the reference implementation; authoring is documented in `docs/PLUGINS.md`
 
 ## Non-functional

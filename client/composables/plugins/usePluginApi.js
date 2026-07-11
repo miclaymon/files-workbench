@@ -1,6 +1,6 @@
 import { grantedPermissions } from '~/models/plugin/index.js'
 import { Activity, View, EditorView, ModalView, PanelView, ViewSection, StatusView } from '~/models/ui/index.js'
-import * as scm from '~/lib/scm-api.js'
+import { callPluginRpc } from '~/lib/plugin-rpc.js'
 
 // ── Plugin API (the WorkbenchAPI a plugin imports) ────────────────────────────
 //
@@ -46,15 +46,19 @@ export function createPluginApi(manifest, host) {
     if (pick) Object.assign(api, pick(facade))
   }
 
-  // Host-permission-gated brokered services. The plugin reaches git only through
-  // these vetted methods — never the filesystem or control server directly — and
-  // only the methods its declared host_permissions grant.
-  const hostPerms = manifest.host_permissions ?? []
-  if (hostPerms.includes('scm:read') || hostPerms.includes('scm:write')) {
-    api.scm = {}
-    if (hostPerms.includes('scm:read'))  Object.assign(api.scm, { detectRepos: scm.detectRepos, repoInfo: scm.repoInfo })
-    if (hostPerms.includes('scm:write')) Object.assign(api.scm, { commit: scm.commit, init: scm.init })
-    Object.freeze(api.scm)
+  // The "server" permission grants `api.server`, a client bridge to the plugin's OWN
+  // sandboxed WASM backend — bound to this plugin's id, so it can never call another
+  // plugin's backend. `call(method, params, { write })` returns the backend's result
+  // (or throws). The permission IS the capability; the manifest's `server` block only
+  // declares the backend (consumed by the build + Go host), and a runtime-loaded
+  // plugin's manifest doesn't carry it — so gate on the permission alone. A call with
+  // no backend loaded just fails (404), which callers already handle. This replaces the
+  // old per-service brokers (e.g. api.scm): a backend defines whatever methods it wants.
+  if (grantedPermissions(manifest).includes('server')) {
+    const id = manifest.id
+    api.server = Object.freeze({
+      call: (method, params, opts) => callPluginRpc(id, method, params, opts),
+    })
   }
 
   return Object.freeze(api)

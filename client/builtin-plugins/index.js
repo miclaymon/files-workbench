@@ -1,33 +1,21 @@
-// Explorer is loaded synchronously — Workbench calls host.requireApi('explorer')
-// immediately after plugin init to pull the selection API. Every other plugin is
-// a lazy dynamic import so a bad module (missing export, runtime error at the top
-// of the file, etc.) isolates to that plugin and never crashes the host or peers.
+// Explorer is the one REQUIRED, core-bundled built-in — deliberately NOT a runtime
+// plugin (the M4 decision). Two reasons make it "core wearing a plugin costume":
+//   1. It owns the app's selection capability. Workbench calls host.requireApi('explorer')
+//      SYNCHRONOUSLY right after loading it and hands the selection refs to the file-op /
+//      menu / keyboard slices during setup(). Runtime loading is async (fetch → verify →
+//      import), so it can't satisfy that synchronous bootstrap dependency without making
+//      the whole Workbench setup async.
+//   2. Migrating it would require the SDK to expose useSelection (the privileged core
+//      selection state machine) plus DirectoryTab / ExplorerPanel / ExplorerStatusWidget /
+//      OpenEditorsView to every plugin — contradicting the SDK's non-privileged boundary.
+// So Explorer stays compiled in and loaded synchronously. It cannot be uninstalled.
 import explorerManifest from './explorer/manifest.json'
 import * as explorerModule from './explorer/src/plugin.js'
 
-import sourceControlManifest   from './source-control/manifest.json'
-import previewManifest          from './preview/manifest.json'
-import detailsManifest          from './details/manifest.json'
-import debugManifest            from './debug/manifest.json'
-import materialIconThemeManifest from './material-icon-theme/manifest.json'
-import chatManifest             from './chat/manifest.json'
-import searchManifest           from './search/manifest.json'
-import storageManifest          from './storage/manifest.json'
-import converterManifest        from './converter/manifest.json'
-
 export const EXPLORER_PLUGIN = { manifest: explorerManifest, module: explorerModule }
 
-// Each entry is { manifest, load } where load() => Promise<module>.
-// The plugin host calls load() and activate() in independent try/catch blocks —
-// an import failure or activate() error is isolated to one plugin.
-export const OPTIONAL_PLUGIN_LOADERS = [
-  { manifest: sourceControlManifest,    load: () => import('./source-control/src/plugin.js'    ) },
-  { manifest: previewManifest,          load: () => import('./preview/src/plugin.js'           ) },
-  { manifest: detailsManifest,          load: () => import('./details/src/plugin.js'           ) },
-  { manifest: debugManifest,            load: () => import('./debug/src/plugin.js'             ) },
-  { manifest: materialIconThemeManifest,load: () => import('./material-icon-theme/src/plugin.js') },
-  { manifest: chatManifest,             load: () => import('./chat/src/plugin.js'              ) },
-  { manifest: searchManifest,           load: () => import('./search/src/plugin.js'            ) },
-  { manifest: storageManifest,          load: () => import('./storage/src/plugin.js'           ) },
-  { manifest: converterManifest,        load: () => import('./converter/src/plugin.js'         ) },
-]
+// Every other first-party plugin loads at RUNTIME from /plugins/<id>/ (see
+// useRuntimePlugins.js): chat, debug, search, storage, converter, details,
+// material-icon-theme, preview, source-control. Nothing else is bundled, so this
+// legacy list is empty — kept only for the host's loader signature.
+export const OPTIONAL_PLUGIN_LOADERS = []

@@ -1,0 +1,38 @@
+{
+  "chat": {
+    "version": "1.0.0",
+    "client": "a137756d97937eaa3384edecdaeea79cbb923102674547d43aa5f611ea8e007d"
+  },
+  "converter": {
+    "version": "1.0.0",
+    "client": "7b2669f8b698183c9af6996fe9e96d860026885ef062e6bc0e5a0a4d36c5675c"
+  },
+  "debug": {
+    "version": "1.0.0",
+    "client": "55a32f0615a8cf90d91c6ed2292d3284e94d6519bf170871bf61a97d9715997f"
+  },
+  "details": {
+    "version": "1.0.0",
+    "client": "b9b71d9a5e7e73e2c7843665bb58a82dc934309eecc629216e0f51cb679417bd"
+  },
+  "material-icon-theme": {
+    "version": "1.0.0",
+    "client": "be2149d02a78c65169e44b445e6a3d08814030dd9d7e043b4838a989aef41b6c"
+  },
+  "preview": {
+    "version": "1.0.0",
+    "client": "c9356cafe51ca3169800f8b6d87cd102421c82a0dbb5a89364b98d2b3e3ab582"
+  },
+  "search": {
+    "version": "1.0.0",
+    "client": "292c67e9c2d7f161e5d78d16895ab4e8e65b446d3cdcf398dccd9f106adcdad7"
+  },
+  "source-control": {
+    "version": "1.0.0",
+    "client": "dba8324e67529b34a48588f3e1c38ed67b3b040c7f1e8293ee0dc7e8a938d72e"
+  },
+  "storage": {
+    "version": "1.0.0",
+    "client": "60da9ae2604919619197714a35729f974a711942e23c3b1c01af02931b7ab87b"
+  }
+}
