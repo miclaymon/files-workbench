@@ -50,7 +50,7 @@ Each milestone ends with the app runnable and verified before anything is commit
 - [x] **M2 — `@workbench/framework`** extracted. Registries, host, facade, UI/plugin
       models, plugin host on `@vue/reactivity`; app imports it.
       *Implemented + verified 2026-07-19; repo `../workbench-framework` (github
-      files-workbench-framework), initial commit `113d10b`.
+      workbench-framework), initial commit `113d10b`.
       26 modules moved to `workbench-framework/src/` (83 public exports), three app
       couplings inverted: the host takes an `activities` param (surfaces registered
       by `activities/index.js` at import), `getActivity` fallback dropped, and the
@@ -65,7 +65,7 @@ Each milestone ends with the app runnable and verified before anything is commit
 - [x] **M3 — `@workbench/vue`** extracted. Components + interaction composables +
       theming; app imports `<WorkbenchApp />` and friends.
       *Implemented + verified 2026-07-19 (Mic + agent); repo `../workbench-ui-vue`
-      (github files-workbench-vue), initial commit `1de533d`; framework gained the
+      (github workbench-ui-vue), initial commit `1de533d`; framework gained the
       Workbench instance in `9d5f1f1`. 40 components (layout system, editor grid, shell chrome incl.
       notifications, floating UI, hosts/primitives) + all 10 interaction
       composables + time/popup-position/uuid utils moved to

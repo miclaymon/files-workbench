@@ -42,7 +42,7 @@ A desktop file manager built with Electron + Vue 3 (Vite) on the front end and a
 |---|---|
 | Desktop shell | Electron 34 |
 | Frontend framework | Vue 3 + Vite |
-| Workbench core | [`@workbench/framework`](https://github.com/miclaymon/files-workbench-framework) (local sibling checkout `../workbench-framework`) |
+| Workbench core | [`@workbench/framework`](https://github.com/miclaymon/workbench-framework) (local sibling checkout `../workbench-framework`) |
 | Workbench UI kit | `@workbench/vue` (local sibling checkout `../workbench-ui-vue`) |
 | Code editor | Monaco Editor |
 | Video player | Video.js |
