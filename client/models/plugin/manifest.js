@@ -68,6 +68,13 @@ export function validateManifest(manifest) {
       errors.push('client.entry (entry module path) is required')
     }
   }
+  if (manifest.net != null) {
+    if (typeof manifest.net !== 'object' || Array.isArray(manifest.net)) {
+      errors.push('net must be an object { origins: string[] }')
+    } else if (manifest.net.origins != null && !Array.isArray(manifest.net.origins)) {
+      errors.push('net.origins must be an array of origin strings')
+    }
+  }
 
   if (manifest.permissions != null) {
     if (!Array.isArray(manifest.permissions)) errors.push('permissions must be an array')

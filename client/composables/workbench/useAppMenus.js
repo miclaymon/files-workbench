@@ -131,6 +131,7 @@ export function useAppMenus({ host, history, views, savePrefs, statusbar, explor
   const settingsTree = [
     { command: 'workbench.openSettings',          label: 'Preferences' },
     { command: 'workbench.openKeyboardShortcuts', label: 'Keyboard Shortcuts' },
+    { command: 'plugins.manage',                  label: 'Manage Plugins' },
   ]
 
   // Title-bar menu strip (File / Edit / View). MenuBar owns its own open/position
@@ -152,6 +153,7 @@ export function useAppMenus({ host, history, views, savePrefs, statusbar, explor
   function openCommandPalette()    { commandPaletteOpen.value = true }
   function openSettingsModal()     { host.facade.modals.open('settings') }
   function openKeyboardShortcuts() { host.facade.modals.open('keyboardShortcuts') }
+  function openPluginsManager()    { host.facade.modals.open('plugins') }
 
   async function savePreferences(newPrefs) {
     try {
@@ -166,6 +168,6 @@ export function useAppMenus({ host, history, views, savePrefs, statusbar, explor
   return {
     titleMenus, settingsMenuItems,
     commandPaletteOpen,
-    openCommandPalette, openSettingsModal, openKeyboardShortcuts, savePreferences,
+    openCommandPalette, openSettingsModal, openKeyboardShortcuts, openPluginsManager, savePreferences,
   }
 }

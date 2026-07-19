@@ -41,9 +41,50 @@ export function createPluginApi(manifest, host) {
     manifest: Object.freeze({ ...manifest }),
     log: (...args) => host.log?.(`plugin:${manifest.id}`, ...args),
   }
-  for (const perm of grantedPermissions(manifest)) {
+  const granted = grantedPermissions(manifest)
+  for (const perm of granted) {
     const pick = FACADE_SLICE[perm]
     if (pick) Object.assign(api, pick(facade))
+  }
+
+  // Capability slices — host-mediated stand-ins for ambient globals, so a plugin's
+  // supported path to the network / persistence / clipboard is `api`, not raw
+  // window.fetch / localStorage (which the capability scan flags). This is
+  // defense-in-depth + auditability, not a sandbox (see docs/PLUGINS.md).
+  if (granted.includes('net')) {
+    const origins = Array.isArray(manifest.net?.origins) ? manifest.net.origins : []
+    api.net = Object.freeze({
+      // fetch, restricted to the manifest's declared origins.
+      fetch: (url, opts) => {
+        let u
+        try { u = new URL(url, globalThis.location?.href) } catch { return Promise.reject(new Error('net: invalid url')) }
+        if (!origins.includes(u.origin)) {
+          return Promise.reject(new Error(`net: origin ${u.origin} is not in this plugin's declared net.origins`))
+        }
+        return fetch(u.href, opts)
+      },
+      origins: Object.freeze([...origins]),
+    })
+  }
+  if (granted.includes('storage')) {
+    const prefix = `fw:plugin:${manifest.id}:`
+    const CAP = 1 << 20 // ~1 MB soft cap per value
+    api.storage = Object.freeze({
+      get: (key) => { try { const v = localStorage.getItem(prefix + key); return v == null ? null : JSON.parse(v) } catch { return null } },
+      set: (key, value) => {
+        const s = JSON.stringify(value ?? null)
+        if (s.length > CAP) throw new Error('storage: value exceeds the per-value quota')
+        localStorage.setItem(prefix + key, s)
+      },
+      remove: (key) => localStorage.removeItem(prefix + key),
+      keys: () => Object.keys(localStorage).filter((k) => k.startsWith(prefix)).map((k) => k.slice(prefix.length)),
+    })
+  }
+  if (granted.includes('clipboard')) {
+    api.clipboard = Object.freeze({
+      readText:  () => navigator.clipboard?.readText?.()  ?? Promise.reject(new Error('clipboard: unavailable')),
+      writeText: (t) => navigator.clipboard?.writeText?.(String(t)) ?? Promise.reject(new Error('clipboard: unavailable')),
+    })
   }
 
   // The "server" permission grants `api.server`, a client bridge to the plugin's OWN
@@ -54,7 +95,7 @@ export function createPluginApi(manifest, host) {
   // plugin's manifest doesn't carry it — so gate on the permission alone. A call with
   // no backend loaded just fails (404), which callers already handle. This replaces the
   // old per-service brokers (e.g. api.scm): a backend defines whatever methods it wants.
-  if (grantedPermissions(manifest).includes('server')) {
+  if (granted.includes('server')) {
     const id = manifest.id
     api.server = Object.freeze({
       call: (method, params, opts) => callPluginRpc(id, method, params, opts),

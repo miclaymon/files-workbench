@@ -1,5 +1,5 @@
 import { markRaw } from 'vue'
-import { mdiViewDashboard, mdiCog, mdiKeyboardOutline, mdiCodeJson } from '@mdi/js'
+import { mdiViewDashboard, mdiCog, mdiKeyboardOutline, mdiCodeJson, mdiPuzzle } from '@mdi/js'
 
 import HomePage              from '../components/workbench/editor/HomePage.vue'
 import TransientStatusWidget from '../components/workbench/shell/status/TransientStatusWidget.vue'
@@ -8,6 +8,7 @@ import ConnectionWidget      from '../components/workbench/shell/status/Connecti
 import NotificationsWidget   from '../components/workbench/shell/status/NotificationsWidget.vue'
 import SettingsModal           from '../components/workbench/ui/SettingsModal.vue'
 import KeyboardShortcutsModal  from '../components/workbench/ui/KeyboardShortcutsModal.vue'
+import PluginsModal            from '../components/workbench/ui/PluginsModal.vue'
 
 // ── Workbench activity ──────────────────────────────────────────────────────
 //
@@ -66,6 +67,15 @@ export default {
       actions: [
         { key: 'json', icon: mdiCodeJson, title: 'Open Keyboard Shortcuts (JSON) — available once keybindings are file-backed', disabled: true, run: () => {} },
       ],
+    },
+    plugins: {
+      kind: 'plugins',
+      label: 'Plugins',
+      icon: mdiPuzzle,
+      component: markRaw(PluginsModal),
+      width: 'min(960px, 90vw)',
+      height: 'min(700px, 88vh)',
+      props: ctx => ({ host: ctx }),
     },
   },
 }

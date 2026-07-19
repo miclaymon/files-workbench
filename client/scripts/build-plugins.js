@@ -115,6 +115,7 @@ function isClientUpToDate(pluginDir, outClient) {
 // plugin.json} + content hashes, and updates the committed first-party lock.
 async function buildClientPlugins() {
   if (!fs.existsSync(PLUGINS_SRC)) return
+  const { scanCapabilities, uncoveredFindings } = await import('../lib/capability-scan.mjs')
   const lock = readLock()
   let built = 0
   for (const entry of fs.readdirSync(PLUGINS_SRC, { withFileTypes: true })) {
@@ -163,6 +164,21 @@ async function buildClientPlugins() {
     } catch (e) {
       if (SOFT) { console.warn(`[build-plugins] ${id}: client build failed, skipped (soft): ${e.message}`); continue }
       throw e
+    }
+
+    // Capability scan (../lib/capability-scan.mjs): code-execution primitives
+    // (eval / Function / dynamic import / Worker) fail a non-soft first-party build;
+    // uncovered network/storage/clipboard use is advisory (route it through `api`).
+    const findings = uncoveredFindings(scanCapabilities(fs.readFileSync(outClient, 'utf8')), mf.permissions || [])
+    const high = findings.filter((f) => f.severity === 'high')
+    if (high.length) {
+      const list = high.map((f) => `${f.token}×${f.count}`).join(', ')
+      if (SOFT) { console.warn(`[build-plugins] ${id}: capability scan (soft): code-execution primitives — ${list}`) }
+      else { console.error(`[build-plugins] ${id}: refusing build — code-execution primitives in bundle: ${list}`); process.exit(1) }
+    }
+    const caps = findings.filter((f) => f.severity === 'capability')
+    if (caps.length) {
+      console.warn(`[build-plugins] ${id}: capability scan: ${caps.map((f) => `${f.token} (declare "${f.permission}")`).join(', ')}`)
     }
 
     const clientHash = sha256(fs.readFileSync(outClient))

@@ -21,6 +21,7 @@ import (
 var (
 	pluginsDistDir       string
 	thirdPartyPluginsDir string
+	pluginRegistryURL    string // optional remote plugin index (FW_PLUGIN_REGISTRY)
 )
 
 type servedArtifact struct {
@@ -36,6 +37,7 @@ type servedPlugin struct {
 	Permissions []string        `json:"permissions"`
 	Client      *servedArtifact `json:"client,omitempty"`
 	FirstParty  bool            `json:"firstParty"`
+	Enabled     bool            `json:"enabled"`
 }
 
 // allowedArtifacts is the whitelist of files the artifact endpoint will serve — no
@@ -94,17 +96,24 @@ func scanServedPlugins(dir string, firstParty bool) []servedPlugin {
 		}
 		out = append(out, servedPlugin{
 			ID: id, Name: m.Name, Version: m.Version, Icon: m.Icon, Permissions: m.Permissions,
-			FirstParty: firstParty,
+			FirstParty: firstParty, Enabled: true,
 			Client:     &servedArtifact{URL: apiPrefix + "/plugins/" + id + "/" + m.Client.Entry, Hash: m.Client.Hash},
 		})
 	}
 	return out
 }
 
-// handlePluginsManifest lists all runtime-loadable plugins (first-party + third-party).
+// handlePluginsManifest lists all runtime-loadable plugins (first-party + third-party),
+// stamping each with its enabled state (disabled plugins are listed but not auto-loaded).
 func handlePluginsManifest(w http.ResponseWriter, r *http.Request) {
 	out := scanServedPlugins(pluginsDistDir, true)
 	out = append(out, scanServedPlugins(thirdPartyPluginsDir, false)...)
+	st := readPluginState()
+	for i := range out {
+		if st.Disabled[out[i].ID] {
+			out[i].Enabled = false
+		}
+	}
 	jsonOK(w, map[string]any{"plugins": out})
 }
 

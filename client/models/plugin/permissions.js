@@ -29,6 +29,11 @@ export const PERMISSIONS = Object.freeze({
   lightbox:    'Open a near-fullscreen lightbox overlay.',
   peek:        'Open a positioned peek popup near a trigger element.',
   server:      "Call this plugin's own sandboxed WASM backend (declared in `server`).",
+  // Capability permissions — each grants a host-mediated `api` slice so a plugin
+  // never needs raw ambient globals (see the capability scan + in-realm hardening).
+  net:         'Make outbound network requests through `api.net.fetch`, limited to the origins declared in the manifest `net.origins`.',
+  storage:     'Persist per-plugin key/value data through `api.storage` (namespaced; not shared with other plugins).',
+  clipboard:   'Read and write the system clipboard through `api.clipboard`.',
 })
 
 // Host/backend access permissions → human description. Each gates a brokered

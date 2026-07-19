@@ -75,9 +75,22 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["activities", "commands", "keybindings", "menus", "hooks", "modals", "editor", "preferences", "events", "selection", "query", "icons", "lightbox", "peek", "server"]
+        "enum": ["activities", "commands", "keybindings", "menus", "hooks", "modals", "editor", "preferences", "events", "selection", "query", "icons", "lightbox", "peek", "server", "net", "storage", "clipboard"]
       },
       "uniqueItems": true
+    },
+    "net": {
+      "description": "Configuration for the `net` permission: the origins api.net.fetch may reach.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origins": {
+          "description": "Allowed request origins, e.g. \"https://api.example.com\".",
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        }
+      }
     },
     "host_permissions": {
       "description": "Host/backend access. Surfaced now; enforced once the backend bridge lands.",

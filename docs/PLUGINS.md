@@ -122,6 +122,12 @@ defined in [`client/models/plugin/permissions.js`](../client/models/plugin/permi
 | `lightbox` | `api.lightbox` — open a near-fullscreen overlay (`open({ component, props })` / `close` / `active`). |
 | `peek` | `api.peek` — open a positioned peek popup near a trigger element. |
 | `server` | `api.server` — call this plugin's own sandboxed WASM backend (requires a `server` block; see [Server plugins](#server-plugins)). |
+| `net` | `api.net.fetch` — outbound requests, limited to the origins declared in the manifest `net.origins`. |
+| `storage` | `api.storage` — per-plugin namespaced key/value persistence (`get`/`set`/`remove`/`keys`). |
+| `clipboard` | `api.clipboard` — mediated `readText`/`writeText`. |
+
+The last three are **capability** permissions (see [Hardening](#hardening--the-client-trust-model)):
+each grants a host-mediated `api` slice so a plugin never needs a raw ambient global.
 
 **`host_permissions`** — backend/host access, each gating a **brokered** service
 (the Workbench forwards vetted requests to the Go server; the plugin never touches
@@ -383,6 +389,60 @@ API, and calls `activate`. Two delivery paths feed it:
    artifacts, and updates `plugins.lock.json`.
 3. Reload — the runtime loader discovers, verifies, and loads it. Surfaces appear
    through the registries exactly like a bundled plugin. No host code changes needed.
+
+---
+
+## Installing third-party plugins
+
+Third-party plugins are delivered as a **package** — a `.zip`/`.vsix` of a *built* plugin
+dir (the contents of `.fw/plugins/<id>/`: `client.js` + `plugin.json`, optionally
+`server.wasm`). They install into the writable `<dataDir>/plugins/` and load through the
+exact same runtime path as first-party plugins. Manage them in **Settings → Manage Plugins**
+(command `plugins.manage`):
+
+- **Install from file** — pick a package; the server extracts it (zip-slip/size guarded),
+  validates the manifest, **recomputes the `client.js` hash itself** (so the served hash
+  always matches the bytes on disk — it can't trust the package's claim), and writes the
+  runtime `plugin.json`. Endpoints (control server): `POST /_api/v1/plugins/install`
+  (multipart), `DELETE /_api/v1/plugins/{id}`, `POST /_api/v1/plugins/{id}/enabled`.
+- **Browse a registry** — set `FW_PLUGIN_REGISTRY` to an index URL
+  (`{ plugins: [{ id, name, version, download, hash, … }] }`); the server proxies it
+  (`GET /_api/v1/plugins/registry`, short-TTL cached) and installs a chosen entry by
+  downloading its package and verifying it against the registry-declared `hash`. The manager
+  shows **Update available** when the registry version is newer than the installed one.
+- **Enable / disable / uninstall** — disabled plugins are listed but not auto-loaded (state
+  in `<dataDir>/plugins/state.json`); toggling hot-loads/unloads via the plugin host with no
+  restart. First-party plugins can't be uninstalled.
+- **Consent** — before a freshly installed plugin's code is *run*, the manager scans the
+  artifact (below) and shows its requested permissions + any undeclared capability use. You
+  choose **Enable & run** or keep it disabled.
+
+## Hardening & the client trust model
+
+**State it plainly: client plugins are not sandboxed.** They run in the host's JS realm
+because they contribute live Vue components rendered inline (`<component :is>`), which can't
+cross a realm boundary. True isolation (an iframe/worker "webview" model) is a future
+project. What the app does instead is **raise the bar and make intent auditable**:
+
+- **Content-hash integrity** — every artifact is verified before load (first-party against
+  the committed `plugins.lock.json`; third-party against the server-recomputed hash).
+- **Capability permissions** — `net` / `storage` / `clipboard` grant *host-mediated* `api`
+  slices (`api.net.fetch` origin-allowlisted to `net.origins`, `api.storage` namespaced per
+  plugin, `api.clipboard`) so a well-behaved plugin routes those through `api`, never a raw
+  global.
+- **Capability scan** ([`client/lib/capability-scan.mjs`](../client/lib/capability-scan.mjs)) —
+  a static scan of the built bundle. **Code-execution** primitives (`eval`, the `Function`
+  constructor, dynamic `import(`, `Worker`) **fail a first-party build**; network/storage/
+  clipboard use is advisory for first-party (trusted + reviewed) and **surfaced at
+  third-party install consent**.
+- **Prototype hardening** ([`client/plugin-sdk/client/harden.js`](../client/plugin-sdk/client/harden.js)) —
+  freezes the well-known intrinsic prototypes so a plugin can't poison shared prototypes.
+  **Off by default** (freezing intrinsics can break libraries that patch them — Monaco,
+  video.js); enable to verify with `VITE_FW_HARDEN=true` or `localStorage['fw:harden']='1'`,
+  and flip the default once the full app is confirmed clean.
+
+None of this is a security boundary — it is defense-in-depth + integrity + auditability.
+Install only plugins you trust.
 
 ---
 

@@ -32,6 +32,10 @@ config/plugins/source-control/
 # per-target artifacts (client.js, server.wasm, plugin.json) + hashes here.
 .fw/
 
+# Third-party plugin install state (dev). In dev the data dir aliases config/, so
+# user-installed plugins + their enable/disable state land under config/plugins/.
+config/plugins/state.json
+
 # Claude Code local settings
 .claude/
 

@@ -61,6 +61,7 @@ func main() {
 	// .fw/plugins dir in dev) + user-installed third-party plugins (writable data dir).
 	pluginsDistDir = envOr("FW_PLUGINS_DIR", filepath.Join(repoRoot, ".fw", "plugins"))
 	thirdPartyPluginsDir = filepath.Join(dataDir, "plugins")
+	pluginRegistryURL = os.Getenv("FW_PLUGIN_REGISTRY") // remote plugin index (optional)
 
 	if err := loadBlacklist(blacklistPath); err != nil {
 		log.Printf("warn: could not load blacklist: %v", err)
@@ -164,6 +165,7 @@ func registerDataRoutes(mux *http.ServeMux) {
 
 	// Runtime plugin loading — discovery manifest + artifact serving (client.js, wasm).
 	mux.HandleFunc("GET "+apiPrefix+"/plugins/manifest", handlePluginsManifest)
+	mux.HandleFunc("GET "+apiPrefix+"/plugins/registry", handlePluginRegistry)
 	mux.HandleFunc("GET "+apiPrefix+"/plugins/{id}/{artifact}", handlePluginArtifact)
 }
 
@@ -198,6 +200,11 @@ func registerControlRoutes(mux *http.ServeMux) {
 
 	// Server plugins — generic RPC broker (write-side, same handler).
 	mux.HandleFunc("POST "+apiPrefix+"/plugins/{id}/rpc", handlePluginRpc)
+
+	// Third-party plugin management (install / uninstall / enable-disable).
+	mux.HandleFunc("POST "+apiPrefix+"/plugins/install", handlePluginInstall)
+	mux.HandleFunc("DELETE "+apiPrefix+"/plugins/{id}", handlePluginUninstall)
+	mux.HandleFunc("POST "+apiPrefix+"/plugins/{id}/enabled", handlePluginSetEnabled)
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
