@@ -60,7 +60,8 @@ const areaRef = ref(null)
 const { activeSash, prevExpandedIdx, needsSash, wrapStyle, startResize } = useStackResize()
 const { activeDrag } = useViewDrag()
 
-function labelFor(view) { return getViewEntry(view.id)?.label ?? view.id }
+// Empty (not the raw view id) while a persisted view's plugin is still loading.
+function labelFor(view) { return getViewEntry(view.id)?.label ?? '' }
 function iconFor(view)  { return getViewEntry(view.id)?.icon ?? '' }
 
 // A View's sections to render: saved layout state if present; otherwise the

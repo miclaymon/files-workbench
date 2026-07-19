@@ -106,7 +106,11 @@ defineEmits(['toggle', 'header-drag-start', 'header-drag-end', 'heading-contextm
 .ss-body {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  /* Scroll overflowing section content instead of clipping it. Components that manage
+     their own scroll (e.g. DebugPanel: height:100% + overflow-y:auto) fill this area
+     exactly, so they don't get a second scrollbar; ones that don't (e.g. the Details
+     sections) now scroll here when the section is small or the content is tall. */
+  overflow: auto;
   display: flex;
   flex-direction: column;
 }

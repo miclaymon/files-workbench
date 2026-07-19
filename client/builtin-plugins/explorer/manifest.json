@@ -6,6 +6,6 @@
   "description": "The file explorer: the directory tree (Places), Open Editors, the navigable directory editor tab, and the selection capability the rest of the workbench consumes.",
   "author": "Files Workbench",
   "icon": "mdiFileTree",
-  "main": "src/plugin.js",
+  "client": { "entry": "src/plugin.js" },
   "permissions": ["activities"]
 }

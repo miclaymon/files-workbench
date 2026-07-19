@@ -28,6 +28,9 @@ export default defineNuxtConfig({
     resolve: {
       alias: {
         '#preferences-schema': fileURLToPath(new URL('../config/preferences/preferences.schema.json', import.meta.url)),
+        // Committed first-party plugin hash pins — the client's root of trust for
+        // verifying runtime-loaded plugin artifacts (see useRuntimePlugins.js).
+        '#plugins-lock': fileURLToPath(new URL('../plugins.lock.json', import.meta.url)),
       }
     },
     server: {

@@ -1,0 +1,18 @@
+{
+  "manifest_version": 1,
+  "id": "converter",
+  "name": "Converter",
+  "version": "1.0.0",
+  "description": "Placeholder for file format conversion, contributed to the Activity Bar.",
+  "author": "Files Workbench",
+  "icon": "mdiArrowSplitHorizontal",
+  "permissions": [
+    "activities"
+  ],
+  "engines": {
+    "sdk": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/plugin.js"
+  }
+}

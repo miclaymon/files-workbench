@@ -8,6 +8,8 @@
 | npm | 10 | Bundled with Node 20 |
 | Go | 1.23 | Check: `go version` |
 | ffmpeg | any recent | Required for video/audio thumbnail generation. Check: `ffmpeg -version` |
+| git | any recent | Backs the Source Control plugin. Check: `git --version` |
+| `extism-js` | 1.5+ | **Only to build server plugins** (their WASM backends). The extism JS PDK compiler. Install: `curl -L https://raw.githubusercontent.com/extism/js-pdk/main/install.sh \| bash` (or a release binary from [extism/js-pdk](https://github.com/extism/js-pdk/releases)). Some versions also need binaryen's `wasm-merge` on `PATH`. Not needed to run the app if the artifacts are already built. |
 
 ## Installation
 
@@ -80,6 +82,20 @@ cd server/v1 && go mod tidy
 2. Register it in `server/v1/main.go` — `registerDataRoutes` for read-only GETs (port 8001) or `registerControlRoutes` for mutating POST/PUTs (port 8002) — with the `/_api/v1/` prefix.
 3. Add a matching client helper in `client/lib/` (see `fs-api.js` or `explorer-api.js` as examples).
 
+> For plugin-specific backend work, prefer a **server plugin** over a new core endpoint — it runs sandboxed and needs no Go changes. See [PLUGINS.md → Server plugins](./PLUGINS.md#server-plugins).
+
+### Plugins (the `/plugins` tree)
+
+Every feature but Explorer is a plugin whose source lives under the top-level [`/plugins/<id>/`](../plugins/) — a `manifest.json` plus a `client/` (renderer) and/or `server/` (WASM backend) dir. Client code imports Vue and shared host surface from the bare specifiers `vue` and `@fw/sdk`, which the build externalizes to the host so a plugin shares the app's single Vue instance.
+
+`npm run build:plugins` esbuild-bundles each `client/` target to a self-contained ES module, content-hashes it into [`plugins.lock.json`](../plugins.lock.json), and (for `server/` targets) compiles the WASM backend. At runtime the client fetches each plugin's manifest, **verifies its hash** against the lock (prod refuses a mismatch; dev warns), then dynamically imports it — first-party plugins load through the exact same path a third-party one would. `npm run dev` runs a best-effort soft prebuild automatically. Explorer is the one exception: it stays compiled into the app (it owns the selection capability the rest of the workbench reads synchronously at startup).
+
+Third-party plugins install from a file or a remote registry via **Settings → Manage Plugins** (they land in `<dataDir>/plugins/`; in dev that's `config/plugins/`). Point `FW_PLUGIN_REGISTRY` at a JSON index URL to enable the Browse tab. Client plugins run in-process (not sandboxed) — the trust model (content-hash integrity, capability permissions, a build/consent capability scan, and flag-gated prototype hardening via `VITE_FW_HARDEN`) is described in [PLUGINS.md](./PLUGINS.md). Full guide: [PLUGINS.md](./PLUGINS.md).
+
+### Server plugins (WASM backends)
+
+Plugins with a `server` block (e.g. Source Control) ship a WASM backend the Go server runs sandboxed, compiled into `config/plugins/<id>/`. `npm run dev` **prebuilds them automatically** (a best-effort `build:plugins --soft` step in `dev:server`): it rebuilds only when the backend source changed, and if the `extism-js` compiler isn't installed it just warns and continues — the app runs, that plugin degrades to unavailable (an empty Source Control panel). To build explicitly, run `npm run build:plugins`; `build:electron` runs it as a hard step (a broken plugin fails the production build). Needs the `extism-js` compiler (see [Prerequisites](#prerequisites)). Full guide: [PLUGINS.md → Server plugins](./PLUGINS.md#server-plugins).
+
 ### Monaco Editor workers
 
 Monaco requires worker scripts to be bundled separately. They are configured in `client/components/workbench/editor/MonacoEditor.vue` via `window.MonacoEnvironment.getWorker()`, instantiating workers imported with Vite's `?worker` query (e.g. `import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'`). Use `?worker` rather than `new Worker(new URL('monaco-editor/…', import.meta.url))` — the bare-specifier `new URL` form resolves in the dev server but **fails the production `nuxt generate` build** (Rollup can't resolve the package specifier in its worker plugin).
@@ -100,18 +116,22 @@ Output goes to `client/.output/public/`.
 npm run build:electron        # from the repo root (or: cd client && npm run build:electron)
 ```
 
-This runs three steps: compiles the Go server (`client/scripts/build-server.js` →
-`server/v1/dist/`), generates the static client (`nuxt generate` → `.output/public`),
-and packages everything with electron-builder. Output goes to `client/dist-electron/`.
-Targets depend on the build platform: `.AppImage` (Linux), `.dmg` (macOS),
-`.exe`/NSIS (Windows) — electron-builder can only build each OS's installer on that OS.
+This runs four steps: compiles the Go server (`client/scripts/build-server.js` →
+`server/v1/dist/`), builds the plugin artifacts (`build-plugins.js --out .fw/plugins-dist`,
+producing prod client bundles + WASM backends), generates the static client
+(`nuxt generate` → `.output/public`), and packages everything with electron-builder.
+Output goes to `client/dist-electron/`. Targets depend on the build platform:
+`.AppImage` (Linux), `.dmg` (macOS), `.exe`/NSIS (Windows) — electron-builder can only
+build each OS's installer on that OS.
 
-The Go server binary, the read-only `config/` tree, and `blacklist.yaml` are bundled
-into the app via electron-builder `extraResources`. At launch the Electron main
-process spawns the server (fixed ports **8001**/**8002**) and points it at the
-bundled config (`FW_CONFIG_DIR`) and a writable user-data dir
-(`FW_DATA_DIR` = Electron's `userData`, where `user-preferences.json` and logs go),
-then waits for `/health` before opening the window.
+The Go server binary, the read-only `config/` tree, `blacklist.yaml`, and the built
+first-party plugin artifacts are bundled into the app via electron-builder
+`extraResources`. At launch the Electron main process spawns the server (fixed ports
+**8001**/**8002**) and points it at the bundled config (`FW_CONFIG_DIR`), the bundled
+plugins (`FW_PLUGINS_DIR` → `resources/plugins`, whence they're served + hash-verified),
+and a writable user-data dir (`FW_DATA_DIR` = Electron's `userData`, where
+`user-preferences.json`, logs, and any third-party `plugins/` go), then waits for
+`/health` before opening the window.
 
 > The Material icon-theme assets (`config/plugins/material-icon-theme/vscode-material-icon-theme/`)
 > are generated, not committed — run `scripts/install-material-icon-theme.sh` before

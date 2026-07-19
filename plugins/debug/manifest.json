@@ -1,0 +1,12 @@
+{
+  "manifest_version": 1,
+  "id": "debug",
+  "name": "Debug",
+  "version": "1.0.0",
+  "description": "Debug log panel (Bottom Panel) with per-level filtering; exposes the shared in-memory log as its activity API.",
+  "author": "Files Workbench",
+  "icon": "mdiBug",
+  "engines": { "sdk": "^1.0.0" },
+  "permissions": ["activities", "commands"],
+  "client": { "entry": "client/plugin.js" }
+}

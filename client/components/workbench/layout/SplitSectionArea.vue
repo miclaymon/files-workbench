@@ -68,7 +68,11 @@ const { activeSectionDrag, SECTION_DRAG_MIME } = useViewDrag()
 // is prefixed with its home View's name. Display-only — driven by homeViewId vs
 // the View it currently sits under, so it reverts automatically if moved home.
 function titleFor(section) {
-  const base = getViewEntry(section.id)?.label ?? section.id
+  const entry = getViewEntry(section.id)
+  // Not yet registered (a persisted section whose plugin is still loading) — render
+  // no title rather than flashing the internal section id (e.g. "previewMain").
+  if (!entry) return ''
+  const base = entry.label ?? section.id
   if (section.homeViewId && section.homeViewId !== props.viewId) {
     const home = getViewEntry(section.homeViewId)?.label ?? section.homeViewId
     return `${home}: ${base}`
@@ -223,7 +227,11 @@ function onAreaDrop(event) {
   min-height: 0;
   min-width: 0;
   display: flex;
-  overflow: hidden;
+  /* Scroll the section stack when its sections don't fit the available height (e.g. many
+     sections in a short Bottom Panel) so every section stays reachable. overflow-x stays
+     hidden to match the prior behavior. */
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .ssa--col { flex-direction: column; }
 .ssa--row { flex-direction: row; }

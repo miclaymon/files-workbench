@@ -2,9 +2,13 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://files-workbench/schemas/plugin-manifest.json",
   "title": "Files Workbench Plugin Manifest",
-  "description": "manifest.json shipped at the root of a plugin archive (.zip/.vsix). Modelled on a Chrome extension manifest.",
+  "description": "manifest.json at the root of a plugin's source dir (/plugins/<id>/). Modelled on a Chrome extension manifest. A plugin declares a client and/or a server target.",
   "type": "object",
-  "required": ["manifest_version", "id", "name", "version", "main"],
+  "required": ["manifest_version", "id", "name", "version"],
+  "anyOf": [
+    { "required": ["client"] },
+    { "required": ["server"] }
+  ],
   "additionalProperties": false,
   "properties": {
     "manifest_version": {
@@ -26,26 +30,74 @@
     "description": { "type": "string" },
     "author": { "type": "string" },
     "icon": { "description": "MDI path string or asset reference shown in the plugin UI.", "type": "string" },
-    "main": {
-      "description": "Entry module relative to the plugin root, e.g. \"src/plugin.js\". Exports activate(api) and optional deactivate(api).",
-      "type": "string",
-      "minLength": 1
+    "client": {
+      "description": "Client (renderer) target. Built to a self-contained ES module loaded at runtime.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entry"],
+      "properties": {
+        "entry": {
+          "description": "Entry module relative to the plugin root, e.g. \"client/plugin.js\". Exports activate(api) and optional deactivate(api).",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "server": {
+      "description": "Sandboxed WASM backend target. The `entry` JS is compiled to WebAssembly and run on the Go server with no ambient authority beyond the granted permissions.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entry"],
+      "properties": {
+        "entry": {
+          "description": "Backend source module relative to the plugin root, e.g. \"server/git.plugin.js\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "runtime": {
+          "description": "Backend runtime. Only \"wasm-js\" is supported today.",
+          "type": "string",
+          "enum": ["wasm-js"]
+        },
+        "permissions": {
+          "description": "Host functions the WASM backend may call. exec is parameterized per binary (exec:<name>).",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(exec:[a-z0-9._-]+|fs:read|fs:write|net)$"
+          },
+          "uniqueItems": true
+        }
+      }
     },
     "permissions": {
       "description": "Front-end capabilities. Each gates a slice of the WorkbenchAPI. Unknown values are ignored with a warning.",
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["activities", "commands", "keybindings", "menus", "hooks", "modals", "editor", "preferences", "events", "selection", "query"]
+        "enum": ["activities", "commands", "keybindings", "menus", "hooks", "modals", "editor", "preferences", "events", "selection", "query", "icons", "lightbox", "peek", "server", "net", "storage", "clipboard"]
       },
       "uniqueItems": true
+    },
+    "net": {
+      "description": "Configuration for the `net` permission: the origins api.net.fetch may reach.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origins": {
+          "description": "Allowed request origins, e.g. \"https://api.example.com\".",
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        }
+      }
     },
     "host_permissions": {
       "description": "Host/backend access. Surfaced now; enforced once the backend bridge lands.",
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["fs:read", "fs:write", "scm:read", "scm:write", "control", "clipboard"]
+        "enum": ["fs:read", "fs:write", "control", "clipboard"]
       },
       "uniqueItems": true
     },
@@ -55,7 +107,7 @@
       "additionalProperties": { "type": "string" }
     },
     "engines": {
-      "description": "Host compatibility, e.g. { \"workbench\": \"^2.0.0\" }.",
+      "description": "Host compatibility, e.g. { \"sdk\": \"^1.0.0\" } — the @fw/sdk contract version.",
       "type": "object",
       "additionalProperties": { "type": "string" }
     }

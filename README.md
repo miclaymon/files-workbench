@@ -114,7 +114,8 @@ files-workbench2/
 ├── client/                   Nuxt 3 SPA + Electron shell
 │   ├── assets/css/           Global CSS variables and base styles
 │   ├── activities/           First-party activity modules — each declares its tab/panel/status surfaces + runtime API (Workbench shell only; the rest are plugins)
-│   ├── builtin-plugins/      First-party plugins loaded through the plugin host (Explorer, Source Control, Preview, Details, Debug, Material Icon Theme, Chat, Search, Storage, Converter)
+│   ├── builtin-plugins/      Explorer only — the one core-bundled plugin (owns the selection capability, read synchronously at startup); every other first-party plugin loads at runtime from the root-level /plugins tree
+│   ├── plugin-sdk/           @fw/sdk — the host SDK surface (Vue, UI models, safe composables/components) that plugin clients import, externalized to the app at build
 │   ├── models/               UI model classes (ui/: Activity, View, …) + plugin model (plugin/: manifest, permissions)
 │   ├── components/workbench/ All UI components
 │   ├── composables/          Vue composables, grouped:
@@ -129,11 +130,13 @@ files-workbench2/
 │   ├── plugins/              Nuxt plugins (sw.client.js — service worker registration)
 │   ├── public/               Static assets served as-is (sw.js — service worker)
 │   └── server/routes/        Nitro server routes (dev proxy workaround for large/binary responses)
+├── plugins/                  First-party plugin source tree — one dir per plugin (manifest.json + client/ and/or server/), built to runtime artifacts by npm run build:plugins
+├── plugins.lock.json         Committed content-hash pins for first-party plugin artifacts (the integrity root of trust the loader verifies against)
 ├── config/                   User configuration and defaults
 │   ├── preferences/          App preferences JSON + schema
 │   ├── keybindings/          Keyboard shortcut definitions
 │   ├── themes/               Theme color definitions
-│   └── plugins/              Third-party plugins (e.g. material-icon-theme)
+│   └── plugins/              Built server-plugin WASM backends + icon-pack assets the Go server serves (output of npm run build:plugins; installed apps also read third-party plugins from userData/plugins)
 ├── docs/                     Project documentation
 ├── server/v1/                Go HTTP backend (data + control servers)
 │   └── *.go                  Route handlers, media processing, thumbnail cache

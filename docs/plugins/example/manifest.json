@@ -6,6 +6,7 @@
   "description": "Example plugin: contributes a sidebar panel, a command, a keybinding, and a left status widget.",
   "author": "Files Workbench",
   "icon": "mdiHandWave",
-  "main": "src/plugin.js",
+  "client": { "entry": "client/plugin.js" },
+  "engines": { "sdk": "^1.0.0" },
   "permissions": ["activities", "commands", "keybindings"]
 }

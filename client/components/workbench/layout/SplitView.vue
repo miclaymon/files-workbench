@@ -65,8 +65,10 @@ const headingLabel = computed(() => {
   // Only fold the section name in when its own heading is hidden; a section that
   // keeps its heading (alwaysShowHeading) shows its name there instead.
   if (secs.length === 1 && secs[0].id !== props.view.id && !secs[0].alwaysShowHeading) {
-    const secLabel = getViewEntry(secs[0].id)?.label ?? secs[0].id
-    return `${props.label}: ${secLabel}`
+    // Only fold the section name in once it's registered — avoids flashing the raw
+    // section id (or a dangling "Label: ") while its plugin is still loading.
+    const entry = getViewEntry(secs[0].id)
+    if (entry) return `${props.label}: ${entry.label ?? secs[0].id}`
   }
   return props.label
 })

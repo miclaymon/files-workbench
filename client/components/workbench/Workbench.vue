@@ -243,6 +243,9 @@ import { useActivityHost } from '~/composables/activity/useActivityHost.js'
 import { formatChord } from '~/composables/activity/useKeybindingRegistry.js'
 import { createPluginHost } from '~/composables/plugins/usePluginHost.js'
 import { EXPLORER_PLUGIN, OPTIONAL_PLUGIN_LOADERS } from '~/builtin-plugins/index.js'
+import { installFwSdk } from '~/plugin-sdk/client/index.js'
+import { hardenIntrinsics } from '~/plugin-sdk/client/harden.js'
+import { loadRuntimePlugins } from '~/composables/plugins/useRuntimePlugins.js'
 import { useArchive } from '~/composables/workbench/useArchive.js'
 import { useFileOperations } from '~/composables/workbench/useFileOperations.js'
 import { useFileContextMenus } from '~/composables/workbench/useFileContextMenus.js'
@@ -367,6 +370,16 @@ const host = useActivityHost({
 // here (right after the host) rather than later because Explorer is now one of
 // them and owns the selection API the file-op / menu / keyboard slices below
 // consume synchronously — it must be registered before host.requireApi('explorer').
+// Publish the SDK global before any runtime plugin is imported — its externalized
+// `vue` / `@fw/sdk` bindings resolve to globalThis.__FW_SDK at load, so plugins share
+// the host's single Vue instance and live models/components.
+installFwSdk()
+// Defense-in-depth: freeze shared intrinsic prototypes before any plugin runs, so a
+// plugin can't poison prototypes the app shares. Off by default (compat risk with libs
+// that patch prototypes) — see plugin-sdk/client/harden.js. Not a sandbox.
+const frozen = hardenIntrinsics()
+if (frozen) log('plugins', `intrinsic hardening on (${frozen.length} prototypes frozen)`, null, 'info')
+
 const pluginHost = createPluginHost({ host, log })
 pluginHost.load(EXPLORER_PLUGIN.manifest, EXPLORER_PLUGIN.module)
 // Optional plugins load asynchronously (dynamic import per plugin). An import
@@ -374,7 +387,14 @@ pluginHost.load(EXPLORER_PLUGIN.manifest, EXPLORER_PLUGIN.module)
 // plugin without affecting peers or the host. Fire-and-forget: Vue reactivity
 // propagates each plugin's registrations as they resolve.
 pluginHost.loadAllAsync(OPTIONAL_PLUGIN_LOADERS)
+// Runtime (unbundled) plugins from /plugins/<id>/: fetched, hash-verified, and
+// dynamic-imported through the same host. Fire-and-forget + isolated like the above;
+// prod verifies pinned hashes strictly, dev warns. (This is the path first-party and
+// third-party plugins share — e.g. Chat now loads here rather than being compiled in.)
+loadRuntimePlugins({ pluginHost, log, strict: !import.meta.dev })
 if (import.meta.dev) window.__plugins = pluginHost
+// The Plugins manager modal reaches the host to load/unload/inspect plugins live.
+provide('pluginHost', pluginHost)
 
 // Selection now lives in the Explorer activity (a first-party plugin). Pull the
 // same refs/handlers the rest of the app consumes (file ops, context menus,
@@ -526,7 +546,7 @@ provide('viewCtx', host)
 const {
   titleMenus, settingsMenuItems,
   commandPaletteOpen,
-  openCommandPalette, openSettingsModal, openKeyboardShortcuts, savePreferences,
+  openCommandPalette, openSettingsModal, openKeyboardShortcuts, openPluginsManager, savePreferences,
 } = useAppMenus({
   host,
   history,
@@ -600,6 +620,7 @@ for (const cmd of [
   { id: 'workbench.openQuickOpen',         title: 'Go to File…',             category: 'Workbench',   run: () => showCommandPalette('') },
   { id: 'workbench.openSettings',          title: 'Open Settings',           category: 'Preferences', run: () => openSettingsModal() },
   { id: 'workbench.openKeyboardShortcuts', title: 'Open Keyboard Shortcuts', category: 'Preferences', run: () => openKeyboardShortcuts() },
+  { id: 'plugins.manage',                  title: 'Manage Plugins',          category: 'Preferences', run: () => openPluginsManager() },
 ]) host.facade.commands.register(cmd)
 
 // ── Default keybindings ───────────────────────────────────────────────────────

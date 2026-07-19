@@ -23,6 +23,19 @@ server/v1/files-workbench
 # Generated icon-pack assets (run scripts/install-material-icon-theme.sh)
 config/plugins/material-icon-theme/vscode-material-icon-theme/
 
+# Generated server-plugin WASM backends + emitted manifests (run npm run build:plugins).
+# Source lives in client/builtin-plugins/<id>/server/; these are build outputs.
+config/plugins/*/plugin.wasm
+config/plugins/source-control/
+
+# Built plugin artifacts (dev). Source lives in /plugins/<id>/; the build emits the
+# per-target artifacts (client.js, server.wasm, plugin.json) + hashes here.
+.fw/
+
+# Third-party plugin install state (dev). In dev the data dir aliases config/, so
+# user-installed plugins + their enable/disable state land under config/plugins/.
+config/plugins/state.json
+
 # Claude Code local settings
 .claude/
 
