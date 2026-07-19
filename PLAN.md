@@ -62,8 +62,30 @@ Each milestone ends with the app runnable and verified before anything is commit
       (rpc injection), palette + chords, Settings/Shortcuts modals, plugin hot
       disable→"Unknown view"→re-enable heals live, selection→preview/status
       reactivity, lightbox, editor split/preset; `vite build` clean.*
-- [ ] **M3 — `@workbench/vue`** extracted. Components + interaction composables +
+- [x] **M3 — `@workbench/vue`** extracted. Components + interaction composables +
       theming; app imports `<WorkbenchApp />` and friends.
+      *Implemented + verified 2026-07-19 (Mic + agent); repo `../workbench-ui-vue`
+      (github files-workbench-vue), initial commit `1de533d`; framework gained the
+      Workbench instance in `9d5f1f1`. 40 components (layout system, editor grid, shell chrome incl.
+      notifications, floating UI, hosts/primitives) + all 10 interaction
+      composables + time/popup-position/uuid utils moved to
+      `workbench-ui-vue/src/` (index.js exports everything named by SFC name).
+      App rewired in 16 files (default component imports → named kit imports);
+      `resolve.dedupe` extended with `@mdi/js` + `@workbench/framework`
+      (symlinked-package bare imports must resolve to the app's node_modules).
+      Verified in-browser: boot with full layout restore, context menu, palette,
+      split/merge, notifications panel, preview/selection, SCM; `vite build`
+      clean. Stage 2 (approved design) also done: `createWorkbench()` /
+      `new Workbench()` in the framework (ties the activity host + facade +
+      plugin host under one instance; ensures activity-surface registration),
+      `<WorkbenchApp :workbench>` in the kit (composition root — provides
+      `viewCtx`/`workbench` to the tree and owns the registry-driven overlay
+      surfaces: ModalHost, LightboxHost, PeekHost), and the theming CSS moved to
+      `@workbench/vue/styles/workbench.css` (imported by the app's main.js).
+      Workbench.vue now wraps its chrome in `<WorkbenchApp>`; further chrome
+      absorption into WorkbenchApp is future work (M6-ish). Verified in-browser
+      after stage 2: boot, Settings modal via palette, lightbox, panels;
+      build clean.*
 - [ ] **M4 — `@files-workbench/core`** extracted. Go server + JS client move out; app
       spawns/bundles the server from the package.
 - [ ] **M5 — `@workbench/plugin-sdk`** extracted. Plugin build rewired to externalize

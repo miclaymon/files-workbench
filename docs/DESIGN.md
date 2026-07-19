@@ -28,17 +28,19 @@ There is no dev proxy: in development the Vite dev server (port 3000) serves the
 
 ### Component folder structure
 
-All workbench components live under `client/components/workbench/` and are grouped into seven subfolders (every component is imported explicitly — there are no auto-imports):
+Generic workbench components — the shell chrome, the ViewContainer/SplitView layout system, the editor split-grid, the floating UI (menus, palette, modal/lightbox/peek hosts), and the interaction composables — live in the **`@workbench/vue`** package and are imported named (`import { ViewContainer } from '@workbench/vue'`). `Workbench.vue` wraps the chrome in the kit's `<WorkbenchApp :workbench>` composition root (which provides `viewCtx`/`workbench` and renders the overlay hosts), binding it to the `Workbench` instance created via `createWorkbench()` from `@workbench/framework`.
 
-| Folder | Contents |
+App-specific components remain under `client/components/workbench/` (every component is imported explicitly — there are no auto-imports):
+
+| Location | Contents |
 |---|---|
-| `shell/` | `TitleBar`, `MenuBar`, `CommandCenter`, `AppHistory`, `ActivityBar`, `StatusBar` (a host of activity status widgets), `PrimarySideBar`, `SecondarySideBar`, `BottomPanel`, `NotificationPanel`, `NotificationItem`, `NotificationJobGroup`, `NotificationOperation`; `status/` subfolder for the self-gating status widgets — the app chrome and resizable workspace panes |
-| `layout/` | `ViewContainer`, `SplitViewArea`, `SplitView`, `SplitSectionArea`, `SplitSection`, `ViewContentHost`, `ViewActions`, `ViewDropOverlay`, `Sash` |
-| `editor/` | `Editor`, `GridView`, `EditorGroup`, `EditorDropOverlay`, `TabContentHost` (resolves a tab's `kind` → registered tab view), `DirectoryTab`, `HomePage`, `MonacoEditor` |
-| `directory/` | `DirectoryPanel`, `DirectoryLayout`, all `Directory*Layout` variants, `DirectoryBreadcrumb`, `DirectoryHoverPreview`, `AudioPlayer`, `VideoPlayer` |
-| `explorer/` | `ExplorerPanel`, `TreeList`, `TreeItem`, `OpenEditorsView` |
-| `views/` | `ChatPanel`, `DetailsPanel`, `PlaceholderPanel` (Preview's and Debug's components moved into their runtime plugins under `/plugins`) |
-| `ui/` | `FloatingMenu`, `ContextMenu`, `Tooltip`, `CommandPalette`, `ModalEditor` (shared modal chrome), `ModalHost` (renders the active registered modal), `SettingsModal`, `KeyboardShortcutsModal` |
+| `@workbench/vue` (kit) | Shell chrome (`TitleBar` + controls, `MenuBar`, `CommandCenter`, `AppHistory`, `ActivityBar`, `StatusBar`, `PrimarySideBar`, `SecondarySideBar`, `BottomPanel`, the notification stack), layout system (`ViewContainer`, `SplitViewArea`/`SplitView`/`SplitSectionArea`/`SplitSection`, `ViewContentHost`, `ViewActions`, `ViewTabStrip`, `ViewDropOverlay`, `Sash`), editor grid (`Editor`, `GridView`, `EditorGroup`, `TabContentHost`, `EditorDropOverlay`), floating UI (`FloatingMenu`, `ContextMenu`, `Tooltip`, `CommandPalette`, `ModalEditor`, `ModalHost`, `LightboxHost`, `PeekHost`), primitives (`ResolvedIcon`, `PendingValue`), `WorkbenchApp` |
+| `editor/` (app) | `DirectoryTab`, `HomePage`, `MonacoEditor` |
+| `directory/` (app) | `DirectoryPanel`, `DirectoryLayout`, all `Directory*Layout` variants, `DirectoryBreadcrumb`, `DirectoryHoverPreview`, `AudioPlayer`, `VideoPlayer` |
+| `explorer/` (app) | `ExplorerPanel`, `TreeList`, `TreeItem`, `OpenEditorsView` |
+| `views/` (app) | `ChatPanel`, `DetailsPanel`, `PlaceholderPanel` (Preview's and Debug's components live in their runtime plugins under `/plugins`) |
+| `ui/` (app) | `SettingsModal`, `KeyboardShortcutsModal`, `PluginsModal` (app modal bodies) |
+| `shell/status/` (app) | The self-gating status widgets |
 
 `Workbench.vue` lives at the root of `components/workbench/`.
 
@@ -312,7 +314,7 @@ Double-clicking a filename in the tree or directory view opens an inline `conten
 
 ## Theming
 
-All colors are CSS custom properties defined in `client/assets/css/workbench.css`. The theme JSON files in `config/themes/` are the source of truth for each built-in theme; at startup the app applies them by setting CSS variables on `:root`. The user's accent color overrides `--accent` independently of the theme.
+All colors are CSS custom properties defined in the kit's `@workbench/vue/styles/workbench.css` (imported globally by `client/main.js`). The theme JSON files in `config/themes/` are the source of truth for each built-in theme; at startup the app applies them by setting CSS variables on `:root`. The user's accent color overrides `--accent` independently of the theme.
 
 ## CSS architecture
 
@@ -360,7 +362,7 @@ Container queries are placed at the bottom of the `<style scoped>` block after a
 
 ### Global CSS (`workbench.css`)
 
-`client/assets/css/workbench.css` owns:
+The kit's `styles/workbench.css` owns:
 - `:root` custom property definitions (all theme color variables, spacing tokens)
 - Base resets (`*, box-sizing: border-box`, body defaults)
 - Scrollbar styles

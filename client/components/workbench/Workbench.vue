@@ -1,4 +1,5 @@
 <template>
+  <WorkbenchApp :workbench="workbench">
   <div class="vscode-shell">
 
     <!-- Titlebar -->
@@ -218,39 +219,29 @@
       @close="commandPaletteOpen = false"
     />
 
-    <!-- Modal surfaces (Settings, Keyboard Shortcuts, …) — the active registered
-         ModalView rendered in the shared ModalEditor chrome -->
-    <ModalHost :host="host" />
-
-    <!-- Near-fullscreen lightbox overlay (opened via facade.lightbox) -->
-    <LightboxHost />
-    <PeekHost />
-
   </div>
+  </WorkbenchApp>
 </template>
 
 <script setup>
-import ActivityBar from './shell/ActivityBar.vue'
-import BottomPanel from './shell/BottomPanel.vue'
-import ContextMenu from './ui/ContextMenu.vue'
-import Editor from './editor/Editor.vue'
-import NotificationPanel from './shell/NotificationPanel.vue'
-import PrimarySideBar from './shell/PrimarySideBar.vue'
-import SecondarySideBar from './shell/SecondarySideBar.vue'
-import StatusBar from './shell/StatusBar.vue'
-import TitleBar from './shell/TitleBar.vue'
+import { ActivityBar } from '@workbench/vue'
+import { BottomPanel } from '@workbench/vue'
+import { ContextMenu } from '@workbench/vue'
+import { Editor } from '@workbench/vue'
+import { NotificationPanel } from '@workbench/vue'
+import { PrimarySideBar } from '@workbench/vue'
+import { SecondarySideBar } from '@workbench/vue'
+import { StatusBar } from '@workbench/vue'
+import { TitleBar } from '@workbench/vue'
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
-import CommandPalette from './ui/CommandPalette.vue'
-import ModalHost from './ui/ModalHost.vue'
-import LightboxHost from './LightboxHost.vue'
-import PeekHost from './PeekHost.vue'
+import { CommandPalette } from '@workbench/vue'
+import { WorkbenchApp } from '@workbench/vue'
 import { useEditorGrid } from '~/composables/workbench/useEditorGrid.js'
 import { useStatusBar } from '~/composables/workbench/useStatusBar.js'
 import { useNotifications } from '~/composables/workbench/useNotifications.js'
-import { useActivityHost } from '@workbench/framework'
+import { createWorkbench } from '@workbench/framework'
 import { formatChord } from '@workbench/framework'
-import { createPluginHost } from '@workbench/framework'
 import { ACTIVITIES } from '~/activities/index.js'
 import { callPluginRpc } from '~/lib/plugin-rpc.js'
 import { EXPLORER_PLUGIN, OPTIONAL_PLUGIN_LOADERS } from '~/builtin-plugins/index.js'
@@ -365,7 +356,7 @@ provide('editorController', editorController)
 // because they consume the Explorer activity's selection API. The same object is
 // later provided as `viewCtx` so registry-bound view/section content reads
 // app-level state and other activities' APIs through it.
-const host = useActivityHost({
+const workbench = createWorkbench({
   editor,
   prefs,
   services: {
@@ -377,10 +368,12 @@ const host = useActivityHost({
   },
   log,
   // First-party activity definitions (currently just the Workbench shell). Their
-  // surfaces are registered in activities/index.js at import; the host instantiates
-  // their runtime APIs here.
+  // surfaces are registered in activities/index.js at import (layout slices above
+  // read the registry during setup); the instance ensures registration and
+  // instantiates their runtime APIs.
   activities: ACTIVITIES,
 })
+const host = workbench.host
 
 // First-party plugins, loaded through the plugin host (the same path third-party
 // archives will use). They contribute their activity/panel/editor/status surfaces
@@ -398,7 +391,7 @@ installFwSdk()
 const frozen = hardenIntrinsics()
 if (frozen) log('plugins', `intrinsic hardening on (${frozen.length} prototypes frozen)`, null, 'info')
 
-const pluginHost = createPluginHost({ host, log })
+const pluginHost = workbench.plugins
 pluginHost.load(EXPLORER_PLUGIN.manifest, EXPLORER_PLUGIN.module)
 // Optional plugins load asynchronously (dynamic import per plugin). An import
 // failure or activate() error in any one is isolated — it logs and skips that
@@ -558,7 +551,7 @@ Object.assign(host, {
   expandRootsExplorer: () => explorerPanelRef.value?.expandRoots(),
   toggleExplorerHidden: () => explorerPanelRef.value?.toggleHidden(),
 })
-provide('viewCtx', host)
+// viewCtx + workbench are provided by <WorkbenchApp> (the composition root)
 
 // App menus (File/Edit/View + Settings), command palette, and modal open-state.
 const {

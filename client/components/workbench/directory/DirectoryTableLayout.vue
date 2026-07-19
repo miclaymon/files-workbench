@@ -52,8 +52,8 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { mdiFile, mdiFolder, mdiLinkVariant } from '@mdi/js'
-import { useClickDebounce } from '~/composables/interaction/useClickDebounce.js'
-import { useDrag } from '~/composables/interaction/useDrag.js'
+import { useClickDebounce } from '@workbench/vue'
+import { useDrag } from '@workbench/vue'
 
 const props = defineProps({
   items: { type: Array, required: true },

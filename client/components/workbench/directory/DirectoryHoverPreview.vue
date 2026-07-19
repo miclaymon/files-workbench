@@ -33,7 +33,7 @@
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
 import { MEDIA_BASE } from '~/lib/api-config.js'
-import { calcPopupPosition } from '~/lib/popup-position.js'
+import { calcPopupPosition } from '@workbench/vue'
 
 const VIDEO_EXTS = new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts'])
 

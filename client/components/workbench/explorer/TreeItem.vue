@@ -91,11 +91,11 @@
 <script setup>
 import { computed, ref, nextTick, watch } from 'vue'
 import { mdiFile, mdiFolder, mdiFolderOpen, mdiHarddisk, mdiLinkVariant } from '@mdi/js'
-import { useClickDebounce } from '~/composables/interaction/useClickDebounce.js'
-import { useTreeDrag } from '~/composables/interaction/useTreeDrag.js'
+import { useClickDebounce } from '@workbench/vue'
+import { useTreeDrag } from '@workbench/vue'
 import { useIconRegistry } from '@workbench/framework'
 import { resolveCustomIcon } from '~/composables/useCustomIcon.js'
-import ResolvedIcon from '~/components/workbench/ResolvedIcon.vue'
+import { ResolvedIcon } from '@workbench/vue'
 
 const props = defineProps({
   node: { type: Object, required: true },

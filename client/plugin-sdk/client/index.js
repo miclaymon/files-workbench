@@ -33,7 +33,7 @@ import { resolveCustomIcon } from '~/composables/useCustomIcon.js'
 import { useDebugLog, LOG_LEVELS } from '~/composables/useDebugLog.js'
 import { createEmitter } from '@workbench/framework'
 import { useDirectoryFileTree } from '~/composables/useDirectoryFileTree.js'
-import { useClickDebounce } from '~/composables/interaction/useClickDebounce.js'
+import { useClickDebounce } from '@workbench/vue'
 
 // Endpoint constants + NON-mutating filesystem helpers only.
 import { API_BASE, API_V, MEDIA_BASE } from '~/lib/api-config.js'
@@ -43,8 +43,8 @@ import { fsStat, fsDirSize, watchDirSize, fsListDir, fsOpenWithSystem } from '~/
 // ExplorerStatusWidget/OpenEditorsView), MonacoEditor, and the media players are added as
 // their plugins migrate (Explorer's remain the open M4 "keep core?" decision).
 import PlaceholderPanel from '~/components/workbench/views/PlaceholderPanel.vue'
-import PendingValue from '~/components/workbench/PendingValue.vue'
-import ResolvedIcon from '~/components/workbench/ResolvedIcon.vue'
+import { PendingValue } from '@workbench/vue'
+import { ResolvedIcon } from '@workbench/vue'
 
 // Heavy shared components exposed LAZILY (host-built by Vite, so their Monaco `?worker`
 // imports and video.js/wavesurfer deps are handled correctly, and they don't load until

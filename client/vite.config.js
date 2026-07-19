@@ -13,11 +13,11 @@ export default defineConfig({
   // dist/index.html directly.
   base: './',
   resolve: {
-    // @workbench/framework is a symlinked local package built on @vue/reactivity.
-    // Dedupe forces its imports to resolve to THIS app's single copy (the one
-    // inside `vue`) — two reactivity instances would silently break dependency
-    // tracking across the framework/app boundary.
-    dedupe: ['vue', '@vue/reactivity'],
+    // @workbench/framework and @workbench/vue are symlinked local packages; their
+    // bare imports must resolve to THIS app's node_modules. For vue/@vue/reactivity
+    // this is also a correctness requirement — two reactivity instances silently
+    // break dependency tracking across the package boundary.
+    dedupe: ['vue', '@vue/reactivity', '@mdi/js', '@workbench/framework'],
     alias: {
       '~': fileURLToPath(new URL('.', import.meta.url)).replace(/\/$/, ''),
       '#preferences-schema': fileURLToPath(new URL('../config/preferences/preferences.schema.json', import.meta.url)),

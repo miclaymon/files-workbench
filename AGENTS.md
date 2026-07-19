@@ -11,7 +11,9 @@ Instructions for AI coding agents (Claude Code, etc.) working in this repository
 - **Frontend**: Vue 3 SPA (`client/`) built with plain Vite (entry `client/main.js` + `client/index.html`; no Nuxt, no auto-imports — every component/composable/Vue API is imported explicitly). Runs inside Electron for the desktop app.
 - **Backend**: Go HTTP server (`server/v1/`) — data server on port 8001, control server on port 8002. All routes under `/_api/v1/`.
 - **No dev proxy**: the client calls both servers directly with absolute URLs from `client/lib/api-config.js` (`API_BASE` → 8001 reads, `CONTROL_BASE` → 8002 writes; CORS is permissive on the Go side). Override with `VITE_API_BASE` / `VITE_CONTROL_BASE` in `client/.env`.
-- **Framework layer**: the activity host + facade, all contribution registries, the plugin system, UI model classes, overlay-service stores, and the layout-grid engine live in the **`@workbench/framework`** package (sibling checkout `../workbench-framework`, installed as a `file:` symlink; has its own AGENTS.md). The app imports them from `'@workbench/framework'` — the old `client/composables/{activity,plugins}` + `client/models` locations are gone. `resolve.dedupe: ['vue', '@vue/reactivity']` in `vite.config.js` is load-bearing: the framework runs on `@vue/reactivity`, and a second instance silently breaks reactivity.
+- **Framework layer**: the activity host + facade, all contribution registries, the plugin system, UI model classes, overlay-service stores, and the layout-grid engine live in the **`@workbench/framework`** package (sibling checkout `../workbench-framework`, installed as a `file:` symlink; has its own AGENTS.md). The app creates the instance via `createWorkbench({ editor, prefs, services, log, activities })` in `Workbench.vue` and reaches everything through it (`workbench.host` / `.facade` / `.plugins`).
+- **UI kit**: the generic components (layout system, editor grid, shell chrome, floating UI, overlay hosts), the interaction composables, and the theming CSS live in **`@workbench/vue`** (sibling checkout `../workbench-ui-vue`, `file:` symlink; own AGENTS.md). Import them named: `import { ViewContainer, ContextMenu, useSideBar } from '@workbench/vue'`; global CSS comes from `@workbench/vue/styles/workbench.css` (imported in `main.js`). `Workbench.vue` wraps its chrome in the kit's `<WorkbenchApp :workbench>` — the composition root that provides `viewCtx`/`workbench` and renders ModalHost/LightboxHost/PeekHost. Only app-specific components remain under `client/components/workbench/` (directory views, explorer tree, Monaco/media, status widgets, app modals, Workbench.vue itself).
+- **Symlinked-package rule**: `resolve.dedupe: ['vue', '@vue/reactivity', '@mdi/js', '@workbench/framework']` in `vite.config.js` is load-bearing — symlinked packages resolve bare imports from their real path, and vue/@vue/reactivity duplication silently breaks reactivity. Never run `npm install` inside the package checkouts.
 
 ## Component architecture
 
@@ -72,7 +74,7 @@ A `panelView` with `location: 'PrimarySideBar'` becomes an Activity Bar entry (t
 - **panel views + sections** → unchanged; `ViewContentHost.vue` + the SplitView system render them. `useViewRegistry.js` just sources them from activities now.
 - **status views** → `shell/StatusBar.vue` is a host that renders the registered widgets by region (`shell/status/*`); each widget injects the host and **self-gates** (renders nothing when it has no data).
 
-**The activity host** (`useActivityHost` from `@workbench/framework`) instantiates each activity's API and is `provide()`d as `viewCtx` (it replaced the old hand-built bag). Public surface used by registry entries / widgets / other activities:
+**The activity host** (created through `createWorkbench` from `@workbench/framework`) instantiates each activity's API and is `provide()`d as `viewCtx` (it replaced the old hand-built bag). Public surface used by registry entries / widgets / other activities:
 - `api(id)` / `requireApi(id)` — query another activity's API.
 - `selection` — reactive **capability**: the *active* activity's published selection snapshot (`{ selectedItems, focusedItem, selectedPath, details }`) or `null`. Preview/Details read this and self-gate on `null`.
 - `on` / `once` / `emit` — app-level pub/sub. Events: `active-tab-change`, `active-activity-change`.
@@ -125,9 +127,9 @@ A **plugin** is an out-of-core activity loaded at runtime through a *permission-
 | `lib/plugin-rpc.js` | Generic RPC bridge to a plugin's own WASM backend (`api.server` → `POST /_api/v1/plugins/{id}/rpc`). |
 | `lib/plugins-api.js` | Plugin manifest/artifact/install/registry API calls (reads→data, mutations→control). |
 | `lib/perf-log.js` | Client-side performance timing helpers. |
-| `lib/time.js` | Notification time helpers: `isoDuration`/`humanAgo` for `<time>` relative labels, `isoDurationMs`/`humanDurationMs` for op timings, `clockTime` for absolute timestamps. |
+| *(moved)* | `lib/time.js` and `lib/popup-position.js` moved into `@workbench/vue` (exported: `isoDuration`, `humanAgo`, `isoDurationMs`, `humanDurationMs`, `clockTime`, `calcPopupPosition`, plus `uuidv4`). |
 | `public/sw.js` | Service worker. Maintains a per-client op queue (keyed by `event.source.id`). Handles `INIT`, `ENQUEUE`, `EXECUTE`, `CLEAR` messages. `EXECUTE` fires all queued ops concurrently via fetch and replies `OP_COMPLETE`/`OP_ERROR` per op. |
-| `main.js` | App entry (Vite): registers the service worker (fire-and-forget; fallback handles early ops), imports the global CSS, mounts `Workbench.vue`. |
+| `main.js` | App entry (Vite): registers the service worker (fire-and-forget; fallback handles early ops), imports `@workbench/vue/styles/workbench.css`, mounts `Workbench.vue`. |
 
 ### Composables — root (foundational services and utilities)
 
@@ -148,22 +150,9 @@ A **plugin** is an out-of-core activity loaded at runtime through a *permission-
 
 The emitter, activity host, and command/keybinding/hook registries moved to the framework package (`createEmitter`, `useActivityHost` — now taking an `activities` param — `createCommandRegistry`, `createKeybindingRegistry` + `formatChord`/`normalizeChord`, `createHookRegistry`). The old `client/composables/activity/` directory is gone; see the framework repo's AGENTS.md for the module map.
 
-### Composables — `interaction/` (UI-behavior primitives)
+### Interaction composables (now `@workbench/vue`)
 
-Pure composables consumed by individual components for user interaction. No business logic.
-
-| File | Purpose |
-|---|---|
-| `useDrag.js` | Custom ghost-clone drag for directory items. 200 ms activation delay. `onActivate` receives the mousedown item and returns the full drag array (auto-selects unselected items). |
-| `useRightClickDrag.js` | Right-click drag for directory items. Suppresses native `contextmenu` on `mousedown`; on `mouseup`: no movement → `onRightClick({ item, event })`; threshold exceeded → `onDrop({ items, dropPath, x, y })`. |
-| `useTreeDrag.js` | Module-level singleton drag for tree nodes. Chip-style ghost; valid drop targets: `type === 'directory'` only. Shared refs mean all `TreeItem` instances see the same `draggingNode`/`dragOverNode`. |
-| `useEditorDnd.js` | Editor tab/group HTML5 drag: shared module state + `dropRegion()` edge/center detection. Replaced the orphaned `useDragAndDrop.js`. |
-| `useViewDrag.js` | Shared drag state (`activeDrag`, `activeSectionDrag`) + MIME constants (`DRAG_MIME`, `SECTION_DRAG_MIME`) for panel view and section drag-drop. Consumed by `ViewContainer`, `SplitViewArea`, `SplitSectionArea`, and `ViewTabStrip`. |
-| `useClickDebounce.js` | Single vs double-click disambiguation. Modifier keys bypass the delay. `cancel()` flushes pending timers (used when rename mode activates). |
-| `useHoverPreview.js` | Hover preview overlay: positioning, show/hide timing, preload of full-resolution media. |
-| `useSideBar.js` | Owns the mousedown drag-resize loop for the three shell panes; reports new sizes back via `v-model`. Attaches a `ResizeObserver` that derives `dropDirection` (`col`/`row`) from measured pane shape. |
-| `useStackResize.js` | Sash math for `SplitViewArea` and `SplitSectionArea`: pointer-move loop, size clamps, `sizes[]` update. |
-| `useDragAndDrop.js` | Orphaned generic drag helper (superseded by `useEditorDnd.js`). Retained but no longer wired. |
+The UI-behavior primitives (`useDrag`, `useRightClickDrag`, `useTreeDrag`, `useEditorDnd`, `useViewDrag`, `useClickDebounce`, `useHoverPreview`, `useSideBar`, `useStackResize`) moved into the kit — import them from `'@workbench/vue'` (same names, same behavior; gotchas below still apply). `client/composables/interaction/` is gone.
 
 ### Composables — `workbench/` (assembly-root slices)
 
@@ -322,13 +311,13 @@ Two different objects: **`api`** = `host.facade`, the frozen *contribution/regis
 - `DirectoryTab.defineExpose` includes `renameItem`, `batchRenameItems`, and `clearOptimisticThumbnails`. `EditorGroup` proxies all three to `directoryTabRef`. `handleRenameBatch` in `useFileOperations` reaches them via `forEachGroup`.
 - `user-select: none` on all interactive UI chrome. Restore `user-select: text` explicitly inside Monaco containers and `contenteditable` spans.
 - No comments unless the WHY is non-obvious. No trailing summary comments.
-- All theme colors are CSS custom properties defined in `client/assets/css/workbench.css`. Theme JSON files in `config/themes/` map variable names to hex values.
+- All theme colors are CSS custom properties defined in the kit's `@workbench/vue/styles/workbench.css`. Theme JSON files in `config/themes/` map variable names to hex values (applied at startup by the app).
 
 ### CSS conventions
 
 - **Native nesting**: use `&` child blocks instead of repeating selectors. Nest state variants (`:hover`, `.--modifier`) and child elements inside their semantic parent.
 - **Container queries over media queries**: panels are embedded in resizable panes, so `@media` (viewport-relative) is useless for layout adaptation. Declare `container-type: inline-size; container-name: <name>;` on the relevant wrapper and use `@container <name> (max-width: Xpx)` at the bottom of the `<style scoped>` block.
-- **`@layer` belongs in `workbench.css`**: scoped component styles do not use `@layer`. Cascade layers for utility classes and global resets go in `client/assets/css/workbench.css` only.
+- **`@layer` belongs in `workbench.css`**: scoped component styles do not use `@layer`. Cascade layers for utility classes and global resets go in the kit's `styles/workbench.css` only.
 - **Layout variants via `data-layout`**: `DirectoryLayout.vue` controls all view modes through a `data-layout` attribute on `.dl`. Nest each variant inside `.dl { &[data-layout="x"] { … } }`. Shared behavior across multiple layouts uses `:is()` — e.g., `&:is([data-layout="list"], [data-layout="details"]) { … }`.
 - **No `background` double-declarations**: when a layout variant sets `background: transparent` on `.dl-thumb`, don't also set a non-transparent default above it. Keep the single correct value.
 

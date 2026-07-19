@@ -10,7 +10,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import PendingValue from '~/components/workbench/PendingValue.vue'
+import { PendingValue } from '@workbench/vue'
 
 const props = defineProps({
   item:     { type: Object, required: true },

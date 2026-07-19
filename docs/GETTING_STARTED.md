@@ -20,6 +20,7 @@ next to this repo first:
 <parent>/
 ├── files-workbench-app/            this repo
 ├── workbench-framework/            @workbench/framework (github: files-workbench-framework)
+├── workbench-ui-vue/               @workbench/vue (github: files-workbench-vue)
 └── files-workbench-plugins/
     └── files-workbench-material-icons/
 ```

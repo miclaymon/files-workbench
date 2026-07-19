@@ -43,6 +43,7 @@ A desktop file manager built with Electron + Vue 3 (Vite) on the front end and a
 | Desktop shell | Electron 34 |
 | Frontend framework | Vue 3 + Vite |
 | Workbench core | [`@workbench/framework`](https://github.com/miclaymon/files-workbench-framework) (local sibling checkout `../workbench-framework`) |
+| Workbench UI kit | `@workbench/vue` (local sibling checkout `../workbench-ui-vue`) |
 | Code editor | Monaco Editor |
 | Video player | Video.js |
 | Audio waveform | Wavesurfer.js |
@@ -121,11 +122,12 @@ files-workbench/
 │   ├── index.html            Vite entry page
 │   ├── main.js               App entry: mounts Workbench, registers the service worker
 │   ├── vite.config.js        Vite config (aliases, dev server)
-│   ├── assets/css/           Global CSS variables and base styles
 │   ├── activities/           First-party activity modules — each declares its tab/panel/status surfaces + runtime API (Workbench shell only; the rest are plugins)
 │   ├── builtin-plugins/      Explorer only — the one core-bundled plugin (owns the selection capability, read synchronously at startup); every other first-party plugin loads at runtime from the root-level /plugins tree
 │   ├── plugin-sdk/           @fw/sdk — the host SDK surface (Vue, UI models, safe composables/components) that plugin clients import, externalized to the app at build
-│   ├── components/workbench/ All UI components
+│   ├── components/workbench/ App-specific components (directory views, explorer tree, Monaco/media,
+│   │                         status widgets, app modals, Workbench.vue assembly root). Generic chrome/
+│   │                         layout/editor-grid/floating-UI components live in @workbench/vue
 │   ├── composables/          Vue composables, grouped:
 │   │   ├── plugins/          Runtime plugin delivery (fetch + hash-verify + import → framework plugin host)
 │   │   ├── interaction/      UI-behavior primitives (drag systems, click, hover, resize)

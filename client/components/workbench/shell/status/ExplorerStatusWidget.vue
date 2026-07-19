@@ -11,7 +11,7 @@
 // clipboard pill. Self-gates to the active directory tab, reading dir stats from
 // the Explorer API and the selection from the host's selection capability.
 import { computed, inject } from 'vue'
-import PendingValue from '~/components/workbench/PendingValue.vue'
+import { PendingValue } from '@workbench/vue'
 
 const ctx = inject('viewCtx', null)
 

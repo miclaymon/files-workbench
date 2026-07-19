@@ -108,7 +108,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { mdiFolder, mdiSubdirectoryArrowRight } from '@mdi/js'
-import FloatingMenu from '../ui/FloatingMenu.vue'
+import { FloatingMenu } from '@workbench/vue'
 import { fsListDir } from '~/lib/fs-api.js'
 
 const props = defineProps({

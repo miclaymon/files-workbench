@@ -25,7 +25,7 @@ import { computed, inject, ref } from 'vue'
 import { mdiHome, mdiCog } from '@mdi/js'
 import { collectLeaves } from '@workbench/framework'
 import { tabIconDescriptor } from '@workbench/framework'
-import ResolvedIcon from '~/components/workbench/ResolvedIcon.vue'
+import { ResolvedIcon } from '@workbench/vue'
 
 const props = defineProps({
   editorRoot:    { type: Object, required: true },

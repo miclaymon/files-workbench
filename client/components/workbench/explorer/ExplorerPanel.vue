@@ -30,7 +30,7 @@ import TreeList from './TreeList.vue'
 import { explorerList } from '~/lib/explorer-api.js'
 import { loadExplorerRoots } from '~/lib/explorer-roots.js'
 import { useDirectoryFileTree } from '~/composables/useDirectoryFileTree.js'
-import { useTreeDrag } from '~/composables/interaction/useTreeDrag.js'
+import { useTreeDrag } from '@workbench/vue'
 
 const props = defineProps({
   selectedPath:       { type: String,  default: '' },

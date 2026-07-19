@@ -67,9 +67,9 @@
 <script setup>
 import { ref, computed, watch, inject, nextTick } from 'vue'
 import { mdiFile, mdiFolder, mdiLinkVariant, mdiPlayCircle } from '@mdi/js'
-import { useClickDebounce } from '~/composables/interaction/useClickDebounce.js'
-import { useDrag } from '~/composables/interaction/useDrag.js'
-import { useHoverPreview } from '~/composables/interaction/useHoverPreview.js'
+import { useClickDebounce } from '@workbench/vue'
+import { useDrag } from '@workbench/vue'
+import { useHoverPreview } from '@workbench/vue'
 import DirectoryHoverPreview from './DirectoryHoverPreview.vue'
 
 const VIDEO_EXTS = new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts'])

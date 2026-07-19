@@ -320,19 +320,19 @@
 <script setup>
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted, inject } from 'vue'
 import { mdiChevronDown, mdiChevronRight, mdiFile, mdiFolder, mdiLinkVariant, mdiPlayCircle, mdiPin } from '@mdi/js'
-import { useClickDebounce } from '~/composables/interaction/useClickDebounce.js'
-import { useHoverPreview } from '~/composables/interaction/useHoverPreview.js'
+import { useClickDebounce } from '@workbench/vue'
+import { useHoverPreview } from '@workbench/vue'
 import { peekActive } from '@workbench/framework'
-import { useDrag } from '~/composables/interaction/useDrag.js'
-import { useRightClickDrag } from '~/composables/interaction/useRightClickDrag.js'
+import { useDrag } from '@workbench/vue'
+import { useRightClickDrag } from '@workbench/vue'
 import { useIconRegistry } from '@workbench/framework'
 import { resolveCustomIcon } from '~/composables/useCustomIcon.js'
 import { fsListDir, fsArchiveList } from '~/lib/fs-api.js'
 import { MEDIA_BASE } from '~/lib/api-config.js'
 import DirectoryFindWidget from './DirectoryFindWidget.vue'
 import DirSizeCell from './DirSizeCell.vue'
-import ResolvedIcon from '~/components/workbench/ResolvedIcon.vue'
-import PendingValue from '~/components/workbench/PendingValue.vue'
+import { ResolvedIcon } from '@workbench/vue'
+import { PendingValue } from '@workbench/vue'
 
 const MEDIA_EXTS = new Set([
   'png','jpg','jpeg','webp','gif','bmp','ico','avif',
