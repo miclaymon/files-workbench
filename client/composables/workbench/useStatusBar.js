@@ -1,5 +1,5 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { API_BASE } from '~/lib/api-config.js'
+import { API_BASE } from '@files-workbench/core'
 
 // ── Status bar slice ──────────────────────────────────────────────────────────
 // Server-connection state + the transient status line + directory stats. A leaf

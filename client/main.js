@@ -1,6 +1,6 @@
 import { createApp } from 'vue'
 import Workbench from './components/workbench/Workbench.vue'
-import { swQueue } from './lib/sw-queue.js'
+import { swQueue } from '@files-workbench/core'
 import '@workbench/vue/styles/workbench.css'
 
 // Fire-and-forget: the direct-fetch fallback handles any ops enqueued before the

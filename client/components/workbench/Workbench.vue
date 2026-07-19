@@ -243,7 +243,7 @@ import { useNotifications } from '~/composables/workbench/useNotifications.js'
 import { createWorkbench } from '@workbench/framework'
 import { formatChord } from '@workbench/framework'
 import { ACTIVITIES } from '~/activities/index.js'
-import { callPluginRpc } from '~/lib/plugin-rpc.js'
+import { callPluginRpc } from '@files-workbench/core'
 import { EXPLORER_PLUGIN, OPTIONAL_PLUGIN_LOADERS } from '~/builtin-plugins/index.js'
 import { installFwSdk } from '~/plugin-sdk/client/index.js'
 import { hardenIntrinsics } from '~/plugin-sdk/client/harden.js'
@@ -259,7 +259,7 @@ import { useDebugLog } from '~/composables/useDebugLog.js'
 import { useFileOpsQueue } from '~/composables/useFileOpsQueue.js'
 import { useActionHistory } from '~/composables/useActionHistory.js'
 import { collectLeaves } from '@workbench/framework'
-import { fsStat, fsOpenWithSystem, fsOpenTerminal, fsCreateFile, fsCreateDir } from '~/lib/fs-api.js'
+import { fsStat, fsOpenWithSystem, fsOpenTerminal, fsCreateFile, fsCreateDir } from '@files-workbench/core'
 
 function uuid() { return uuidv4() }
 

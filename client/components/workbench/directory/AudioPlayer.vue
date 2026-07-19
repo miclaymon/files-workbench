@@ -64,7 +64,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import WaveSurfer from 'wavesurfer.js'
-import { MEDIA_BASE } from '~/lib/api-config.js'
+import { MEDIA_BASE } from '@files-workbench/core'
 
 const props = defineProps({
   src: { type: String, required: true },

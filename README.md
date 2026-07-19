@@ -48,7 +48,7 @@ A desktop file manager built with Electron + Vue 3 (Vite) on the front end and a
 | Video player | Video.js |
 | Audio waveform | Wavesurfer.js |
 | Icons | `@mdi/js` (Material Design Icons) |
-| API server | Go 1.23 (stdlib `net/http`) |
+| API server | Go 1.23 (stdlib `net/http`) — in [`@files-workbench/core`](../files-workbench-core) with its JS client |
 | Image processing | `golang.org/x/image` |
 | Video/audio thumbnails | ffmpeg / ffprobe (external) |
 
@@ -136,7 +136,7 @@ files-workbench/
 │   │                         (the activity host, registries, plugin system, UI models, and layout
 │   │                          engine live in the @workbench/framework package)
 │   ├── electron/             Electron main process
-│   ├── lib/                  API client helpers (fs-api.js, sw-queue.js, …)
+│   ├── lib/                  capability-scan.mjs (plugin build/consent tooling)
 │   └── public/               Static assets served as-is (sw.js — service worker)
 ├── plugins/                  First-party plugin source tree — one dir per plugin (manifest.json + client/ and/or server/), built to runtime artifacts by npm run build:plugins. material-icon-theme is a thin re-export of the standalone files-workbench-material-icons package (installed as a local file: dependency)
 ├── plugins.lock.json         Committed content-hash pins for first-party plugin artifacts (the integrity root of trust the loader verifies against)
@@ -146,8 +146,6 @@ files-workbench/
 │   ├── themes/               Theme color definitions
 │   └── plugins/              Built server-plugin WASM backends + icon-pack assets the Go server serves (output of npm run build:plugins; installed apps also read third-party plugins from userData/plugins)
 ├── docs/                     Project documentation
-├── server/v1/                Go HTTP backend (data + control servers)
-│   └── *.go                  Route handlers, media processing, thumbnail cache
 ├── install.sh                Linux installer (downloads latest AppImage)
 ├── install.ps1               Windows installer (downloads latest installer)
 ├── setup.sh                  One-shot dependency installation
@@ -156,7 +154,7 @@ files-workbench/
 
 ## API servers
 
-The Go process starts two independent HTTP servers:
+The backend lives in the `@files-workbench/core` package (`../files-workbench-core`): the Go source under `server/`, the JS client library under `src/` (imported as `'@files-workbench/core'`). The Go process starts two independent HTTP servers:
 
 | Server | Default port | Purpose |
 |---|---|---|

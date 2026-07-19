@@ -109,7 +109,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { mdiFolder, mdiSubdirectoryArrowRight } from '@mdi/js'
 import { FloatingMenu } from '@workbench/vue'
-import { fsListDir } from '~/lib/fs-api.js'
+import { fsListDir } from '@files-workbench/core'
 
 const props = defineProps({
   path: { type: String, required: true },

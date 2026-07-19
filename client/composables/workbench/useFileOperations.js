@@ -1,5 +1,5 @@
 import { ref, nextTick } from 'vue'
-import { fsPin } from '~/lib/fs-api.js'
+import { fsPin } from '@files-workbench/core'
 
 // ── File operations slice ─────────────────────────────────────────────────────
 // Create / rename / trash / delete / compress / extract / paste / move / undo /

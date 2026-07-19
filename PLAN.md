@@ -86,8 +86,22 @@ Each milestone ends with the app runnable and verified before anything is commit
       absorption into WorkbenchApp is future work (M6-ish). Verified in-browser
       after stage 2: boot, Settings modal via palette, lightbox, panels;
       build clean.*
-- [ ] **M4 — `@files-workbench/core`** extracted. Go server + JS client move out; app
+- [x] **M4 — `@files-workbench/core`** extracted. Go server + JS client move out; app
       spawns/bundles the server from the package.
+      *Implemented + verified 2026-07-19 (Mic + agent); repo
+      `../files-workbench-core` (github files-workbench-core), initial commit
+      `0131d6d`. `server/v1` → `files-workbench-core/server/` (dev fallbacks now
+      package-relative; the app's `dev:server` passes FW_CONFIG_DIR/FW_DATA_DIR/
+      FW_PLUGINS_DIR pointing at the app tree — same contract as packaged
+      Electron); 8 JS libs → `files-workbench-core/src/` (47 exports; imported as
+      '@files-workbench/core' across 18 app files + plugin-sdk). `client/lib/`
+      retains only capability-scan.mjs (M5). public/sw.js stays app-side (root
+      SW scope); its ENDPOINTS map must stay in sync with core's sw-queue.js.
+      build-server.js + electron-builder extraResources point at the package.
+      Verified: go build + vite build clean; server boots from the package (icon
+      pack, WASM scm, artifacts, prefs); browser pass incl. an end-to-end WRITE
+      (UI rename → sw-queue → control server → disk). Docs updated. Orphan noted:
+      composables/useRpc.js has no importers.*
 - [ ] **M5 — `@workbench/plugin-sdk`** extracted. Plugin build rewired to externalize
       the new SDK; first-party plugins compile against it.
 - [ ] **M6 — App cleanup.** What remains here: Electron shell, assembly root, app

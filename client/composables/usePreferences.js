@@ -1,5 +1,5 @@
 import { reactive, ref } from 'vue'
-import { API_BASE, CONTROL_BASE, API_V } from '~/lib/api-config.js'
+import { API_BASE, CONTROL_BASE, API_V } from '@files-workbench/core'
 
 const DEFAULTS = {
   developerMode: false,

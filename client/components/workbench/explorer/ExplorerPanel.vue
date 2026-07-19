@@ -27,8 +27,8 @@
 // Tree logic (lazy fetch, expand state, caching, soft-refresh) lives in the composable.
 import { ref, computed, watch, onMounted, onActivated } from 'vue'
 import TreeList from './TreeList.vue'
-import { explorerList } from '~/lib/explorer-api.js'
-import { loadExplorerRoots } from '~/lib/explorer-roots.js'
+import { explorerList } from '@files-workbench/core'
+import { loadExplorerRoots } from '@files-workbench/core'
 import { useDirectoryFileTree } from '~/composables/useDirectoryFileTree.js'
 import { useTreeDrag } from '@workbench/vue'
 

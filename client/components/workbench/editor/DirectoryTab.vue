@@ -36,9 +36,9 @@
 <script setup>
 import DirectoryPanel from '../directory/DirectoryPanel.vue'
 import { ref, computed, watch, reactive, shallowReactive, onMounted, onUnmounted, onActivated } from 'vue'
-import { MEDIA_BASE } from '~/lib/api-config.js'
-import { fsStat, fsListDir, watchDirSize, fsArchiveList, fsExeInfo } from '~/lib/fs-api.js'
-import { perfStart, perfMark, perfFlush } from '~/lib/perf-log.js'
+import { MEDIA_BASE } from '@files-workbench/core'
+import { fsStat, fsListDir, watchDirSize, fsArchiveList, fsExeInfo } from '@files-workbench/core'
+import { perfStart, perfMark, perfFlush } from '@files-workbench/core'
 
 const ARCHIVE_EXTS = ['.zip', '.tar', '.tar.gz', '.tar.bz2', '.tgz', '.tbz2', '.7z', '.rar', '.gz', '.bz2', '.xz', '.tar.xz']
 function isArchivePath(p) {

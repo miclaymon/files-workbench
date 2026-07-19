@@ -417,7 +417,7 @@ If the SW is unavailable (first load, no HTTPS, unsupported browser), `sw-queue.
 
 ## Server architecture
 
-The active backend is a Go HTTP server (`server/v1/`) using the stdlib `net/http` package. There is no framework — routes are registered on a `http.ServeMux`. All routes are prefixed with `/_api/v1/`.
+The active backend is a Go HTTP server in the `@files-workbench/core` package (`../files-workbench-core/server/`) using the stdlib `net/http` package; the same package ships the JS client library the frontend imports as `'@files-workbench/core'`. There is no framework — routes are registered on a `http.ServeMux`. All routes are prefixed with `/_api/v1/`.
 
 The process starts **two independent `http.Server` goroutines** on separate ports:
 
@@ -514,7 +514,7 @@ to a writable location. Unset (dev / `go run`), they fall back to the repo layou
 | `FW_CONFIG_DIR` | read-only config: preferences schema + defaults, plugins | `<repo>/config` |
 | `FW_DATA_DIR` | writable user data: `user-preferences.json` | `<repo>/config` |
 | `FW_LOGS_DIR` | writable logs: `perf.log` | `<repo>/server/logs` |
-| `FW_BLACKLIST` | the path-protection `blacklist.yaml` | `<repo>/server/v1/blacklist.yaml` |
+| `FW_BLACKLIST` | the path-protection `blacklist.yaml` | core `server/blacklist.yaml` |
 
 Preferences are split accordingly: the schema and defaults are read from the
 read-only config dir, while `user-preferences.json` is read/written under the data
@@ -526,7 +526,7 @@ A production build is a self-contained Electron app that **bundles and launches 
 Go server** — there is no separate backend to install.
 
 - **Build** (`npm run build:electron`): `client/scripts/build-server.js` compiles the
-  Go server to `server/v1/dist/` (platform-correct name), `build-plugins.js` emits the
+  Go server (from the core package) to `../files-workbench-core/server/dist/`, `build-plugins.js` emits the
   production plugin artifacts, `vite build` emits the static client to `client/dist/`,
   then electron-builder packages everything. The server
   binary, the `config/` tree, and `blacklist.yaml` are copied in via electron-builder

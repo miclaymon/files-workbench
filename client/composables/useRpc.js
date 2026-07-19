@@ -1,4 +1,4 @@
-import { API_BASE, API_V } from '~/lib/api-config.js'
+import { API_BASE, API_V } from '@files-workbench/core'
 
 const DEFAULT_TIMEOUT_MS = 12_000
 

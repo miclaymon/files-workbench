@@ -36,8 +36,8 @@ import { useDirectoryFileTree } from '~/composables/useDirectoryFileTree.js'
 import { useClickDebounce } from '@workbench/vue'
 
 // Endpoint constants + NON-mutating filesystem helpers only.
-import { API_BASE, API_V, MEDIA_BASE } from '~/lib/api-config.js'
-import { fsStat, fsDirSize, watchDirSize, fsListDir, fsOpenWithSystem } from '~/lib/fs-api.js'
+import { API_BASE, API_V, MEDIA_BASE } from '@files-workbench/core'
+import { fsStat, fsDirSize, watchDirSize, fsListDir, fsOpenWithSystem } from '@files-workbench/core'
 
 // Safe shared components (leaf). Explorer's core components (ExplorerPanel/DirectoryTab/
 // ExplorerStatusWidget/OpenEditorsView), MonacoEditor, and the media players are added as

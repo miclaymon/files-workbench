@@ -1,4 +1,4 @@
-import { API_BASE, API_V } from '~/lib/api-config.js'
+import { API_BASE, API_V } from '@files-workbench/core'
 
 const FS_PREVIEW_BASE = `${API_BASE}/_api/${API_V}/fs/preview`
 

@@ -1,4 +1,4 @@
-import { API_BASE, API_V } from '~/lib/api-config.js'
+import { API_BASE, API_V } from '@files-workbench/core'
 import lock from '#plugins-lock'
 
 // ── Runtime plugin loader ─────────────────────────────────────────────────────

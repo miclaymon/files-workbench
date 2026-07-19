@@ -1,6 +1,6 @@
 import { ref, onMounted } from 'vue'
-import { fsArchiveCapabilities } from '~/lib/fs-api.js'
-import { API_BASE, API_V } from '~/lib/api-config.js'
+import { fsArchiveCapabilities } from '@files-workbench/core'
+import { API_BASE, API_V } from '@files-workbench/core'
 
 // ── Archive slice ─────────────────────────────────────────────────────────────
 // Archive-file detection + the host's archive capabilities (loaded once). A leaf:

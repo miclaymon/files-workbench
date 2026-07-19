@@ -21,6 +21,7 @@ next to this repo first:
 ├── files-workbench-app/            this repo
 ├── workbench-framework/            @workbench/framework (github: files-workbench-framework)
 ├── workbench-ui-vue/               @workbench/vue (github: files-workbench-vue)
+├── files-workbench-core/           @files-workbench/core — Go backend + JS client (github: files-workbench-core)
 └── files-workbench-plugins/
     └── files-workbench-material-icons/
 ```
@@ -60,12 +61,11 @@ npm run dev:web:client
 ### Go server only
 
 ```bash
-npm run dev:server
-# or
-cd server/v1 && go run .          # PORT/CONTROL_PORT override the 8001/8002 defaults
+npm run dev:server     # runs the Go server from ../files-workbench-core/server with
+                       # FW_CONFIG_DIR / FW_DATA_DIR / FW_PLUGINS_DIR pointing at this repo
 ```
 
-There is no Swagger UI. Refer to `server/v1/main.go` for the full route list or
+There is no Swagger UI. Refer to the core package's `server/main.go` for the full route list or
 `curl http://localhost:8001/health` to verify the data server is up.
 
 ## Project-specific dev notes
@@ -73,7 +73,7 @@ There is no Swagger UI. Refer to `server/v1/main.go` for the full route list or
 ### Hot reload
 
 - Vite hot-reloads Vue components instantly on save.
-- The Go server does **not** hot-reload; restart `npm run dev:server` after changing any `.go` file.
+- The Go server does **not** hot-reload; restart `npm run dev:server` after changing any `.go` file (source: `../files-workbench-core/server/`).
 - Electron does **not** hot-reload automatically; restart `./start-dev.sh` after changing `client/electron/`.
 
 ### API base URLs
@@ -90,14 +90,14 @@ Troubleshooting below.
 After adding a new `import` in a `.go` file:
 
 ```bash
-cd server/v1 && go mod tidy
+cd ../files-workbench-core/server && go mod tidy
 ```
 
 ### Adding a new API endpoint
 
-1. Add the route handler function to the appropriate `.go` file in `server/v1/`.
-2. Register it in `server/v1/main.go` — `registerDataRoutes` for read-only GETs (port 8001) or `registerControlRoutes` for mutating POST/PUTs (port 8002) — with the `/_api/v1/` prefix.
-3. Add a matching client helper in `client/lib/` (see `fs-api.js` or `explorer-api.js` as examples).
+1. Add the route handler function to the appropriate `.go` file in `../files-workbench-core/server/`.
+2. Register it in the core package's `server/main.go` — `registerDataRoutes` for read-only GETs (port 8001) or `registerControlRoutes` for mutating POST/PUTs (port 8002) — with the `/_api/v1/` prefix.
+3. Add a matching client helper in the core package's `src/` (see `fs-api.js` or `explorer-api.js`) and re-export it from its `index.js`.
 
 > For plugin-specific backend work, prefer a **server plugin** over a new core endpoint — it runs sandboxed and needs no Go changes. See [PLUGINS.md → Server plugins](./PLUGINS.md#server-plugins).
 
@@ -134,7 +134,7 @@ npm run build:electron        # from the repo root (or: cd client && npm run bui
 ```
 
 This runs four steps: compiles the Go server (`client/scripts/build-server.js` →
-`server/v1/dist/`), builds the plugin artifacts (`build-plugins.js --out .fw/plugins-dist`,
+`../files-workbench-core/server/dist/`), builds the plugin artifacts (`build-plugins.js --out .fw/plugins-dist`,
 producing prod client bundles + WASM backends), generates the static client
 (`vite build` → `client/dist/`), and packages everything with electron-builder.
 Output goes to `client/dist-electron/`. Targets depend on the build platform:
@@ -189,7 +189,7 @@ npm install && npm install --prefix client
 **Go module cache issues**
 
 ```bash
-cd server/v1 && go clean -modcache && go mod download
+cd ../files-workbench-core/server && go clean -modcache && go mod download
 ```
 
 **Electron window doesn't open**

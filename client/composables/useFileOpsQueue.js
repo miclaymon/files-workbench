@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { useDebugLog } from './useDebugLog.js'
-import { swQueue } from '~/lib/sw-queue.js'
+import { swQueue } from '@files-workbench/core'
 
 // Module-level state so the queue is shared across the whole app.
 const deferredMode = ref(false)

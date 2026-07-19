@@ -13,6 +13,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@files-workbench/core": "file:../../files-workbench-core",
     "@mdi/js": "^7.4.47",
     "@workbench/framework": "file:../../workbench-framework",
     "@workbench/vue": "file:../../workbench-ui-vue",
@@ -43,11 +44,11 @@
     ],
     "extraResources": [
       {
-        "from": "../server/v1/dist",
+        "from": "../../files-workbench-core/server/dist",
         "to": "."
       },
       {
-        "from": "../server/v1/blacklist.yaml",
+        "from": "../../files-workbench-core/server/blacklist.yaml",
         "to": "blacklist.yaml"
       },
       {
