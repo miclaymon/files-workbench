@@ -1,5 +1,5 @@
 import { EXT_LANGUAGE, TEXT_APP_MIMES } from './utils.js'
-import { MEDIA_BASE as API_BASE } from '@fw/sdk'
+import { API_BASE, API_V, MEDIA_BASE } from '@fw/sdk'
 
 // ── Preview loading ────────────────────────────────────────────────────────────
 // Pure fetch + MIME→preview resolution for a single item, shared by the Preview
@@ -15,7 +15,7 @@ import { MEDIA_BASE as API_BASE } from '@fw/sdk'
 
 // Fetch a text/preview payload for `path`. `force` bypasses the server's size cap.
 export async function fetchTextContent(path, force = false) {
-  const base = import.meta.env.DEV ? '/text-preview' : `${API_BASE}/fs/preview`
+  const base = `${API_BASE}/_api/${API_V}/fs/preview`
   const params = new URLSearchParams({ path })
   if (force) params.set('force', 'true')
   const res = await fetch(`${base}?${params}`)
@@ -63,7 +63,7 @@ export async function loadPreview(item, force = false) {
     return { preview: { kind: 'directory' }, metadata: null }
   }
   try {
-    const response = await fetch(`${API_BASE}/metadata?path=${encodeURIComponent(item.path)}`)
+    const response = await fetch(`${MEDIA_BASE}/metadata?path=${encodeURIComponent(item.path)}`)
     if (!response.ok) return { preview: { kind: 'error' }, metadata: null }
     const metadata = await response.json()
     const preview = await resolvePreview(item, metadata, force)

@@ -5,25 +5,30 @@ const { spawn } = require('child_process')
 const args = process.argv.slice(2)
 const withElectron = !args.includes('--no-electron')
 
-const nuxt = spawn('npx', ['nuxt', 'dev'], { stdio: 'inherit', shell: true })
+const vite = spawn('npx', ['vite'], { stdio: 'inherit', shell: true })
 
-nuxt.on('error', (err) => {
-  console.error('Failed to start Nuxt:', err)
+vite.on('error', (err) => {
+  console.error('Failed to start Vite:', err)
   process.exit(1)
 })
 
 if (withElectron) {
   waitForServer('http://localhost:3000').then(() => {
-    const electron = spawn('npx', ['electron', '.'], { stdio: 'inherit', shell: true })
+    // Strip ELECTRON_RUN_AS_NODE (leaked by Electron-based parent processes like
+    // VS Code extension hosts) — with it set, `electron .` runs as plain Node and
+    // crashes on the first `electron` API access.
+    const env = { ...process.env }
+    delete env.ELECTRON_RUN_AS_NODE
+    const electron = spawn('npx', ['electron', '.'], { stdio: 'inherit', shell: true, env })
     electron.on('close', () => {
-      nuxt.kill()
+      vite.kill()
       process.exit(0)
     })
   })
 }
 
 process.on('SIGINT', () => {
-  nuxt.kill()
+  vite.kill()
   process.exit(0)
 })
 
@@ -37,6 +42,6 @@ async function waitForServer(url, timeout = 60000) {
       await new Promise((r) => setTimeout(r, 1000))
     }
   }
-  console.error(`Nuxt server at ${url} did not become ready within ${timeout / 1000}s`)
+  console.error(`Vite dev server at ${url} did not become ready within ${timeout / 1000}s`)
   process.exit(1)
 }

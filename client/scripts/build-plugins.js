@@ -8,8 +8,8 @@
 //   1. esbuild → one CommonJS bundle (resolves the SDK + logic imports)
 //   2. extism-js → WASM
 //
-// Run as `npm run build:plugins`, and as part of `build:electron` before `nuxt
-// generate`. Requires the `extism-js` CLI on PATH (like git/ffmpeg — see PLUGINS.md);
+// Run as `npm run build:plugins`, and as part of `build:electron` before `vite
+// build`. Requires the `extism-js` CLI on PATH (like git/ffmpeg — see PLUGINS.md);
 // esbuild is already a dependency.
 //
 // `--soft` (used by the dev prebuild in `npm run dev`): never fails the build — a

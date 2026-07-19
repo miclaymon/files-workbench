@@ -2,7 +2,7 @@
 
 ## Overview
 
-Files Workbench 2 is a multi-process desktop application:
+Files Workbench is a multi-process desktop application:
 
 ```
 ┌──────────────────────────────────────┐
@@ -10,7 +10,7 @@ Files Workbench 2 is a multi-process desktop application:
 │  (client/electron/main.js)           │
 │  ┌────────────────────────────────┐  │
 │  │  Renderer process              │  │
-│  │  Nuxt 3 SPA (Vue 3)            │  │
+│  │  Vue 3 SPA (Vite)              │  │
 │  │  http://localhost:3000         │  │
 │  └────────────────────────────────┘  │
 └──────────────────────────────────────┘
@@ -22,13 +22,13 @@ Files Workbench 2 is a multi-process desktop application:
 └──────────────────────────────────────┘
 ```
 
-In development, Nuxt's Vite dev server proxies `/_api/v1/*` to the data server on port 8001. Write operations contact the control server directly at port 8002. In production, Nuxt generates a static bundle that Electron loads directly from disk; the client calls both servers by their port numbers without a proxy.
+There is no dev proxy: in development the Vite dev server (port 3000) serves the client, which calls both Go servers directly with absolute URLs (`client/lib/api-config.js`; CORS is permissive on the Go side) — exactly as the packaged app does. In production `vite build` emits a static bundle (`client/dist/`) that Electron loads directly from disk.
 
 ## Frontend component model
 
 ### Component folder structure
 
-All workbench components live under `client/components/workbench/` and are grouped into seven subfolders (Nuxt's `pathPrefix: false` keeps auto-import names flat, so component names are unaffected by depth):
+All workbench components live under `client/components/workbench/` and are grouped into seven subfolders (every component is imported explicitly — there are no auto-imports):
 
 | Folder | Contents |
 |---|---|
@@ -37,14 +37,14 @@ All workbench components live under `client/components/workbench/` and are group
 | `editor/` | `Editor`, `GridView`, `EditorGroup`, `EditorDropOverlay`, `TabContentHost` (resolves a tab's `kind` → registered tab view), `DirectoryTab`, `HomePage`, `MonacoEditor` |
 | `directory/` | `DirectoryPanel`, `DirectoryLayout`, all `Directory*Layout` variants, `DirectoryBreadcrumb`, `DirectoryHoverPreview`, `AudioPlayer`, `VideoPlayer` |
 | `explorer/` | `ExplorerPanel`, `TreeList`, `TreeItem`, `OpenEditorsView` |
-| `views/` | `PreviewPanel`, `DetailsPanel`, `ChatPanel`, `DebugPanel`; `preview/` subfolder for preview sub-components |
+| `views/` | `ChatPanel`, `DetailsPanel`, `PlaceholderPanel` (Preview's and Debug's components moved into their runtime plugins under `/plugins`) |
 | `ui/` | `FloatingMenu`, `ContextMenu`, `Tooltip`, `CommandPalette`, `ModalEditor` (shared modal chrome), `ModalHost` (renders the active registered modal), `SettingsModal`, `KeyboardShortcutsModal` |
 
 `Workbench.vue` lives at the root of `components/workbench/`.
 
 ### Composable folder structure
 
-Composables live in `client/composables/` and are split into three layers (Nuxt auto-imports scan recursively, so subfolder depth is transparent):
+Composables live in `client/composables/` and are split into three layers (imported explicitly by path):
 
 | Folder | Contents |
 |---|---|
@@ -304,7 +304,7 @@ Right-click drag releases show a "drop action" context menu (`showRightDragDropM
 
 Preview kinds: `text` (Monaco), `html` (iframe + source toggle), `image`, `video` (Video.js), `audio` (Wavesurfer.js), `binary` (no preview).
 
-In dev, file content is fetched from Nitro server routes (`/media-preview`, `/text-preview`) to bypass Vite's proxy size limit on large responses.
+File content is fetched from the Go server directly in dev and production alike (`/_api/v1/fs/preview` for text, `/_api/v1/media/preview` for media bytes).
 
 ## Inline rename
 
@@ -524,8 +524,9 @@ A production build is a self-contained Electron app that **bundles and launches 
 Go server** — there is no separate backend to install.
 
 - **Build** (`npm run build:electron`): `client/scripts/build-server.js` compiles the
-  Go server to `server/v1/dist/` (platform-correct name), `nuxt generate` emits the
-  static client to `.output/public`, then electron-builder packages both. The server
+  Go server to `server/v1/dist/` (platform-correct name), `build-plugins.js` emits the
+  production plugin artifacts, `vite build` emits the static client to `client/dist/`,
+  then electron-builder packages everything. The server
   binary, the `config/` tree, and `blacklist.yaml` are copied in via electron-builder
   `extraResources` (they live in `process.resourcesPath`, outside the asar so the
   binary stays executable).

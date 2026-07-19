@@ -1,4 +1,5 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { API_BASE } from '~/lib/api-config.js'
 
 // ── Status bar slice ──────────────────────────────────────────────────────────
 // Server-connection state + the transient status line + directory stats. A leaf
@@ -30,7 +31,7 @@ export function useStatusBar() {
   let _pingInterval = null
   async function pingServer() {
     try {
-      const res = await fetch('/health', { signal: AbortSignal.timeout(3000) })
+      const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) })
       serverConnected.value = res.ok
     } catch {
       serverConnected.value = false

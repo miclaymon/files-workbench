@@ -61,7 +61,11 @@ async function _load() {
   loading.value = true
   error.value = null
 
-  _inflightPromise = $fetch(`${API_BASE}/_api/${API_V}/preferences`)
+  _inflightPromise = fetch(`${API_BASE}/_api/${API_V}/preferences`)
+    .then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return res.json()
+    })
     .then(loaded => {
       deepMerge(prefs, loaded)
       _ready = true
@@ -78,7 +82,12 @@ async function _load() {
 }
 
 async function save(newPrefs) {
-  await $fetch(`${CONTROL_BASE}/_api/${API_V}/preferences`, { method: 'PUT', body: newPrefs })
+  const res = await fetch(`${CONTROL_BASE}/_api/${API_V}/preferences`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(newPrefs),
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
   deepMerge(prefs, newPrefs)
 }
 

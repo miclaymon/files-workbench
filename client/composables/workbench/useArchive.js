@@ -1,5 +1,6 @@
 import { ref, onMounted } from 'vue'
 import { fsArchiveCapabilities } from '~/lib/fs-api.js'
+import { API_BASE, API_V } from '~/lib/api-config.js'
 
 // ── Archive slice ─────────────────────────────────────────────────────────────
 // Archive-file detection + the host's archive capabilities (loaded once). A leaf:
@@ -26,7 +27,7 @@ export function useArchive() {
 
   onMounted(async () => {
     try {
-      const init = await fetch('/_api/v1/app/init').then(r => r.json())
+      const init = await fetch(`${API_BASE}/_api/${API_V}/app/init`).then(r => r.json())
       platform.value = init.platform ?? 'linux'
     } catch { /* non-fatal */ }
     try { archiveCaps.value = await fsArchiveCapabilities() } catch { /* non-fatal */ }

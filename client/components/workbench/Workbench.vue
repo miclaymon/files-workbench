@@ -230,6 +230,15 @@
 </template>
 
 <script setup>
+import ActivityBar from './shell/ActivityBar.vue'
+import BottomPanel from './shell/BottomPanel.vue'
+import ContextMenu from './ui/ContextMenu.vue'
+import Editor from './editor/Editor.vue'
+import NotificationPanel from './shell/NotificationPanel.vue'
+import PrimarySideBar from './shell/PrimarySideBar.vue'
+import SecondarySideBar from './shell/SecondarySideBar.vue'
+import StatusBar from './shell/StatusBar.vue'
+import TitleBar from './shell/TitleBar.vue'
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useWorkspaces, uuidv4 } from '~/composables/useWorkspaces.js'
 import CommandPalette from './ui/CommandPalette.vue'

@@ -1,12 +1,16 @@
-# Agent Guide — Files Workbench 2
+# Agent Guide — Files Workbench
 
 Instructions for AI coding agents (Claude Code, etc.) working in this repository.
 
+> **Refactor in progress** — this branch is splitting the monolith into reusable
+> packages. See [`PLAN.md`](PLAN.md) for the package map, decisions, and milestones.
+> `../files-workbench2` (if present) is the pre-refactor reference checkout — read-only.
+
 ## Repository at a glance
 
-- **Frontend**: Nuxt 3 SPA (`client/`) served by Vite in dev and compiled to static in production. Runs inside Electron for the desktop app.
+- **Frontend**: Vue 3 SPA (`client/`) built with plain Vite (entry `client/main.js` + `client/index.html`; no Nuxt, no auto-imports — every component/composable/Vue API is imported explicitly). Runs inside Electron for the desktop app.
 - **Backend**: Go HTTP server (`server/v1/`) — data server on port 8001, control server on port 8002. All routes under `/_api/v1/`.
-- **Dev proxy**: Nuxt/Vite proxies `/_api/v1/*` to port 8001 (data). Write ops contact port 8002 directly via `CONTROL_BASE`. The proxy silently drops large binary responses — use Nitro server routes for file preview content (see below).
+- **No dev proxy**: the client calls both servers directly with absolute URLs from `client/lib/api-config.js` (`API_BASE` → 8001 reads, `CONTROL_BASE` → 8002 writes; CORS is permissive on the Go side). Override with `VITE_API_BASE` / `VITE_CONTROL_BASE` in `client/.env`.
 
 ## Component architecture
 
@@ -26,7 +30,7 @@ Workbench.vue                  Root shell: titlebar, activity bar, sidebar, edit
      Preview / Details / Debug live under client/builtin-plugins/, see Plugin system)
 ```
 
-Preview's component tree (now `client/builtin-plugins/preview/src/components/`):
+Preview's component tree (in the runtime plugin tree, `plugins/preview/client/components/`):
 
 ```
 PreviewPanel.vue               Dispatches to per-type preview components
@@ -43,7 +47,7 @@ so it never shows the "too large" warning — only the side panel does.
 
 ## Activity system
 
-The workbench is organized into **activities** — self-contained feature modules. Only the core `workbench` shell is in-core in `client/activities/`; `explorer`, `preview`, `details`, `debug`, `chat`, `search`, `storage`, and `converter` are contributed by first-party **plugins** (`client/builtin-plugins/`) — they are still activities, just registered through the plugin host rather than compiled into `ACTIVITIES`. (`chat`/`search`/`storage`/`converter` are placeholder panels awaiting their roadmap build-out.) Each declares the surfaces it contributes and, optionally, a runtime **API** for collaboration. This is the foundation of the plugin system (see **Plugin system** below) — first-party activities use the same internal API a plugin does, narrowed by permission.
+The workbench is organized into **activities** — self-contained feature modules. Only the core `workbench` shell is in-core in `client/activities/`; `explorer` is the one core-bundled plugin (`client/builtin-plugins/`), and `preview`, `details`, `debug`, `source-control`, `material-icon-theme`, `chat`, `search`, `storage`, and `converter` are first-party **runtime plugins** built from the top-level `/plugins` tree — they are still activities, just registered through the plugin host rather than compiled into `ACTIVITIES`. (`chat`/`search`/`storage`/`converter` are placeholder panels awaiting their roadmap build-out.) Each declares the surfaces it contributes and, optionally, a runtime **API** for collaboration. This is the foundation of the plugin system (see **Plugin system** below) — first-party activities use the same internal API a plugin does, narrowed by permission.
 
 **Activity definition** (default export of each `activities/*.js`):
 
@@ -103,8 +107,8 @@ A **plugin** is an out-of-core activity loaded at runtime through a *permission-
 - **UI model** (`client/models/ui/`): UI-agnostic classes — `Activity`, `View`, `EditorView`, `ModalView`, `PanelView`, `ViewSection`, `StatusView` — that carry metadata + a component reference (no Vue imports). `fromDefinition.js` wraps the declarative `client/activities/*.js` objects into instances; the registry stores instances. A plugin authors `new Activity(...).addView(new PanelView(...))`.
 - **Manifest + permissions** (`client/models/plugin/`): `manifest.js` (Chrome-style `manifest.json` validator), `permissions.js` (front-end `PERMISSIONS` gating facade slices, backend `HOST_PERMISSIONS` gating brokered services like `scm:read`/`scm:write`). JSON schema + example: `docs/plugins/`.
 - **Loader** (`client/composables/plugins/`): `usePluginApi.js` builds the frozen, permission-scoped `api` (UI classes + `log` + only the granted facade slices/brokers); `usePluginHost.js` loads/unloads `{ manifest, module }` pairs (dependency-ordered, lifecycle). `activate(api)` may be sync or async and returns (or resolves to) a disposer; `deactivate(api)` is optional. **Fault isolation**: the host imports optional plugins lazily and in parallel, then activates them sequentially — an import failure, a thrown/rejected `activate()`, or a bogus disposer is logged and confined to that plugin (peers and the host keep running); a reactive `states` map tracks each plugin's `loading`/`active`/`failed` status.
-- **Loading**: built-ins are listed in `client/builtin-plugins/index.js` and loaded at startup in `Workbench.vue`. Current built-ins: **`explorer`** (the file-tree + directory-tab + selection-capability plugin — must load first so Workbench can pull its selection refs before the other slices initialise), **`source-control`** (brokers to the Go scm API — the richest surface reference), and **`preview`** / **`details`** / **`debug`** (pure surface contributors: selection-consuming panels in the Secondary Side Bar, and Debug's log-provider panel in the Bottom Panel). The archive/sandbox runtime path is not built yet — it will produce the same `{ manifest, module }` pairs the host already consumes.
-- **Brokered backend**: plugins never touch the filesystem/control server directly — host-permission'd services (e.g. `api.scm`) forward to the Go server (`server/v1/scm.go`) via a client broker (`client/lib/scm-api.js`, reads→data / writes→control, mock fallback when offline).
+- **Loading**: **`explorer`** is the one core-bundled built-in (`client/builtin-plugins/index.js`, loaded synchronously — it owns the selection capability Workbench pulls before the other slices initialise). Every other first-party plugin loads at **runtime** from the `/plugins` tree: built to self-contained ES modules by `npm run build:plugins`, served by the Go server, hash-verified against `plugins.lock.json`, then dynamically imported (`useRuntimePlugins.js`) — the exact path a third-party plugin uses. The `material-icon-theme` client entry is a thin re-export of the standalone `files-workbench-material-icons` package (developed in `../files-workbench-plugins/`, installed as a root `file:` dependency — a symlink, so edits there are picked up by the next `build:plugins`).
+- **Sandboxed backend**: plugins never touch the filesystem/control server directly — a plugin ships its own WASM backend (`server` block + `server` permission) that the Go host runs sandboxed (`server/v1/plugin_host.go`, extism/wazero) and the client reaches via `api.server.call(...)` → `POST /_api/v1/plugins/{id}/rpc`. Source Control's git backend is the reference (it replaced the former `scm.go` handlers and `api.scm` broker).
 - **Preference contributions** (`client/composables/usePreferenceSchema.js`): `api.preferences.register({ key, title, properties })` adds a section to the Settings panel (merged with the static base schema in `SettingsModal.vue`); values live under `prefs.<key>` and persist normally. `api.preferences.get(path)` reads a value.
 
 ## Key lib files and composables
@@ -117,11 +121,12 @@ A **plugin** is an out-of-core activity loaded at runtime through a *permission-
 | `lib/fs-api.js` | FS API calls: `fsStat`, `fsListDir`, `fsArchiveList`, `fsExeInfo`, read-only ops. Write ops are now routed through `useFileOpsQueue` / `sw-queue`. |
 | `lib/sw-queue.js` | Client bridge to the service worker. `swQueue.enqueue(kind, params)` adds an op; `swQueue.execute(opIds)` drains the SW queue and returns an array of Promises. Falls back to direct fetch when SW is unavailable. |
 | `lib/explorer-api.js` | Explorer tree API calls. |
-| `lib/scm-api.js` | Source-control (git) broker the plugin SCM service forwards to: `detectRepos`/`repoInfo` (reads→data server), `commit`/`init` (writes→control server), with mock fallback when the `/scm` endpoints are offline. |
+| `lib/plugin-rpc.js` | Generic RPC bridge to a plugin's own WASM backend (`api.server` → `POST /_api/v1/plugins/{id}/rpc`). |
+| `lib/plugins-api.js` | Plugin manifest/artifact/install/registry API calls (reads→data, mutations→control). |
 | `lib/perf-log.js` | Client-side performance timing helpers. |
 | `lib/time.js` | Notification time helpers: `isoDuration`/`humanAgo` for `<time>` relative labels, `isoDurationMs`/`humanDurationMs` for op timings, `clockTime` for absolute timestamps. |
 | `public/sw.js` | Service worker. Maintains a per-client op queue (keyed by `event.source.id`). Handles `INIT`, `ENQUEUE`, `EXECUTE`, `CLEAR` messages. `EXECUTE` fires all queued ops concurrently via fetch and replies `OP_COMPLETE`/`OP_ERROR` per op. |
-| `plugins/sw.client.js` | Registers the service worker on app startup (fire-and-forget; fallback handles early ops). |
+| `main.js` | App entry (Vite): registers the service worker (fire-and-forget; fallback handles early ops), imports the global CSS, mounts `Workbench.vue`. |
 
 ### Composables — root (foundational services and utilities)
 
@@ -184,14 +189,12 @@ Hand-rolled store slices instantiated by `Workbench.vue` and wired by dependency
 | `useAppMenus.js` | File/Edit/View + Settings menus **assembled from the command registry** (`{ command }` refs resolved to label / enabled / toggle-state) plus items contributed via `menus.items(menuId)`; modal open-state and the prefs-save passthrough. Params: `{ host, history, views, savePrefs, statusbar, explorerPanelRef }`. |
 | `useWorkbenchKeyboard.js` | Window-level keyboard **dispatcher**: normalizes each keydown to a chord and runs the bound command (`host.keybindings.forChord` → `commands.execute`), honoring `allowInInput`. Self-manages its listener. Params: `{ host }`. The command palette list is built in `Workbench` from `commands.list()`. |
 
-## Nitro server routes (dev proxy workaround)
+## Preview content delivery
 
-`client/server/routes/` contains Nitro event handlers that run inside Node.js **before** Vite middleware. They bypass the dev proxy size limit entirely.
-
-- `media-preview.get.ts` — streams binary files (images, video, audio) with correct MIME types.
-- `text-preview.get.ts` — reads text/code files up to `max_lines`, decodes UTF-8 (falls back to latin-1), returns JSON.
-
-In production these routes are unused; the client calls `/_api/v1/` directly.
+There is no dev proxy and no Nitro workaround routes anymore — preview content is
+fetched from the Go server directly in dev and production alike: text/code via
+`GET /_api/v1/fs/preview` (JSON with a `tooLarge` size-cap descriptor and a `force`
+bypass) and raw media bytes via `GET /_api/v1/media/preview`.
 
 ## Go server handlers (`server/v1/`)
 
@@ -208,7 +211,9 @@ The Go process starts **two independent servers**: a read-only data server (port
 | `media.go` | `handleMediaImage`, `handleMediaThumbnail`, `handleMediaPreview`, `handleMediaPreviewText`, `handleMediaMetadata`, `handleMediaArtwork`, `handleMediaCapabilities` |
 | `thumbnail.go` | `resizeImage`, `videoThumbnail` (ffmpeg), `audioThumbnail` (ffmpeg), disk-based thumbnail cache |
 | `preferences.go` | `handlePreferencesGet`, `handlePreferencesPut` (writes the prefs JSON verbatim — no schema strip), `handlePreferencesSchema` |
-| `scm.go` | Source control (git via the `git` CLI): `handleScmDetect` (repo discovery from open paths — ancestor/sibling/child), `handleScmInfo` (branch/ahead-behind/status/log), `handleScmCommit`, `handleScmInit`. detect/info on the data server, commit/init on control. The client reaches these only through the broker (`lib/scm-api.js`) behind the `scm:read`/`scm:write` plugin permissions. |
+| `plugin_host.go` | Sandboxed WASM server-plugin host (extism/wazero): loads `config/plugins/<id>/plugin.wasm` per its `plugin.json` `server` block, exposes permissioned host functions (`exec:<bin>`, `fs:read`, …), serves `POST /_api/v1/plugins/{id}/rpc`. Git source control runs here (the Source Control plugin's backend replaced the former `scm.go`). |
+| `plugins_serve.go` | Serves the runtime plugin manifest (`GET /_api/v1/plugins/manifest`) and per-plugin artifacts (`client.js` / `server.wasm`) from `.fw/plugins` (first-party) + `<dataDir>/plugins` (third-party). |
+| `plugins_install.go` | Third-party plugin install/uninstall/enable endpoints (control server): package extraction with zip-slip/size guards, server-side hash recompute, registry proxy. |
 | `blacklist.go` | Path exclusion rules loaded from server-side config |
 | `plugins.go` | Plugin loader; `loadPlugins()` reads `config/plugins/*/plugin.json`; `iconTheme` struct with `resolve()`, `resolveOpen()`, `has()`, `pick()`; `activeIconTheme` global |
 | `icons.go` | `handleIconsManifest` — returns icon lookup tables; `handleIconsSvg` — serves SVG by definition name (404 returns `image/svg+xml` Content-Type to prevent ORB errors while firing `@error`) |
@@ -242,8 +247,8 @@ When a pack icon name has no backing SVG file, `handleIconsSvg` returns HTTP 404
 ### `.ts` files detected as video
 Some MIME detection logic returns `video/mp2t` for `.ts` files (MPEG-2 transport stream). Always check extension against known text/code extension sets **before** checking MIME type in preview logic.
 
-### Vite dev proxy size limit
-Binary responses and large text routed through `/_api/v1/` are silently truncated by the Vite dev proxy. Always use the Nitro routes (`/media-preview`, `/text-preview`) in dev for file content delivered to the preview panel. Thumbnails and JSON API responses pass through the proxy fine.
+### Large responses stall on some machines' IPv4 loopback
+On some setups (kernel/firewall dependent), TCP response bodies larger than ~3 KB from servers on `127.0.0.1` never arrive while IPv6 loopback works fine — symptoms: directory listings and small JSON work, but plugin artifacts, previews, and media hang forever with no error. Fix: point the client at IPv6 loopback in `client/.env` (`VITE_API_BASE=http://[::1]:8001`, `VITE_CONTROL_BASE=http://[::1]:8002`). This machine-level issue is likely what the old "Vite dev proxy size limit" gotcha actually was — the proxy targeted `127.0.0.1`.
 
 ### DirectoryLayout view modes
 `DirectoryLayout.vue` is a single unified component that handles all view layouts (grid, list, details, gallery-grid, gallery-mosaic, feed, and all grid size variants). The active layout is controlled by the `layout` prop applied as a `data-layout` attribute on the root element; all layout-specific styling is CSS-driven. Old per-layout components (`DirectoryGridLayout.vue`, `DirectoryListLayout.vue`, `DirectoryTableLayout.vue`, `DirectoryFeedLayout.vue`, `DirectoryGalleryLayout.vue`, `DirectoryMosaicLayout.vue`) remain in the repo but are no longer wired into the active rendering path.
@@ -260,7 +265,7 @@ The `::` separator in a tab path signals archive mode throughout the client. `Di
 
 ### Data server vs control server
 
-File-read requests (`/_api/v1/fs/list_dir`, media, etc.) go to port 8001 (proxied in dev via Nuxt). File-write requests (`rename`, `move`, `delete`, etc.) go directly to port 8002 (`CONTROL_BASE`). The service worker also targets `CONTROL_BASE` for all queued operations. Do not register write routes on the data mux or vice versa.
+File-read requests (`/_api/v1/fs/list_dir`, media, etc.) go to port 8001 (`API_BASE`). File-write requests (`rename`, `move`, `delete`, etc.) go directly to port 8002 (`CONTROL_BASE`). The service worker also targets `CONTROL_BASE` for all queued operations. Do not register write routes on the data mux or vice versa.
 
 ### Packaging: Electron spawns the Go server
 
@@ -281,7 +286,7 @@ All mutating file ops are enqueued via `useFileOpsQueue.enqueue({ label, kind, p
 `DirectoryPanel.vue` owns all sort/filter state and applies it client-side via a `processedItems` computed property (filter then sort, directories always first). `DirectoryLayout` receives the already-processed item list — it does not sort or filter itself.
 
 ### Monaco worker setup
-Must configure `window.MonacoEnvironment.getWorker()` before importing Monaco. Use `new URL('monaco-editor/esm/vs/...', import.meta.url)` — Vite bundles these as separate worker chunks automatically. Dynamic `import('monaco-editor')` in `onMounted` to defer loading.
+Must configure `window.MonacoEnvironment.getWorker()` before importing Monaco. Use Vite's `?worker` imports (`import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'`) — **not** the `new Worker(new URL(...))` form, which resolves in dev but fails the production `vite build`. Dynamic `import('monaco-editor')` in `onMounted` to defer loading.
 
 ### Right-click context menu timing on Linux/X11
 
@@ -353,9 +358,10 @@ config/
 │   ├── light.json                 Light theme
 │   └── black.json                 True-black / OLED theme
 └── plugins/
-    └── material-icon-theme/
-        ├── plugin.json            Plugin manifest (id, type, adapter, source, theme)
-        └── vscode-material-icon-theme/   Cloned repo; dist/material-icons.json is the theme file
+    ├── material-icon-theme/
+    │   ├── plugin.json            Icon-pack manifest (id, type, adapter, source, theme)
+    │   └── vscode-material-icon-theme/   Gitignored assets — populate via scripts/install-material-icon-theme.sh; dist/material-icons.json is the theme file
+    └── source-control/            Gitignored build output of the WASM backend (plugin.wasm + plugin.json, emitted by npm run build:plugins; needs extism-js)
 ```
 
 `user-preferences.json` and `user-keybindings.json` are gitignored. The app merges user values over defaults at startup.

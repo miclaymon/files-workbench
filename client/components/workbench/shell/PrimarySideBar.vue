@@ -27,7 +27,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import ViewContainer from '../layout/ViewContainer.vue'
-import { useSideBar } from '../../composables/interaction/useSideBar.js'
+import { useSideBar } from '~/composables/interaction/useSideBar.js'
 
 // The primary side bar (left). Unlike the movable panels it is non-droppable,
 // never merges views, and switches its content by the active primary view

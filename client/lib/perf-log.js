@@ -1,4 +1,4 @@
-import { API_V } from './api-config.js'
+import { API_BASE, API_V } from './api-config.js'
 
 let _label = ''
 let _t0 = 0
@@ -21,7 +21,7 @@ export async function perfFlush() {
   _t0 = 0
   _marks = []
   try {
-    await fetch(`/_api/${API_V}/perf`, {
+    await fetch(`${API_BASE}/_api/${API_V}/perf`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(entry),

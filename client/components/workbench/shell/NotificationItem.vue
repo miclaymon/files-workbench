@@ -68,6 +68,7 @@
 </template>
 
 <script setup>
+import NotificationJobGroup from './NotificationJobGroup.vue'
 import { ref, computed } from 'vue'
 import { isoDuration, humanAgo } from '~/lib/time.js'
 

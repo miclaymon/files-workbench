@@ -14,8 +14,8 @@ would be; nothing is special-cased.
 > The one exception is **Explorer**, which stays compiled into the app as the required
 > core built-in — it owns the selection capability the rest of the app consumes
 > synchronously at startup (see [`client/builtin-plugins/index.js`](../client/builtin-plugins/index.js)).
-> A third-party *install* UX (`.zip`/`.vsix` from a writable dir) isn't built yet, but
-> the loader, manifest, permission model, hashing, and API it will use all are.
+> Third-party plugins install from a file or a remote registry via
+> **Settings → Manage Plugins** — see [Installing third-party plugins](#installing-third-party-plugins).
 
 ---
 
@@ -478,7 +478,11 @@ hand-written `scm.go` handlers and `scm:*` host permissions.
 
 [`plugins/material-icon-theme/`](../plugins/material-icon-theme/)
 is the reference **icon theme** and the smallest first-party plugin: it declares only
-the `icons` permission and, in `activate`, registers one `getIcon` handler. It owns
+the `icons` permission and, in `activate`, registers one `getIcon` handler. It is also
+the first plugin developed as a **standalone package**: the in-repo `client/plugin.js`
+is a thin re-export of `files-workbench-material-icons` (a sibling project under
+`files-workbench-plugins/`, installed at the repo root as a local `file:` dependency —
+a symlink, so edits there are picked up by the next `npm run build:plugins`). It owns
 *resolution* but not *assets* — the SVGs and mapping tables are loaded server-side by
 the Go config plugin under `config/plugins/material-icon-theme/` and exposed at
 `/icons/manifest` + `/icons/svg`. The handler fetches the manifest once, maps a

@@ -19,24 +19,24 @@ Run the setup script once after cloning:
 ./setup.sh
 ```
 
-This installs root npm dependencies (`concurrently`) and client npm dependencies (Nuxt, Electron, Monaco, etc.). The Go server has no separate install step — `go run .` fetches modules automatically on first run.
+This installs root npm dependencies (`concurrently` and the local `files-workbench-material-icons` plugin package) and client npm dependencies (Vite, Vue, Electron, Monaco, etc.). The Go server has no separate install step — `go run .` fetches modules automatically on first run.
 
 ## Starting the dev environment
 
 The Go process runs **two** servers: a data server on port **8001** (`PORT`,
 read-only GETs) and a control server on port **8002** (`CONTROL_PORT`, mutating
-POST/PUTs). The Nuxt dev server runs on port 3000.
+POST/PUTs). The Vite dev server runs on port 3000.
 
 ### Full stack with Electron (recommended)
 
 ```bash
-npm run dev          # alias for dev:electron — Go server + Nuxt + Electron window
+npm run dev          # alias for dev:electron — Go server + Vite + Electron window
 ```
 
 ### Full stack in the browser (no Electron window)
 
 ```bash
-npm run dev:web      # Go server + Nuxt; open http://localhost:3000
+npm run dev:web      # Go server + Vite; open http://localhost:3000
 ```
 
 ### Web (client) only — no Go server
@@ -60,13 +60,18 @@ There is no Swagger UI. Refer to `server/v1/main.go` for the full route list or
 
 ### Hot reload
 
-- The Nuxt dev server reloads Vue components instantly on save.
+- Vite hot-reloads Vue components instantly on save.
 - The Go server does **not** hot-reload; restart `npm run dev:server` after changing any `.go` file.
 - Electron does **not** hot-reload automatically; restart `./start-dev.sh` after changing `client/electron/`.
 
-### Vite dev proxy size limit
+### API base URLs
 
-Vite's HTTP proxy silently drops response bodies larger than ~3–4 KB. File content (images, video, audio, large text) for the preview panel is served through Nitro server routes (`/media-preview`, `/text-preview`) that bypass the proxy. In production these routes are not used; the frontend calls the Go server directly.
+There is no dev proxy — the client calls the Go servers directly with absolute URLs
+in dev and production alike. Defaults live in `client/lib/api-config.js`
+(`http://127.0.0.1:8001` data, `http://localhost:8002` control); override them with
+`VITE_API_BASE` / `VITE_CONTROL_BASE` in `client/.env` (copy `client/.env.example`;
+restart Vite after changes). If large responses hang while small ones work, see
+Troubleshooting below.
 
 ### Go module dependencies
 
@@ -98,17 +103,17 @@ Plugins with a `server` block (e.g. Source Control) ship a WASM backend the Go s
 
 ### Monaco Editor workers
 
-Monaco requires worker scripts to be bundled separately. They are configured in `client/components/workbench/editor/MonacoEditor.vue` via `window.MonacoEnvironment.getWorker()`, instantiating workers imported with Vite's `?worker` query (e.g. `import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'`). Use `?worker` rather than `new Worker(new URL('monaco-editor/…', import.meta.url))` — the bare-specifier `new URL` form resolves in the dev server but **fails the production `nuxt generate` build** (Rollup can't resolve the package specifier in its worker plugin).
+Monaco requires worker scripts to be bundled separately. They are configured in `client/components/workbench/editor/MonacoEditor.vue` via `window.MonacoEnvironment.getWorker()`, instantiating workers imported with Vite's `?worker` query (e.g. `import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'`). Use `?worker` rather than `new Worker(new URL('monaco-editor/…', import.meta.url))` — the bare-specifier `new URL` form resolves in the dev server but **fails the production `vite build`** (Rollup can't resolve the package specifier in its worker plugin).
 
 ## Building for production
 
 ### Web (static export)
 
 ```bash
-cd client && npm run generate
+cd client && npm run build:web
 ```
 
-Output goes to `client/.output/public/`.
+Output goes to `client/dist/`.
 
 ### Electron desktop app (self-contained)
 
@@ -119,7 +124,7 @@ npm run build:electron        # from the repo root (or: cd client && npm run bui
 This runs four steps: compiles the Go server (`client/scripts/build-server.js` →
 `server/v1/dist/`), builds the plugin artifacts (`build-plugins.js --out .fw/plugins-dist`,
 producing prod client bundles + WASM backends), generates the static client
-(`nuxt generate` → `.output/public`), and packages everything with electron-builder.
+(`vite build` → `client/dist/`), and packages everything with electron-builder.
 Output goes to `client/dist-electron/`. Targets depend on the build platform:
 `.AppImage` (Linux), `.dmg` (macOS), `.exe`/NSIS (Windows) — electron-builder can only
 build each OS's installer on that OS.
@@ -177,7 +182,26 @@ cd server/v1 && go clean -modcache && go mod download
 
 **Electron window doesn't open**
 
-The `client/scripts/dev.js` script waits for Nuxt to respond on port 3000 before launching Electron. If Nuxt fails to start, check the terminal for Nuxt errors.
+The `client/scripts/dev.js` script waits for Vite to respond on port 3000 before launching Electron. If Vite fails to start, check the terminal for errors.
+
+**`Error: Electron failed to install correctly`**
+
+The `electron` package's postinstall (which downloads + extracts the platform binary) can fail silently on very new Node majors, leaving a broken `node_modules/electron/dist`. Fix: use a Node LTS and reinstall, or extract the cached archive manually:
+
+```bash
+rm -rf client/node_modules/electron/dist
+unzip ~/.cache/electron/electron-v*-linux-x64.zip -d client/node_modules/electron/dist
+printf 'electron' > client/node_modules/electron/path.txt
+```
+
+**Previews / plugins / media hang forever while directory listings work**
+
+On some machines (kernel/firewall dependent), IPv4 loopback drops TCP response bodies larger than ~3 KB — small JSON succeeds, anything big stalls with no error, and IPv6 loopback is unaffected. Point the client at IPv6 loopback in `client/.env`:
+
+```bash
+VITE_API_BASE=http://[::1]:8001
+VITE_CONTROL_BASE=http://[::1]:8002
+```
 
 **Video/audio thumbnails not generating**
 

@@ -89,7 +89,7 @@ function createWindow() {
     win.loadURL(DEV_URL)
     if (openDevTools) win.webContents.openDevTools()
   } else {
-    win.loadFile(path.join(__dirname, '../.output/public/index.html'))
+    win.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 }
 

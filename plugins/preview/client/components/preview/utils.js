@@ -1,4 +1,4 @@
-import { MEDIA_BASE as API_BASE } from '@fw/sdk'
+import { MEDIA_BASE } from '@fw/sdk'
 
 export const EXT_LANGUAGE = {
   js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
@@ -75,8 +75,8 @@ const THUMB_VIDEO_EXTS = new Set(['mp4', 'webm', 'mkv', 'avi', 'mov', 'm4v', 'fl
 // Images use the /image endpoint (resized original); videos use /thumbnail.
 export function thumbnailIconUrl(item, size = 64) {
   const ext = item?.name?.split('.').pop()?.toLowerCase() ?? ''
-  if (THUMB_IMAGE_EXTS.has(ext)) return `${API_BASE}/image?path=${encodeURIComponent(item.path)}&size=${size}`
-  if (THUMB_VIDEO_EXTS.has(ext)) return `${API_BASE}/thumbnail?path=${encodeURIComponent(item.path)}&size=${size}`
+  if (THUMB_IMAGE_EXTS.has(ext)) return `${MEDIA_BASE}/image?path=${encodeURIComponent(item.path)}&size=${size}`
+  if (THUMB_VIDEO_EXTS.has(ext)) return `${MEDIA_BASE}/thumbnail?path=${encodeURIComponent(item.path)}&size=${size}`
   return null
 }
 
@@ -97,10 +97,9 @@ export function formatBytes(bytes) {
 }
 
 export function previewUrl(path) {
-  const base = import.meta.env.DEV ? '/media-preview' : `${API_BASE}/preview`
-  return `${base}?path=${encodeURIComponent(path)}`
+  return `${MEDIA_BASE}/preview?path=${encodeURIComponent(path)}`
 }
 
 export function thumbnailUrl(path) {
-  return `${API_BASE}/image?path=${encodeURIComponent(path)}&size=64`
+  return `${MEDIA_BASE}/image?path=${encodeURIComponent(path)}&size=64`
 }

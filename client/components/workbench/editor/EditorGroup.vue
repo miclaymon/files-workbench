@@ -145,6 +145,9 @@
 </template>
 
 <script setup>
+import EditorDropOverlay from './EditorDropOverlay.vue'
+import FloatingMenu from '../ui/FloatingMenu.vue'
+import TabContentHost from './TabContentHost.vue'
 import { computed, inject, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { mdiClose, mdiPin, mdiChevronDown, mdiLock, mdiDotsHorizontal } from '@mdi/js'
 import { useEditorDnd, dropRegion, regionToSide } from '~/composables/interaction/useEditorDnd.js'

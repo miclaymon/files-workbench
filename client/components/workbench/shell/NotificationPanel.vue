@@ -30,6 +30,7 @@
 </template>
 
 <script setup>
+import NotificationItem from './NotificationItem.vue'
 import { ref, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({

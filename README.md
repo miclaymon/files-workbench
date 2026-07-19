@@ -1,6 +1,11 @@
 # Files Workbench
 
-A desktop file manager built with Electron + Nuxt 3 (Vue 3) on the front end and a Go HTTP server on the back end. It runs as a native Electron app in production and as a browser SPA in development.
+A desktop file manager built with Electron + Vue 3 (Vite) on the front end and a Go HTTP server on the back end. It runs as a native Electron app in production and as a browser SPA in development.
+
+> **Refactor in progress** — this branch (`refactor/multi-package`) is splitting the
+> monolith into reusable packages (`@workbench/framework`, `@workbench/vue`,
+> `@files-workbench/core`, `@workbench/plugin-sdk`). See [`PLAN.md`](PLAN.md) for the
+> package map, decisions, and milestone status.
 
 ## Features
 
@@ -36,7 +41,7 @@ A desktop file manager built with Electron + Nuxt 3 (Vue 3) on the front end and
 | Layer | Technology |
 |---|---|
 | Desktop shell | Electron 34 |
-| Frontend framework | Nuxt 3 / Vue 3 |
+| Frontend framework | Vue 3 + Vite |
 | Code editor | Monaco Editor |
 | Video player | Video.js |
 | Audio waveform | Wavesurfer.js |
@@ -76,7 +81,7 @@ irm https://raw.githubusercontent.com/miclaymon/files-workbench/main/install.ps1
 # Install all dependencies
 ./setup.sh
 
-# Start Nuxt dev server + Go server + Electron
+# Start Vite dev server + Go server + Electron
 npm run dev
 ```
 
@@ -110,8 +115,11 @@ at startup (fixed ports 8001/8002).
 ## Project structure
 
 ```
-files-workbench2/
-├── client/                   Nuxt 3 SPA + Electron shell
+files-workbench/
+├── client/                   Vue 3 SPA (Vite) + Electron shell
+│   ├── index.html            Vite entry page
+│   ├── main.js               App entry: mounts Workbench, registers the service worker
+│   ├── vite.config.js        Vite config (aliases, dev server)
 │   ├── assets/css/           Global CSS variables and base styles
 │   ├── activities/           First-party activity modules — each declares its tab/panel/status surfaces + runtime API (Workbench shell only; the rest are plugins)
 │   ├── builtin-plugins/      Explorer only — the one core-bundled plugin (owns the selection capability, read synchronously at startup); every other first-party plugin loads at runtime from the root-level /plugins tree
@@ -126,11 +134,8 @@ files-workbench2/
 │   │   └── *.js              Foundational services (workspaces, preferences, queues, registries, …)
 │   ├── electron/             Electron main process
 │   ├── lib/                  API client helpers (fs-api.js, sw-queue.js, …)
-│   ├── pages/                Nuxt pages (single page: index)
-│   ├── plugins/              Nuxt plugins (sw.client.js — service worker registration)
-│   ├── public/               Static assets served as-is (sw.js — service worker)
-│   └── server/routes/        Nitro server routes (dev proxy workaround for large/binary responses)
-├── plugins/                  First-party plugin source tree — one dir per plugin (manifest.json + client/ and/or server/), built to runtime artifacts by npm run build:plugins
+│   └── public/               Static assets served as-is (sw.js — service worker)
+├── plugins/                  First-party plugin source tree — one dir per plugin (manifest.json + client/ and/or server/), built to runtime artifacts by npm run build:plugins. material-icon-theme is a thin re-export of the standalone files-workbench-material-icons package (installed as a local file: dependency)
 ├── plugins.lock.json         Committed content-hash pins for first-party plugin artifacts (the integrity root of trust the loader verifies against)
 ├── config/                   User configuration and defaults
 │   ├── preferences/          App preferences JSON + schema
@@ -155,9 +160,7 @@ The Go process starts two independent HTTP servers:
 | Data | 8001 (`PORT` env) | Read-only GETs — directory listing, stat, media, icons, preferences |
 | Control | 8002 (`CONTROL_PORT` env) | Mutating POSTs/PUTs — rename, move, copy, delete, trash, compress, … |
 
-All routes are prefixed with `/_api/v1/`. In development, Nuxt proxies `/_api/v1/*` to port 8001 (data). The control server is contacted directly at `http://localhost:8002` (CORS is permissive on the Go side).
-
-> **Dev proxy size limit**: Vite's dev proxy silently drops large binary responses. File content for previews (images, video, audio, text) is served through Nitro server routes at `/media-preview` and `/text-preview`, which run in Node.js and bypass the proxy entirely. Thumbnails and JSON API responses are small enough to pass through the proxy fine.
+All routes are prefixed with `/_api/v1/`. There is no dev proxy — the client talks to both servers directly with absolute URLs in dev and packaged builds alike (CORS is permissive on the Go side). The defaults live in `client/lib/api-config.js` (`http://127.0.0.1:8001` / `http://localhost:8002`) and can be overridden with `VITE_API_BASE` / `VITE_CONTROL_BASE` in `client/.env` (see `client/.env.example`).
 
 ## Configuration
 

@@ -34,6 +34,7 @@
 </template>
 
 <script setup>
+import DirectoryPanel from '../directory/DirectoryPanel.vue'
 import { ref, computed, watch, reactive, shallowReactive, onMounted, onUnmounted, onActivated } from 'vue'
 import { MEDIA_BASE } from '~/lib/api-config.js'
 import { fsStat, fsListDir, watchDirSize, fsArchiveList, fsExeInfo } from '~/lib/fs-api.js'

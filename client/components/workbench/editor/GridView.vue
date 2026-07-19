@@ -19,6 +19,7 @@
 </template>
 
 <script setup>
+import Sash from '../layout/Sash.vue'
 import { ref } from 'vue'
 import { isBranch } from '~/composables/useLayoutGrid.js'
 
