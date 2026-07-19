@@ -42,6 +42,7 @@ A desktop file manager built with Electron + Vue 3 (Vite) on the front end and a
 |---|---|
 | Desktop shell | Electron 34 |
 | Frontend framework | Vue 3 + Vite |
+| Workbench core | [`@workbench/framework`](https://github.com/miclaymon/files-workbench-framework) (local sibling checkout `../workbench-framework`) |
 | Code editor | Monaco Editor |
 | Video player | Video.js |
 | Audio waveform | Wavesurfer.js |
@@ -124,14 +125,14 @@ files-workbench/
 │   ├── activities/           First-party activity modules — each declares its tab/panel/status surfaces + runtime API (Workbench shell only; the rest are plugins)
 │   ├── builtin-plugins/      Explorer only — the one core-bundled plugin (owns the selection capability, read synchronously at startup); every other first-party plugin loads at runtime from the root-level /plugins tree
 │   ├── plugin-sdk/           @fw/sdk — the host SDK surface (Vue, UI models, safe composables/components) that plugin clients import, externalized to the app at build
-│   ├── models/               UI model classes (ui/: Activity, View, …) + plugin model (plugin/: manifest, permissions)
 │   ├── components/workbench/ All UI components
 │   ├── composables/          Vue composables, grouped:
-│   │   ├── activity/         Inter-activity API: event emitter + activity host (broker) + contribution registries
-│   │   ├── plugins/          Plugin loader: permission-scoped API factory + plugin host (load/unload, lifecycle)
+│   │   ├── plugins/          Runtime plugin delivery (fetch + hash-verify + import → framework plugin host)
 │   │   ├── interaction/      UI-behavior primitives (drag systems, click, hover, resize)
 │   │   ├── workbench/        Workbench assembly-root slices (editor grid, view layout, file ops, …)
-│   │   └── *.js              Foundational services (workspaces, preferences, queues, registries, …)
+│   │   └── *.js              Foundational app services (workspaces, preferences, queues, file tree, …)
+│   │                         (the activity host, registries, plugin system, UI models, and layout
+│   │                          engine live in the @workbench/framework package)
 │   ├── electron/             Electron main process
 │   ├── lib/                  API client helpers (fs-api.js, sw-queue.js, …)
 │   └── public/               Static assets served as-is (sw.js — service worker)

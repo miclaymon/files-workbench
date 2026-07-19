@@ -40,7 +40,7 @@ import SplitView from './SplitView.vue'
 import ViewDropOverlay from './ViewDropOverlay.vue'
 import { useStackResize } from '../../../composables/interaction/useStackResize.js'
 import { useViewDrag, DRAG_MIME } from '../../../composables/interaction/useViewDrag.js'
-import { getViewEntry } from '../../../composables/useViewRegistry.js'
+import { getViewEntry } from '@workbench/framework'
 
 // Stacks the SplitViews of one tab slot (a "SplitViewArea"). View headings
 // appear only when more than one View is merged into the slot. Dragging a

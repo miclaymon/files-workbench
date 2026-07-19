@@ -15,7 +15,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { usePeek } from '~/composables/usePeek.js'
+import { usePeek } from '@workbench/framework'
 import { calcPopupPosition } from '~/lib/popup-position.js'
 
 // Renders the active peek entry (see usePeek.js) as a positioned popup near its

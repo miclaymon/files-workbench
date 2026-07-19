@@ -47,7 +47,7 @@ import ViewContentHost from './ViewContentHost.vue'
 import ViewActions from './ViewActions.vue'
 import { useStackResize } from '../../../composables/interaction/useStackResize.js'
 import { useViewDrag } from '../../../composables/interaction/useViewDrag.js'
-import { getViewEntry, viewAcceptsSections, sectionHeadingShown, viewAllowsDuplicateSections, sectionDataId } from '../../../composables/useViewRegistry.js'
+import { getViewEntry, viewAcceptsSections, sectionHeadingShown, viewAllowsDuplicateSections, sectionDataId } from '@workbench/framework'
 
 // Stacks the SplitSections of a single View. Section headings appear only when
 // the View owns more than one section. Sections can be reordered within the area

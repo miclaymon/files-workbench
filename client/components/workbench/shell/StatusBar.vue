@@ -14,7 +14,7 @@
 // ordered into a left and a right region. Each widget injects the activity host
 // (`viewCtx`) for its data and self-gates, so the bar has no props of its own.
 import { computed } from 'vue'
-import { getStatusViews } from '~/composables/useViewRegistry.js'
+import { getStatusViews } from '@workbench/framework'
 
 // Computed so contributed / removed status widgets (the registry is dynamic now)
 // update the bar live.

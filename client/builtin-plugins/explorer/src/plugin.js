@@ -10,7 +10,7 @@ import DirectoryTab         from '~/components/workbench/editor/DirectoryTab.vue
 import ExplorerStatusWidget from '~/components/workbench/shell/status/ExplorerStatusWidget.vue'
 
 import { useSelection } from '~/composables/workbench/useSelection.js'
-import { createEmitter } from '~/composables/activity/useEmitter.js'
+import { createEmitter } from '@workbench/framework'
 
 // Explorer plugin entry. The most central first-party plugin: it owns the
 // file/directory selection context and contributes the core file-browsing

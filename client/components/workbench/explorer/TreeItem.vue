@@ -93,7 +93,7 @@ import { computed, ref, nextTick, watch } from 'vue'
 import { mdiFile, mdiFolder, mdiFolderOpen, mdiHarddisk, mdiLinkVariant } from '@mdi/js'
 import { useClickDebounce } from '~/composables/interaction/useClickDebounce.js'
 import { useTreeDrag } from '~/composables/interaction/useTreeDrag.js'
-import { useIconRegistry } from '~/composables/useIconRegistry.js'
+import { useIconRegistry } from '@workbench/framework'
 import { resolveCustomIcon } from '~/composables/useCustomIcon.js'
 import ResolvedIcon from '~/components/workbench/ResolvedIcon.vue'
 

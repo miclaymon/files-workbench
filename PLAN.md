@@ -47,8 +47,21 @@ Each milestone ends with the app runnable and verified before anything is commit
       `files-workbench-material-icons` package (`../files-workbench-plugins/`),
       consumed via a root `file:` install — the first external plugin project.
       Not yet exercised: a full `build:electron` packaging run.
-- [ ] **M2 — `@workbench/framework`** extracted. Registries, host, facade, UI/plugin
+- [x] **M2 — `@workbench/framework`** extracted. Registries, host, facade, UI/plugin
       models, plugin host on `@vue/reactivity`; app imports it.
+      *Implemented + verified 2026-07-19; repo `../workbench-framework` (github
+      files-workbench-framework), initial commit `113d10b`.
+      26 modules moved to `workbench-framework/src/` (83 public exports), three app
+      couplings inverted: the host takes an `activities` param (surfaces registered
+      by `activities/index.js` at import), `getActivity` fallback dropped, and the
+      plugin `server` slice uses host-supplied `services.callPluginRpc` instead of
+      importing the app's RPC bridge. Reactivity via `@vue/reactivity` only (see
+      `src/reactivity.js`), single-instance enforced by `resolve.dedupe` in
+      vite.config; note the standalone `watch` flushes sync (vs Vue's pre-flush) —
+      no misbehavior observed. Verified in-browser: boot, 10 plugins, icons, SCM
+      (rpc injection), palette + chords, Settings/Shortcuts modals, plugin hot
+      disable→"Unknown view"→re-enable heals live, selection→preview/status
+      reactivity, lightbox, editor split/preset; `vite build` clean.*
 - [ ] **M3 — `@workbench/vue`** extracted. Components + interaction composables +
       theming; app imports `<WorkbenchApp />` and friends.
 - [ ] **M4 — `@files-workbench/core`** extracted. Go server + JS client move out; app

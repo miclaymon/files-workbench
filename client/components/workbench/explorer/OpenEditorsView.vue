@@ -23,8 +23,8 @@
 <script setup>
 import { computed, inject, ref } from 'vue'
 import { mdiHome, mdiCog } from '@mdi/js'
-import { collectLeaves } from '~/composables/useLayoutGrid.js'
-import { tabIconDescriptor } from '~/composables/useViewRegistry.js'
+import { collectLeaves } from '@workbench/framework'
+import { tabIconDescriptor } from '@workbench/framework'
 import ResolvedIcon from '~/components/workbench/ResolvedIcon.vue'
 
 const props = defineProps({

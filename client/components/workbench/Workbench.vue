@@ -248,9 +248,11 @@ import PeekHost from './PeekHost.vue'
 import { useEditorGrid } from '~/composables/workbench/useEditorGrid.js'
 import { useStatusBar } from '~/composables/workbench/useStatusBar.js'
 import { useNotifications } from '~/composables/workbench/useNotifications.js'
-import { useActivityHost } from '~/composables/activity/useActivityHost.js'
-import { formatChord } from '~/composables/activity/useKeybindingRegistry.js'
-import { createPluginHost } from '~/composables/plugins/usePluginHost.js'
+import { useActivityHost } from '@workbench/framework'
+import { formatChord } from '@workbench/framework'
+import { createPluginHost } from '@workbench/framework'
+import { ACTIVITIES } from '~/activities/index.js'
+import { callPluginRpc } from '~/lib/plugin-rpc.js'
 import { EXPLORER_PLUGIN, OPTIONAL_PLUGIN_LOADERS } from '~/builtin-plugins/index.js'
 import { installFwSdk } from '~/plugin-sdk/client/index.js'
 import { hardenIntrinsics } from '~/plugin-sdk/client/harden.js'
@@ -265,7 +267,7 @@ import { usePreferences } from '~/composables/usePreferences.js'
 import { useDebugLog } from '~/composables/useDebugLog.js'
 import { useFileOpsQueue } from '~/composables/useFileOpsQueue.js'
 import { useActionHistory } from '~/composables/useActionHistory.js'
-import { collectLeaves } from '~/composables/useLayoutGrid.js'
+import { collectLeaves } from '@workbench/framework'
 import { fsStat, fsOpenWithSystem, fsOpenTerminal, fsCreateFile, fsCreateDir } from '~/lib/fs-api.js'
 
 function uuid() { return uuidv4() }
@@ -369,8 +371,15 @@ const host = useActivityHost({
   services: {
     statusbar: { status, dirStats, formatBytes, flashStatus },
     fsStat, fsOpenWithSystem, isArchiveItem, uuid,
+    // Transport for plugin `server`-permission backends (api.server): the framework
+    // is delivery-agnostic, so the app supplies the RPC bridge to the Go host.
+    callPluginRpc,
   },
   log,
+  // First-party activity definitions (currently just the Workbench shell). Their
+  // surfaces are registered in activities/index.js at import; the host instantiates
+  // their runtime APIs here.
+  activities: ACTIVITIES,
 })
 
 // First-party plugins, loaded through the plugin host (the same path third-party

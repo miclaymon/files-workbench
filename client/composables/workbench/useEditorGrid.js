@@ -1,5 +1,5 @@
 import { ref, computed, watch, nextTick } from 'vue'
-import { createLeaf, findLeaf, firstLeaf, collectLeaves, leafCount, insertLeafBeside, removeLeaf, applyPreset } from '~/composables/useLayoutGrid.js'
+import { createLeaf, findLeaf, firstLeaf, collectLeaves, leafCount, insertLeafBeside, removeLeaf, applyPreset } from '@workbench/framework'
 import { uuidv4 } from '~/composables/useWorkspaces.js'
 
 // ── Editor grid slice ─────────────────────────────────────────────────────────

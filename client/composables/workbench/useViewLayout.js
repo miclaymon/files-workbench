@@ -1,6 +1,6 @@
 import { ref, computed, watch } from 'vue'
 import { mdiMessage, mdiEye, mdiInformation, mdiBug } from '@mdi/js'
-import { getViewEntry, viewAllowsDuplicateSections, listPrimaryViews } from '~/composables/useViewRegistry.js'
+import { getViewEntry, viewAllowsDuplicateSections, listPrimaryViews } from '@workbench/framework'
 
 // ── View layout slice ─────────────────────────────────────────────────────────
 // The whole panel/sidebar layout engine: per-container view-id lists, merge groups

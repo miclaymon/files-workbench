@@ -1,3 +1,4 @@
+import { registerActivity } from '@workbench/framework'
 import WorkbenchActivity from './Workbench.js'
 
 // ── Activity registry ───────────────────────────────────────────────────────
@@ -25,7 +26,12 @@ export const ACTIVITIES = [WorkbenchActivity]
 
 export const ACTIVITY_MAP = Object.fromEntries(ACTIVITIES.map(a => [a.id, a]))
 
+// Register the first-party surfaces at import (the framework registry carries no
+// app bootstrap of its own) — the same registerActivity() path plugin activities
+// use at runtime. Their runtime APIs are instantiated by useActivityHost, which
+// receives this list as its `activities` parameter (see Workbench.vue).
+for (const act of ACTIVITIES) registerActivity(act)
+
 // Tab-kind ⇄ activity/view resolution (activityOfTabKind / tabViewIdForKind) and
-// all surface lookups live in the dynamic registry (useViewRegistry.js), which
-// bootstraps from this ACTIVITIES list and also accepts plugin activities at
-// runtime through the same registerActivity() path.
+// all surface lookups live in the dynamic registry (@workbench/framework), which
+// also accepts plugin activities at runtime through the same registerActivity() path.

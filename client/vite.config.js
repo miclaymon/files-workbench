@@ -13,6 +13,11 @@ export default defineConfig({
   // dist/index.html directly.
   base: './',
   resolve: {
+    // @workbench/framework is a symlinked local package built on @vue/reactivity.
+    // Dedupe forces its imports to resolve to THIS app's single copy (the one
+    // inside `vue`) — two reactivity instances would silently break dependency
+    // tracking across the framework/app boundary.
+    dedupe: ['vue', '@vue/reactivity'],
     alias: {
       '~': fileURLToPath(new URL('.', import.meta.url)).replace(/\/$/, ''),
       '#preferences-schema': fileURLToPath(new URL('../config/preferences/preferences.schema.json', import.meta.url)),

@@ -151,7 +151,7 @@ import TabContentHost from './TabContentHost.vue'
 import { computed, inject, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { mdiClose, mdiPin, mdiChevronDown, mdiLock, mdiDotsHorizontal } from '@mdi/js'
 import { useEditorDnd, dropRegion, regionToSide } from '~/composables/interaction/useEditorDnd.js'
-import { tabIconDescriptor, tabViewForKind } from '~/composables/useViewRegistry.js'
+import { tabIconDescriptor, tabViewForKind } from '@workbench/framework'
 import ResolvedIcon from '~/components/workbench/ResolvedIcon.vue'
 import ViewActions from '~/components/workbench/layout/ViewActions.vue'
 

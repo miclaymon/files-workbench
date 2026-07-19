@@ -20,18 +20,18 @@ import { defineAsyncComponent } from 'vue'
 
 import {
   View, EditorView, ModalView, PanelView, ViewSection, StatusView, Activity,
-} from '~/models/ui/index.js'
+} from '@workbench/framework'
 
 // Icon resolution / theme registration.
 import {
   resolveIcon, registerIconTheme, unregisterIconTheme, setActiveIconTheme,
   listIconThemes, useIconRegistry, activeIconThemeId, isIconThemeAvailable,
-} from '~/composables/useIconRegistry.js'
+} from '@workbench/framework'
 import { resolveCustomIcon } from '~/composables/useCustomIcon.js'
 
 // Utility composables plugins use.
 import { useDebugLog, LOG_LEVELS } from '~/composables/useDebugLog.js'
-import { createEmitter } from '~/composables/activity/useEmitter.js'
+import { createEmitter } from '@workbench/framework'
 import { useDirectoryFileTree } from '~/composables/useDirectoryFileTree.js'
 import { useClickDebounce } from '~/composables/interaction/useClickDebounce.js'
 

@@ -134,8 +134,8 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, inject, useAttrs } from 'vue'
 import schemaData from '#preferences-schema'
-import { contributedSchemaProperties } from '~/composables/usePreferenceSchema.js'
-import { listIconThemes } from '~/composables/useIconRegistry.js'
+import { contributedSchemaProperties } from '@workbench/framework'
+import { listIconThemes } from '@workbench/framework'
 
 // Works in both presentations of the same EditorView. As a modal, ModalHost binds
 // `prefs` in and a `save` listener out (Workbench.js modal def). As a promoted

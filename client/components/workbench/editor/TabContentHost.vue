@@ -10,7 +10,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { tabViewForKind } from '~/composables/useViewRegistry.js'
+import { tabViewForKind } from '@workbench/framework'
 
 // Editor counterpart of ViewContentHost: resolves an editor tab's `kind` to its
 // registered tab-view entry and renders its component. Props come from the

@@ -120,7 +120,7 @@ import ViewTabStrip from './ViewTabStrip.vue'
 import ViewActions from './ViewActions.vue'
 import FloatingMenu from '../ui/FloatingMenu.vue'
 import { useViewDrag } from '../../../composables/interaction/useViewDrag.js'
-import { getViewEntry, viewActions, bubbledSectionActions } from '../../../composables/useViewRegistry.js'
+import { getViewEntry, viewActions, bubbledSectionActions } from '@workbench/framework'
 import { uuidv4 } from '../../../composables/useWorkspaces.js'
 
 const { activeDrag, activeSectionDrag } = useViewDrag()

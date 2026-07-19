@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@mdi/js": "^7.4.47",
+    "@workbench/framework": "file:../../workbench-framework",
     "markdown-it": "^14.2.0",
     "monaco-editor": "^0.55.1",
     "uuid": "^14.0.0",

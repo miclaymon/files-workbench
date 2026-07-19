@@ -57,7 +57,7 @@
 
 <script setup>
 import { ref, computed, onMounted, nextTick, inject } from 'vue'
-import { formatChord } from '~/composables/activity/useKeybindingRegistry.js'
+import { formatChord } from '@workbench/framework'
 
 // Read-only viewer over the live command + keybinding registries. Every command
 // is listed (grouped by its category); a command with multiple bindings produces

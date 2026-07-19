@@ -16,7 +16,7 @@
 <script setup>
 import { watch, onBeforeUnmount } from 'vue'
 import { mdiClose } from '@mdi/js'
-import { useLightbox } from '~/composables/useLightbox.js'
+import { useLightbox } from '@workbench/framework'
 
 // Renders the active lightbox entry (see useLightbox.js) as a near-fullscreen
 // overlay teleported to <body>. Mounted once by Workbench. Closes on the close

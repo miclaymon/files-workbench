@@ -13,6 +13,17 @@
 
 ## Installation
 
+This repo consumes sibling checkouts as local `file:` dependencies — clone them
+next to this repo first:
+
+```
+<parent>/
+├── files-workbench-app/            this repo
+├── workbench-framework/            @workbench/framework (github: files-workbench-framework)
+└── files-workbench-plugins/
+    └── files-workbench-material-icons/
+```
+
 Run the setup script once after cloning:
 
 ```bash
