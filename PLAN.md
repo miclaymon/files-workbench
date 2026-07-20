@@ -127,8 +127,32 @@ Each milestone ends with the app runnable and verified before anything is commit
       data server but `POST /perf` is a control route — every flush 404'd since M1;
       now `CONTROL_BASE` (204). Note: `extism-js` unavailable on the dev machine —
       WASM stage-2 unchanged, existing artifact serves SCM.*
-- [ ] **M6 — App cleanup.** What remains here: Electron shell, assembly root, app
+- [x] **M6 — App cleanup.** What remains here: Electron shell, assembly root, app
       slices, first-party plugins, config, packaging. Docs updated.
+      *Implemented + verified 2026-07-19 (Mic: dev:electron runs clean; agent:
+      browser + packaging pass). Dead code deleted (16 files, all
+      zero-importer verified): `useRpc.js` + `useWorkbenchState.js` (superseded by
+      core / `useWorkspaces`), the demo activities (`AdvancedImageTools`,
+      `AdvancedVideoTools`, `Eraser`) + pre-plugin `SourceControl.js`, their
+      `ChatPanel.vue`, the stale-import placeholder `DetailsPanel.vue`, and the
+      abandoned layout-split family (6 `Directory*Layout.vue` + `DirectoryGridLayoutItem`
+      + `DirectoryHoverPreview` — `DirectoryLayout.vue` renders every mode inline;
+      dead in the monolith too). Deps: unused `uuid` removed; `@vue/compiler-sfc`
+      declared explicitly (a direct require of build-plugins.js since M5).
+      `setup.sh` now checks the sibling package checkouts; `.env.example` +
+      `build-server.js` log label updated. Docs pass: dead links and stale pre-M2/M4
+      paths (`client/lib/`, `client/models/`, `composables/activity|interaction/`,
+      `usePlugin*`) fixed across README/AGENTS/DESIGN/PLUGINS/GETTING_STARTED
+      (ROADMAP changelog entries left as history). **Full `build:electron` packaging
+      run now exercised** (the M1 leftover): required installing `extism-js` +
+      binaryen `wasm-merge` (→ `~/.local/bin`); source-control's WASM backend now
+      compiles from source through `@workbench/plugin-sdk` (replacing the M1-copied
+      artifact) and the runtime SCM pass (branch, changes, commit graph) works
+      against it; emits `FilesWorkbench-0.1.0-x86_64.AppImage` (158 MB) with
+      server + config + 9 plugin artifacts under resources/. Prod plugin bundles
+      hash-identical to dev (no `import.meta.env` refs in plugin code) — lock
+      unchanged. Verified: vite build clean, browser boot with zero console
+      errors, plugins/icons/preview/details/SCM live.*
 
 ## Working rules
 

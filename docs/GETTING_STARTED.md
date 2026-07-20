@@ -79,7 +79,7 @@ There is no Swagger UI. Refer to the core package's `server/main.go` for the ful
 ### API base URLs
 
 There is no dev proxy — the client calls the Go servers directly with absolute URLs
-in dev and production alike. Defaults live in `client/lib/api-config.js`
+in dev and production alike. Defaults live in `@files-workbench/core` (`src/api-config.js`)
 (`http://127.0.0.1:8001` data, `http://localhost:8002` control); override them with
 `VITE_API_BASE` / `VITE_CONTROL_BASE` in `client/.env` (copy `client/.env.example`;
 restart Vite after changes). If large responses hang while small ones work, see

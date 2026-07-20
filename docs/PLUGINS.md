@@ -105,7 +105,7 @@ does), so a manifest stays forward-compatible.
 ## Permissions
 
 A plugin only receives the API slices its manifest declares. There are two tiers,
-defined in [`client/models/plugin/permissions.js`](../client/models/plugin/permissions.js):
+defined in `@workbench/framework` (`src/models/plugin/permissions.js`):
 
 **`permissions`** — front-end capabilities, each gating a slice of the API:
 
@@ -150,7 +150,7 @@ the filesystem or control server directly):
 ## The plugin API
 
 `activate(api)` receives a **frozen** object built by
-[`createPluginApi`](../client/composables/plugins/usePluginApi.js). It always
+`createPluginApi` (`@workbench/framework`). It always
 carries:
 
 - The **UI model classes** — `Activity`, `View`, `EditorView`, `ModalView`,
@@ -228,7 +228,7 @@ await api.server.call('commit', { root, message }, { write: true }) // write (co
 ### UI model
 
 Surfaces are instances of UI-agnostic classes in
-[`client/models/ui/`](../client/models/ui/) — they carry only metadata and a
+`@workbench/framework` (`src/models/ui/`) — they carry only metadata and a
 component reference (no Vue imports), so the model is framework-neutral.
 
 | Class | Surface | Notable fields |
@@ -273,7 +273,7 @@ Add a `server` block to the manifest and the `server` permission:
 ```
 
 `server.permissions` (see `SERVER_PERMISSIONS` in
-[`permissions.js`](../client/models/plugin/permissions.js)) are the backend's entire
+`permissions.js` in `@workbench/framework`) are the backend's entire
 trust surface:
 
 | Permission | Grants the backend |
@@ -366,7 +366,7 @@ export function activate(api) {
 ## Loading
 
 Whatever the delivery, the host consumes a `{ manifest, module }` pair via
-[`createPluginHost`](../client/composables/plugins/usePluginHost.js), which validates
+`createPluginHost` (`@workbench/framework`), which validates
 the manifest, checks dependencies (topologically ordered), builds the permission-scoped
 API, and calls `activate`. Two delivery paths feed it:
 

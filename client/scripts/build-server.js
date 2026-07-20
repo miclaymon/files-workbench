@@ -10,6 +10,6 @@ const isWin = process.platform === 'win32'
 const out = path.join('dist', isWin ? 'server.exe' : 'server')
 const serverDir = path.join(__dirname, '..', '..', '..', 'files-workbench-core', 'server')
 
-console.log(`[build-server] go build -o ${out} (in server/v1)`)
+console.log(`[build-server] go build -o ${out} (in ../files-workbench-core/server)`)
 execSync(`go build -o ${out} .`, { cwd: serverDir, stdio: 'inherit' })
 console.log(`[build-server] done → server/dist (in ../files-workbench-core)`)

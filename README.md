@@ -49,7 +49,7 @@ A desktop file manager built with Electron + Vue 3 (Vite) on the front end and a
 | Video player | Video.js |
 | Audio waveform | Wavesurfer.js |
 | Icons | `@mdi/js` (Material Design Icons) |
-| API server | Go 1.23 (stdlib `net/http`) — in [`@files-workbench/core`](../files-workbench-core) with its JS client |
+| API server | Go 1.23 (stdlib `net/http`) — in [`@files-workbench/core`](https://github.com/miclaymon/files-workbench-core) (local sibling checkout `../files-workbench-core`) with its JS client |
 | Image processing | `golang.org/x/image` |
 | Video/audio thumbnails | ffmpeg / ffprobe (external) |
 
@@ -161,7 +161,7 @@ The backend lives in the `@files-workbench/core` package (`../files-workbench-co
 | Data | 8001 (`PORT` env) | Read-only GETs — directory listing, stat, media, icons, preferences |
 | Control | 8002 (`CONTROL_PORT` env) | Mutating POSTs/PUTs — rename, move, copy, delete, trash, compress, … |
 
-All routes are prefixed with `/_api/v1/`. There is no dev proxy — the client talks to both servers directly with absolute URLs in dev and packaged builds alike (CORS is permissive on the Go side). The defaults live in `client/lib/api-config.js` (`http://127.0.0.1:8001` / `http://localhost:8002`) and can be overridden with `VITE_API_BASE` / `VITE_CONTROL_BASE` in `client/.env` (see `client/.env.example`).
+All routes are prefixed with `/_api/v1/`. There is no dev proxy — the client talks to both servers directly with absolute URLs in dev and packaged builds alike (CORS is permissive on the Go side). The defaults live in `@files-workbench/core` (`src/api-config.js`: `http://127.0.0.1:8001` / `http://localhost:8002`) and can be overridden with `VITE_API_BASE` / `VITE_CONTROL_BASE` in `client/.env` (see `client/.env.example`).
 
 ## Configuration
 
