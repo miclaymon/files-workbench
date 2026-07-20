@@ -92,7 +92,7 @@
 
 <script setup>
 import { ref, watch, nextTick } from 'vue'
-import { useDebugLog } from '@fw/sdk'
+import { useDebugLog } from '@workbench/plugin-sdk'
 import {
   mdiFolder, mdiFile, mdiZipBox, mdiApplicationOutline,
   mdiImage, mdiFilm, mdiMusicNote, mdiCodeBraces, mdiFilePdfBox,

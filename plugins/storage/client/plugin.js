@@ -1,7 +1,7 @@
 import { markRaw } from 'vue'
 import { mdiHarddisk } from '@mdi/js'
 
-import { PlaceholderPanel } from '@fw/sdk'
+import { PlaceholderPanel } from '@workbench/plugin-sdk'
 
 // Storage plugin — a placeholder for disk-usage / storage management (built out
 // later in the roadmap). A first-party plugin contributing a Primary Side Bar

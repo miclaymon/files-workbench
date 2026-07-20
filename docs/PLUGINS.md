@@ -36,13 +36,14 @@ plugins/my-plugin/
 
 The **client** entry exports `activate(api)`, which receives the permission-scoped API
 and contributes through it, returning a disposer that undoes everything. Client code
-imports Vue and the SDK from bare specifiers — `vue` and `@fw/sdk` — which the plugin
-build externalizes to the **host** (so a plugin shares the app's single Vue instance and
-live models/components rather than bundling its own):
+imports Vue and the SDK from bare specifiers — `vue` and `@workbench/plugin-sdk`
+(legacy alias `@fw/sdk`) — which the plugin build externalizes to the **host** (so a
+plugin shares the app's single Vue instance and live models/components rather than
+bundling its own):
 
 ```js
 import { markRaw } from 'vue'
-import { PlaceholderPanel } from '@fw/sdk'   // host-provided shared components/composables
+import { PlaceholderPanel } from '@workbench/plugin-sdk'   // host-provided shared components/composables
 
 export function activate(api) {
   const { Activity, PanelView } = api
@@ -58,11 +59,14 @@ export function activate(api) {
 export function deactivate() {}
 ```
 
-`@fw/sdk` ([`client/plugin-sdk/client/`](../client/plugin-sdk/client/)) is the host's
-SDK surface — the Vue namespace, the UI model classes, safe composables/helpers, and
-shared components — published on a global the plugin build wires those imports to. It
-exposes only **non-privileged** surface; privileged operations stay behind the
-permission-gated `api`.
+`@workbench/plugin-sdk` is the SDK: the *mechanism* (the global publish, build
+externalization, capability scan, server-plugin SDK, manifest schema) lives in the
+package of that name (sibling checkout `../workbench-framework-plugin-sdk`); the
+*surface* a plugin receives — the Vue namespace, the UI model classes, safe
+composables/helpers, and shared components — is composed by the app in
+[`client/sdk.js`](../client/sdk.js) and published on a global the plugin build wires
+those imports to. It exposes only **non-privileged** surface; privileged operations
+stay behind the permission-gated `api`.
 
 The production references are the runtime plugins under [`/plugins/`](../plugins/) —
 notably **Source Control** ([`plugins/source-control/`](../plugins/source-control/)),
@@ -75,9 +79,9 @@ is the core-bundled exception.
 
 ## manifest.json
 
-Modelled on a Chrome extension manifest. Validated by
-[`client/models/plugin/manifest.js`](../client/models/plugin/manifest.js); the JSON
-Schema is [`docs/plugins/manifest.schema.json`](plugins/manifest.schema.json).
+Modelled on a Chrome extension manifest. Validated by the `@workbench/framework`
+manifest model; the JSON Schema (and a documented example plugin) ships in the
+`@workbench/plugin-sdk` package (`schema/manifest.schema.json`, `example/`).
 
 | Field | Required | Description |
 |---|---|---|
@@ -88,7 +92,7 @@ Schema is [`docs/plugins/manifest.schema.json`](plugins/manifest.schema.json).
 | `client` | | `{ entry }` — the client target's entry module (e.g. `client/plugin.js`). |
 | `server` | | `{ entry, runtime, permissions }` — the sandboxed WASM backend (see [Server plugins](#server-plugins)). |
 | `permissions` | | Front-end capabilities — see [Permissions](#permissions). |
-| `engines` | | e.g. `{ "sdk": "^1.0.0" }` — the `@fw/sdk` contract version the host checks. |
+| `engines` | | e.g. `{ "sdk": "^1.0.0" }` — the `@workbench/plugin-sdk` contract version the host checks. |
 | `description` / `author` / `icon` | | Metadata; `icon` is an MDI path or asset ref. |
 | `dependencies` | | `{ pluginId: semverRange }` that must load first. |
 
@@ -281,13 +285,13 @@ trust surface:
 
 ### Author it
 
-The backend imports the SDK ([`client/plugin-sdk/server/`](../client/plugin-sdk/server/))
-and default-nothing — it re-exports three fixed entry points bound to a
-`ServerPlugin`. Methods are **synchronous** (the extism JS PDK's QuickJS has no event
-loop); side-effects go through the injected `host`:
+The backend imports the server SDK from `@workbench/plugin-sdk` (this one is
+**bundled** into the WASM, not externalized) and default-nothing — it re-exports three
+fixed entry points bound to a `ServerPlugin`. Methods are **synchronous** (the extism
+JS PDK's QuickJS has no event loop); side-effects go through the injected `host`:
 
 ```js
-import { ServerPlugin, host } from '<sdk>/server/ServerPlugin.js'
+import { ServerPlugin, host } from '@workbench/plugin-sdk/server/ServerPlugin.js'
 
 const plugin = new ServerPlugin({
   methods: {
@@ -381,10 +385,10 @@ API, and calls `activate`. Two delivery paths feed it:
 ### Building & adding a plugin
 
 1. Create `plugins/<id>/` with a `manifest.json` and a `client/` (and/or `server/`) dir.
-   Import Vue/SDK from `vue` and `@fw/sdk`; keep app-internal imports to what the SDK
-   re-exports.
+   Import Vue/SDK from `vue` and `@workbench/plugin-sdk`; keep app-internal imports to
+   what the SDK surface re-exports.
 2. Run `npm run build:plugins` (also runs as a soft prebuild in `npm run dev`). It
-   esbuild-bundles each client target to a self-contained ESM (`vue`/`@fw/sdk`
+   esbuild-bundles each client target to a self-contained ESM (`vue`/`@workbench/plugin-sdk`
    externalized to the host), compiles any `server/` target to WASM, content-hashes the
    artifacts, and updates `plugins.lock.json`.
 3. Reload — the runtime loader discovers, verifies, and loads it. Surfaces appear
@@ -430,12 +434,12 @@ project. What the app does instead is **raise the bar and make intent auditable*
   slices (`api.net.fetch` origin-allowlisted to `net.origins`, `api.storage` namespaced per
   plugin, `api.clipboard`) so a well-behaved plugin routes those through `api`, never a raw
   global.
-- **Capability scan** ([`client/lib/capability-scan.mjs`](../client/lib/capability-scan.mjs)) —
+- **Capability scan** (`@workbench/plugin-sdk`, `src/capability-scan.js`) —
   a static scan of the built bundle. **Code-execution** primitives (`eval`, the `Function`
   constructor, dynamic `import(`, `Worker`) **fail a first-party build**; network/storage/
   clipboard use is advisory for first-party (trusted + reviewed) and **surfaced at
   third-party install consent**.
-- **Prototype hardening** ([`client/plugin-sdk/client/harden.js`](../client/plugin-sdk/client/harden.js)) —
+- **Prototype hardening** (`@workbench/plugin-sdk`, `src/harden.js`) —
   freezes the well-known intrinsic prototypes so a plugin can't poison shared prototypes.
   **Off by default** (freezing intrinsics can break libraries that patch them — Monaco,
   video.js); enable to verify with `VITE_FW_HARDEN=true` or `localStorage['fw:harden']='1'`,

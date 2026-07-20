@@ -48,7 +48,7 @@
 import { ref, computed, inject } from 'vue'
 import { mdiCheck } from '@mdi/js'
 import { useGitData } from '../git-data.js'
-import { useDirectoryFileTree } from '@fw/sdk'
+import { useDirectoryFileTree } from '@workbench/plugin-sdk'
 import SourceControlFileTree from './SourceControlFileTree.vue'
 
 // Working tree of the selected repo: commit box + collapsible Staged/Changes

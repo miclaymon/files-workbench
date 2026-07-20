@@ -87,12 +87,12 @@
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
 import { mdiFile, mdiFolder, mdiArchive, mdiInformationOutline } from '@mdi/js'
-import { useIconRegistry } from '@fw/sdk'
-import { resolveCustomIcon } from '@fw/sdk'
-import { MEDIA_BASE } from '@fw/sdk'
-import { fsOpenWithSystem, watchDirSize } from '@fw/sdk'
-import { ResolvedIcon } from '@fw/sdk'
-import { PendingValue } from '@fw/sdk'
+import { useIconRegistry } from '@workbench/plugin-sdk'
+import { resolveCustomIcon } from '@workbench/plugin-sdk'
+import { MEDIA_BASE } from '@workbench/plugin-sdk'
+import { fsOpenWithSystem, watchDirSize } from '@workbench/plugin-sdk'
+import { ResolvedIcon } from '@workbench/plugin-sdk'
+import { PendingValue } from '@workbench/plugin-sdk'
 
 const props = defineProps({
   selectedPath: { type: String, default: '' },

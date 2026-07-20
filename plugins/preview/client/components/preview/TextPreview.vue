@@ -5,7 +5,7 @@
 </template>
 
 <script setup>
-import { MonacoEditor } from '@fw/sdk'
+import { MonacoEditor } from '@workbench/plugin-sdk'
 
 defineProps({
   text: { type: String, default: '' },

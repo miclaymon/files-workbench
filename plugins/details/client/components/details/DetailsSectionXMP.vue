@@ -13,7 +13,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import DetailsRows from './DetailsRows.vue'
-import { API_BASE, API_V } from '@fw/sdk'
+import { API_BASE, API_V } from '@workbench/plugin-sdk'
 
 const IMAGE_EXTS = new Set(['jpg','jpeg','png','tif','tiff','webp','heic','heif','avif','bmp','gif','svg'])
 const VIDEO_EXTS = new Set(['mp4','webm','mkv','avi','mov','m4v','flv','wmv','ts','mpeg','mpg','m2ts'])

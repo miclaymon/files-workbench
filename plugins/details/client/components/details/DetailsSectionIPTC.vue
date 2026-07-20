@@ -13,7 +13,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import DetailsRows from './DetailsRows.vue'
-import { API_BASE, API_V } from '@fw/sdk'
+import { API_BASE, API_V } from '@workbench/plugin-sdk'
 
 const IMAGE_EXTS = new Set(['jpg','jpeg','tif','tiff','png','webp','psd','eps','ai'])
 

@@ -2,7 +2,7 @@ import { markRaw } from 'vue'
 import { mdiBug, mdiNotificationClearAll, mdiFilter, mdiFilterOutline } from '@mdi/js'
 
 import DebugPanel from './components/DebugPanel.vue'
-import { useDebugLog, LOG_LEVELS } from '@fw/sdk'
+import { useDebugLog, LOG_LEVELS } from '@workbench/plugin-sdk'
 
 // Display label per log level, shown in the filter dropdown.
 const LEVEL_LABEL = {

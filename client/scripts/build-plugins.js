@@ -22,8 +22,11 @@ const path = require('path')
 const crypto = require('crypto')
 const { execFileSync } = require('child_process')
 const esbuild = require('esbuild')
-const { vueSfc } = require('./plugin-build/vue-sfc.js')
-const { externalsToGlobal } = require('./plugin-build/externals-to-global.js')
+// The plugin-build helpers live in the SDK package. vueSfc gets the HOST's SFC
+// compiler injected — the package can't (and shouldn't) resolve its own copy.
+const { vueSfc } = require('@workbench/plugin-sdk/build/vue-sfc.cjs')
+const { externalsToGlobal } = require('@workbench/plugin-sdk/build/externals-to-global.cjs')
+const compilerSfc = require('@vue/compiler-sfc')
 
 const SOFT = process.argv.includes('--soft')
 // `--out <dir>` overrides the client-artifact output dir. The production build
@@ -33,7 +36,7 @@ const OUT_ARG = (() => { const i = process.argv.indexOf('--out'); return i >= 0 
 const IS_DEV_BUILD = !OUT_ARG // a prod build always targets a dedicated --out dir
 const CLIENT_DIR = path.join(__dirname, '..')
 const REPO_DIR = path.join(CLIENT_DIR, '..')
-const SDK_DTS = path.join(CLIENT_DIR, 'plugin-sdk', 'server', 'plugin.d.ts')
+const SDK_DTS = require.resolve('@workbench/plugin-sdk/server/plugin.d.ts')
 const SDK_DIR = path.dirname(SDK_DTS)
 const OUT_ROOT = path.join(REPO_DIR, 'config', 'plugins') // server-plugin WASM (Go scans configDir/plugins)
 const WASM_NAME = 'plugin.wasm' // fixed output name per plugin dir
@@ -46,7 +49,7 @@ const PLUGINS_DIST = OUT_ARG
   ? path.resolve(REPO_DIR, OUT_ARG)
   : path.join(REPO_DIR, '.fw', 'plugins')
 const LOCK_FILE = path.join(REPO_DIR, 'plugins.lock.json')
-const PLUGIN_BUILD_DIR = path.join(__dirname, 'plugin-build')
+const PLUGIN_BUILD_DIR = path.dirname(require.resolve('@workbench/plugin-sdk/build/vue-sfc.cjs'))
 const NODE_PATHS = [path.join(CLIENT_DIR, 'node_modules')] // resolve @mdi/js etc. for /plugins sources
 
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex')
@@ -101,7 +104,7 @@ function discover() {
 }
 
 // A built client bundle is fresh if newer than the plugin sources and the esbuild
-// plugins (the @fw/sdk is externalized, not bundled, so it doesn't affect the output).
+// plugins (the SDK surface is externalized, not bundled, so it doesn't affect the output).
 function isClientUpToDate(pluginDir, outClient) {
   if (!fs.existsSync(outClient)) return false
   const outMs = fs.statSync(outClient).mtimeMs
@@ -111,11 +114,12 @@ function isClientUpToDate(pluginDir, outClient) {
 }
 
 // Build the client target of each plugin under /plugins/<id>/ → an ESM bundle with
-// `vue`/`@fw/sdk` externalized to the host global. Emits <dist>/<id>/{client.js,
-// plugin.json} + content hashes, and updates the committed first-party lock.
+// `vue`/`@workbench/plugin-sdk` externalized to the host global. Emits
+// <dist>/<id>/{client.js, plugin.json} + content hashes, and updates the committed
+// first-party lock.
 async function buildClientPlugins() {
   if (!fs.existsSync(PLUGINS_SRC)) return
-  const { scanCapabilities, uncoveredFindings } = await import('../lib/capability-scan.mjs')
+  const { scanCapabilities, uncoveredFindings } = await import('@workbench/plugin-sdk')
   const lock = readLock()
   let built = 0
   for (const entry of fs.readdirSync(PLUGINS_SRC, { withFileTypes: true })) {
@@ -146,7 +150,7 @@ async function buildClientPlugins() {
         target: 'es2020',
         outfile: outClient,
         nodePaths: NODE_PATHS,
-        plugins: [vueSfc(), externalsToGlobal()],
+        plugins: [vueSfc({ compilerSfc }), externalsToGlobal()],
         legalComments: 'none',
         // Vite replaces `import.meta.env` in the host build; esbuild does not, so plugin
         // code that reads it (e.g. `import.meta.env.DEV`) would throw at runtime. Define
@@ -166,7 +170,7 @@ async function buildClientPlugins() {
       throw e
     }
 
-    // Capability scan (../lib/capability-scan.mjs): code-execution primitives
+    // Capability scan (@workbench/plugin-sdk): code-execution primitives
     // (eval / Function / dynamic import / Worker) fail a non-soft first-party build;
     // uncovered network/storage/clipboard use is advisory (route it through `api`).
     const findings = uncoveredFindings(scanCapabilities(fs.readFileSync(outClient, 'utf8')), mf.permissions || [])
@@ -250,6 +254,7 @@ function buildServerPlugins() {
         target: 'es2020',
         platform: 'neutral',
         outfile: bundle,
+        nodePaths: NODE_PATHS, // resolve '@workbench/plugin-sdk/server/*' for /plugins sources
       })
 
       // Stage 2: compile the bundle to WASM.

@@ -55,8 +55,8 @@
 <script setup>
 import { reactive } from 'vue'
 import { mdiFile, mdiFolder, mdiFolderOpen } from '@mdi/js'
-import { useIconRegistry } from '@fw/sdk'
-import { ResolvedIcon } from '@fw/sdk'
+import { useIconRegistry } from '@workbench/plugin-sdk'
+import { ResolvedIcon } from '@workbench/plugin-sdk'
 
 // Recursive renderer for useDirectoryFileTree output, mirroring the Explorer
 // TreeItem look (indent guides, expand chevron, indentScale, icon-pack + MDI

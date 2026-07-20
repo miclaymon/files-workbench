@@ -1,11 +1,11 @@
 import { markRaw } from 'vue'
 import { mdiMessage } from '@mdi/js'
-import { PlaceholderPanel } from '@fw/sdk'
+import { PlaceholderPanel } from '@workbench/plugin-sdk'
 
 // Chat plugin — a placeholder for the planned LLM chat assistant (built out later in
 // the roadmap). A first-party plugin contributing a single Secondary Side Bar panel
 // through the permission-scoped `api`. Client code is loaded at runtime (see the
-// plugin loader); `vue` and `@fw/sdk` resolve to the host's shared SDK at load time.
+// plugin loader); `vue` and `@workbench/plugin-sdk` resolve to the host's shared SDK at load time.
 export function activate(api) {
   const { Activity, PanelView, ViewSection } = api
 

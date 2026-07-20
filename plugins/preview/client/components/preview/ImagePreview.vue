@@ -32,7 +32,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { formatBytes } from './utils.js'
-import { useClickDebounce } from '@fw/sdk'
+import { useClickDebounce } from '@workbench/plugin-sdk'
 
 const props = defineProps({
   src:          { type: String, required: true },

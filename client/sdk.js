@@ -1,12 +1,13 @@
-// @fw/sdk — the host-provided SDK for RUNTIME-loaded client plugins.
+// The app's SDK surface — what runtime-loaded plugins receive from their externalized
+// `@workbench/plugin-sdk` (legacy `@fw/sdk`) and `vue` imports.
 //
-// A plugin's client bundle is built with `vue` and `@fw/sdk` externalized to the host
-// (see client/scripts/plugin-build/externals-to-global.js): at load time they resolve
-// to `globalThis.__FW_SDK.vue` / `.sdk`. `installFwSdk()` publishes that global from the
-// HOST's own imports, guaranteeing plugins share the host's single Vue instance and its
-// live models/composables/components — no second Vue, no duplicated state.
+// The MECHANISM (publishing globalThis.__FW_SDK, versioning, hardening) lives in the
+// @workbench/plugin-sdk package; this module is the host-policy half: it composes the
+// surface from the framework/kit/core packages plus app-own composables/components and
+// publishes it via the package's installFwSdk. Plugins share the host's single Vue
+// instance and these live bindings — no second Vue, no duplicated state.
 //
-// SECURITY BOUNDARY — this SDK exposes only NON-PRIVILEGED surface:
+// SECURITY BOUNDARY — this surface exposes only NON-PRIVILEGED pieces:
 //   • UI model classes, reactivity, and safe read/query helpers.
 //   • It deliberately does NOT export mutating/privileged filesystem ops (fsDelete,
 //     fsMove, fsCopy, fsRename, fsWriteFile, fsCreate*, fsTrash*, *Elevated) or the
@@ -17,6 +18,8 @@
 
 import * as vue from 'vue'
 import { defineAsyncComponent } from 'vue'
+
+import { installFwSdk as install } from '@workbench/plugin-sdk'
 
 import {
   View, EditorView, ModalView, PanelView, ViewSection, StatusView, Activity,
@@ -70,12 +73,7 @@ export const sdk = Object.freeze({
   MonacoEditor, AudioPlayer, VideoPlayer,
 })
 
-// Current SDK contract version — a plugin's manifest declares `engines.sdk` and the
-// host checks compatibility before loading (bump on breaking surface changes).
-export const SDK_VERSION = '1.0.0'
-
 // Publish the SDK global. Call once, early, before any plugin client bundle is imported.
 export function installFwSdk() {
-  globalThis.__FW_SDK = Object.freeze({ vue, sdk, version: SDK_VERSION })
-  return globalThis.__FW_SDK
+  return install({ vue, sdk })
 }

@@ -103,7 +103,7 @@ cd ../files-workbench-core/server && go mod tidy
 
 ### Plugins (the `/plugins` tree)
 
-Every feature but Explorer is a plugin whose source lives under the top-level [`/plugins/<id>/`](../plugins/) — a `manifest.json` plus a `client/` (renderer) and/or `server/` (WASM backend) dir. Client code imports Vue and shared host surface from the bare specifiers `vue` and `@fw/sdk`, which the build externalizes to the host so a plugin shares the app's single Vue instance.
+Every feature but Explorer is a plugin whose source lives under the top-level [`/plugins/<id>/`](../plugins/) — a `manifest.json` plus a `client/` (renderer) and/or `server/` (WASM backend) dir. Client code imports Vue and shared host surface from the bare specifiers `vue` and `@workbench/plugin-sdk` (legacy alias `@fw/sdk`), which the build externalizes to the host so a plugin shares the app's single Vue instance.
 
 `npm run build:plugins` esbuild-bundles each `client/` target to a self-contained ES module, content-hashes it into [`plugins.lock.json`](../plugins.lock.json), and (for `server/` targets) compiles the WASM backend. At runtime the client fetches each plugin's manifest, **verifies its hash** against the lock (prod refuses a mismatch; dev warns), then dynamically imports it — first-party plugins load through the exact same path a third-party one would. `npm run dev` runs a best-effort soft prebuild automatically. Explorer is the one exception: it stays compiled into the app (it owns the selection capability the rest of the workbench reads synchronously at startup).
 

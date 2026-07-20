@@ -1,5 +1,5 @@
 import { EXT_LANGUAGE, TEXT_APP_MIMES } from './utils.js'
-import { API_BASE, API_V, MEDIA_BASE } from '@fw/sdk'
+import { API_BASE, API_V, MEDIA_BASE } from '@workbench/plugin-sdk'
 
 // ── Preview loading ────────────────────────────────────────────────────────────
 // Pure fetch + MIME→preview resolution for a single item, shared by the Preview

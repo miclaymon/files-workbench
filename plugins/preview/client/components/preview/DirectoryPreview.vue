@@ -19,7 +19,7 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { mdiFolder, mdiFileOutline, mdiZipBox } from '@mdi/js'
-import { fsListDir } from '@fw/sdk'
+import { fsListDir } from '@workbench/plugin-sdk'
 
 // A directory's peek: a compact listing of its children (folders first, then files —
 // server order), shown when the hold-Space peek targets a directory. Fetches a single

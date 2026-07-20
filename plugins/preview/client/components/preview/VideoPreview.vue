@@ -17,8 +17,8 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { VideoPlayer } from '@fw/sdk'
-import { useClickDebounce } from '@fw/sdk'
+import { VideoPlayer } from '@workbench/plugin-sdk'
+import { useClickDebounce } from '@workbench/plugin-sdk'
 
 const props = defineProps({
   src:      { type: String, required: true },

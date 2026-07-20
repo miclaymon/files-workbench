@@ -1,6 +1,6 @@
 import { markRaw, ref } from 'vue'
 import { mdiEye, mdiImage, mdiViewGrid, mdiOpenInNew, mdiBookOpenVariant, mdiViewSplitVertical } from '@mdi/js'
-import { resolveIcon } from '@fw/sdk'
+import { resolveIcon } from '@workbench/plugin-sdk'
 
 import PreviewPanel from './components/PreviewPanel.vue'
 import PreviewTab from './components/PreviewTab.vue'

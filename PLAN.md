@@ -102,8 +102,31 @@ Each milestone ends with the app runnable and verified before anything is commit
       pack, WASM scm, artifacts, prefs); browser pass incl. an end-to-end WRITE
       (UI rename → sw-queue → control server → disk). Docs updated. Orphan noted:
       composables/useRpc.js has no importers.*
-- [ ] **M5 — `@workbench/plugin-sdk`** extracted. Plugin build rewired to externalize
+- [x] **M5 — `@workbench/plugin-sdk`** extracted. Plugin build rewired to externalize
       the new SDK; first-party plugins compile against it.
+      *Implemented + verified 2026-07-19 (Mic + agent); repo
+      `../workbench-framework-plugin-sdk`. Split: the package owns the MECHANISM —
+      `installFwSdk({ vue, sdk })` + `SDK_VERSION` (`src/install.js`), prototype
+      hardening, the capability scan, the WASM server-plugin SDK
+      (`server/ServerPlugin.js` + `plugin.d.ts`), the esbuild build helpers
+      (`build/externals-to-global.cjs`, `build/vue-sfc.cjs` — the host injects its
+      `@vue/compiler-sfc`), the manifest JSON schema + example (moved from
+      `docs/plugins/`); the SURFACE stays host policy, composed in the app's new
+      `client/sdk.js` (was `client/plugin-sdk/client/index.js`). Zero package
+      dependencies by design. Externalized specifier renamed `@fw/sdk` →
+      `@workbench/plugin-sdk` (legacy alias kept in the build map); all first-party
+      plugins + the standalone `files-workbench-material-icons` migrated;
+      source-control's WASM entry imports
+      `@workbench/plugin-sdk/server/ServerPlugin.js` (server esbuild stage gained
+      `nodePaths`). Deleted from the app: `client/plugin-sdk/`, `client/lib/`,
+      `client/scripts/plugin-build/`, `docs/plugins/`. `plugins.lock.json` hashes
+      rebuilt. Verified: 9 client plugins rebuild through the package; vite build
+      clean; in-browser — SDK global (35-key frozen surface), all 10 plugins load,
+      themed icons, Monaco preview, Details, SCM, Plugins-manager capability scan,
+      hot disable→re-enable heals. Bonus fix (core): `perf-log.js` posted to the
+      data server but `POST /perf` is a control route — every flush 404'd since M1;
+      now `CONTROL_BASE` (204). Note: `extism-js` unavailable on the dev machine —
+      WASM stage-2 unchanged, existing artifact serves SCM.*
 - [ ] **M6 — App cleanup.** What remains here: Electron shell, assembly root, app
       slices, first-party plugins, config, packaging. Docs updated.
 

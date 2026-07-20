@@ -5,7 +5,7 @@
 </template>
 
 <script setup>
-import { AudioPlayer } from '@fw/sdk'
+import { AudioPlayer } from '@workbench/plugin-sdk'
 
 defineProps({
   src: { type: String, required: true },

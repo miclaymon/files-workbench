@@ -16,6 +16,7 @@
     "@files-workbench/core": "file:../../files-workbench-core",
     "@mdi/js": "^7.4.47",
     "@workbench/framework": "file:../../workbench-framework",
+    "@workbench/plugin-sdk": "file:../../workbench-framework-plugin-sdk",
     "@workbench/vue": "file:../../workbench-ui-vue",
     "markdown-it": "^14.2.0",
     "monaco-editor": "^0.55.1",

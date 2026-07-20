@@ -117,7 +117,7 @@ import { mdiPuzzle } from '@mdi/js'
 import { useDebugLog } from '~/composables/useDebugLog.js'
 import { API_BASE } from '@files-workbench/core'
 import { listInstalled, installPluginFile, installPluginUrl, uninstallPlugin, setPluginEnabled, listRegistry } from '@files-workbench/core'
-import { scanCapabilities, uncoveredFindings } from '~/lib/capability-scan.mjs'
+import { scanCapabilities, uncoveredFindings } from '@workbench/plugin-sdk'
 import { loadOneRuntimePlugin } from '~/composables/plugins/useRuntimePlugins.js'
 
 // Manage runtime plugins: list installed (first-party + third-party), install a

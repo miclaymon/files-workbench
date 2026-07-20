@@ -44,6 +44,7 @@ A desktop file manager built with Electron + Vue 3 (Vite) on the front end and a
 | Frontend framework | Vue 3 + Vite |
 | Workbench core | [`@workbench/framework`](https://github.com/miclaymon/workbench-framework) (local sibling checkout `../workbench-framework`) |
 | Workbench UI kit | `@workbench/vue` (local sibling checkout `../workbench-ui-vue`) |
+| Plugin SDK | `@workbench/plugin-sdk` (local sibling checkout `../workbench-framework-plugin-sdk`) — plugin build tooling, SDK-global install, manifest schema, WASM server-plugin SDK |
 | Code editor | Monaco Editor |
 | Video player | Video.js |
 | Audio waveform | Wavesurfer.js |
@@ -121,10 +122,10 @@ files-workbench/
 ├── client/                   Vue 3 SPA (Vite) + Electron shell
 │   ├── index.html            Vite entry page
 │   ├── main.js               App entry: mounts Workbench, registers the service worker
+│   ├── sdk.js                The app's SDK surface — what plugins get from their externalized `@workbench/plugin-sdk` import; composed here (host policy), published via the package's installFwSdk
 │   ├── vite.config.js        Vite config (aliases, dev server)
 │   ├── activities/           First-party activity modules — each declares its tab/panel/status surfaces + runtime API (Workbench shell only; the rest are plugins)
 │   ├── builtin-plugins/      Explorer only — the one core-bundled plugin (owns the selection capability, read synchronously at startup); every other first-party plugin loads at runtime from the root-level /plugins tree
-│   ├── plugin-sdk/           @fw/sdk — the host SDK surface (Vue, UI models, safe composables/components) that plugin clients import, externalized to the app at build
 │   ├── components/workbench/ App-specific components (directory views, explorer tree, Monaco/media,
 │   │                         status widgets, app modals, Workbench.vue assembly root). Generic chrome/
 │   │                         layout/editor-grid/floating-UI components live in @workbench/vue
@@ -136,7 +137,6 @@ files-workbench/
 │   │                         (the activity host, registries, plugin system, UI models, and layout
 │   │                          engine live in the @workbench/framework package)
 │   ├── electron/             Electron main process
-│   ├── lib/                  capability-scan.mjs (plugin build/consent tooling)
 │   └── public/               Static assets served as-is (sw.js — service worker)
 ├── plugins/                  First-party plugin source tree — one dir per plugin (manifest.json + client/ and/or server/), built to runtime artifacts by npm run build:plugins. material-icon-theme is a thin re-export of the standalone files-workbench-material-icons package (installed as a local file: dependency)
 ├── plugins.lock.json         Committed content-hash pins for first-party plugin artifacts (the integrity root of trust the loader verifies against)

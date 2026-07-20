@@ -1,7 +1,7 @@
 import { markRaw } from 'vue'
 import { mdiSync } from '@mdi/js'
 
-import { PlaceholderPanel } from '@fw/sdk'
+import { PlaceholderPanel } from '@workbench/plugin-sdk'
 
 // Converter plugin — a placeholder for file format conversion (built out later in
 // the roadmap). A first-party plugin contributing a Primary Side Bar panel (an

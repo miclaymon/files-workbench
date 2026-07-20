@@ -1,7 +1,7 @@
 import { markRaw } from 'vue'
 import { mdiMagnifyScan } from '@mdi/js'
 
-import { PlaceholderPanel } from '@fw/sdk'
+import { PlaceholderPanel } from '@workbench/plugin-sdk'
 
 // Search plugin — a placeholder for project-wide file/content search (built out
 // later in the roadmap). A first-party plugin contributing a Primary Side Bar

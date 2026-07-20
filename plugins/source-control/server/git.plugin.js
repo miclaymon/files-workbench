@@ -6,7 +6,7 @@
 // This replaces the bespoke server/v1/scm.go handlers — the client now talks to it
 // through the generic POST /_api/v1/plugins/source-control/rpc endpoint.
 
-import { ServerPlugin, host } from '../../../client/plugin-sdk/server/ServerPlugin.js'
+import { ServerPlugin, host } from '@workbench/plugin-sdk/server/ServerPlugin.js'
 import { createGit } from './git-logic.js'
 
 const git = createGit({ exec: host.exec, fs: host.fs, log: host.log })

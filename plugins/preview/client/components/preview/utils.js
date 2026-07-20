@@ -1,4 +1,4 @@
-import { MEDIA_BASE } from '@fw/sdk'
+import { MEDIA_BASE } from '@workbench/plugin-sdk'
 
 export const EXT_LANGUAGE = {
   js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',

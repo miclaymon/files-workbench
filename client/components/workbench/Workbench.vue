@@ -245,8 +245,8 @@ import { formatChord } from '@workbench/framework'
 import { ACTIVITIES } from '~/activities/index.js'
 import { callPluginRpc } from '@files-workbench/core'
 import { EXPLORER_PLUGIN, OPTIONAL_PLUGIN_LOADERS } from '~/builtin-plugins/index.js'
-import { installFwSdk } from '~/plugin-sdk/client/index.js'
-import { hardenIntrinsics } from '~/plugin-sdk/client/harden.js'
+import { installFwSdk } from '~/sdk.js'
+import { hardenIntrinsics } from '@workbench/plugin-sdk'
 import { loadRuntimePlugins } from '~/composables/plugins/useRuntimePlugins.js'
 import { useArchive } from '~/composables/workbench/useArchive.js'
 import { useFileOperations } from '~/composables/workbench/useFileOperations.js'
@@ -382,12 +382,12 @@ const host = workbench.host
 // them and owns the selection API the file-op / menu / keyboard slices below
 // consume synchronously — it must be registered before host.requireApi('explorer').
 // Publish the SDK global before any runtime plugin is imported — its externalized
-// `vue` / `@fw/sdk` bindings resolve to globalThis.__FW_SDK at load, so plugins share
-// the host's single Vue instance and live models/components.
+// `vue` / `@workbench/plugin-sdk` bindings resolve to globalThis.__FW_SDK at load, so
+// plugins share the host's single Vue instance and live models/components.
 installFwSdk()
 // Defense-in-depth: freeze shared intrinsic prototypes before any plugin runs, so a
 // plugin can't poison prototypes the app shares. Off by default (compat risk with libs
-// that patch prototypes) — see plugin-sdk/client/harden.js. Not a sandbox.
+// that patch prototypes) — see the plugin-sdk package's src/harden.js. Not a sandbox.
 const frozen = hardenIntrinsics()
 if (frozen) log('plugins', `intrinsic hardening on (${frozen.length} prototypes frozen)`, null, 'info')
 
