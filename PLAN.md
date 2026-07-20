@@ -154,6 +154,32 @@ Each milestone ends with the app runnable and verified before anything is commit
       unchanged. Verified: vite build clean, browser boot with zero console
       errors, plugins/icons/preview/details/SCM live.*
 
+All six milestones are complete: this repo is the app shell (Electron, assembly
+root, app slices, first-party plugins, config, packaging) over four packages, plus
+the standalone `files-workbench-material-icons` plugin package.
+
+## Post-refactor hardening
+
+Follow-ups that close gaps the split exposed (2026-07-20):
+
+- **Plugin contract versions are enforced.** `engines.sdk` and `dependencies`
+  ranges were documented but never evaluated. The framework gained a dependency-free
+  `satisfies()` and checks both before activating a plugin; the app declares
+  `engines: { sdk: SDK_VERSION }`. The declaration had also been *dropped* at three
+  points on the way to the host (the built runtime `plugin.json`, the Go served
+  descriptor, and the client's manifest reconstruction), so the check would have
+  been inert for every runtime plugin — all three now pass it through.
+- **Generated types shipped** for `@workbench/framework` and `@workbench/plugin-sdk`
+  (`npm run build:types` → committed `types/`, wired through each `exports` map).
+  This was a Decision above ("ship generated `.d.ts`") that the milestones never
+  executed; it is what makes the SDK usable by plugin projects at dev time.
+- **Service-worker endpoint drift is a build failure.** `client/public/sw.js` must
+  stay app-side for root scope, so its `ENDPOINTS` map is duplicated in core's
+  `sw-queue.js`; `client/scripts/check-sw-endpoints.js` compares them (hard-fails
+  `build:electron`, warns in the dev prebuild).
+- **`files-workbench-material-icons` is under version control** (it was the only
+  code in the family that wasn't).
+
 ## Working rules
 
 - `/home/mic/dev/projects/files-workbench2` is read-only reference. Never modify.

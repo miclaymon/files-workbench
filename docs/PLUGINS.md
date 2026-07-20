@@ -394,6 +394,15 @@ API, and calls `activate`. Two delivery paths feed it:
 3. Reload — the runtime loader discovers, verifies, and loads it. Surfaces appear
    through the registries exactly like a bundled plugin. No host code changes needed.
 
+Declare `engines.sdk` in the manifest (`{ "sdk": "^1.0.0" }`). The host checks it
+against its `@workbench/plugin-sdk` contract version before activating the plugin
+and refuses an unsatisfied range with a legible error — a plugin built against a
+future SDK fails loudly at load rather than mysteriously inside `activate()`.
+Fault isolation still applies: a refused plugin doesn't affect its peers.
+
+The SDK also ships TypeScript declarations, so a plugin authored in TS (or JS with
+`checkJs`) gets the SDK surface and the WASM `host` bridge typed.
+
 ---
 
 ## Installing third-party plugins

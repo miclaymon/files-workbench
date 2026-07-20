@@ -11,12 +11,19 @@
 # toolchain.
 #
 # The icon pack is two layers:
-#   • the server-side config plugin under config/plugins/material-icon-theme/, which
-#     the Go server loads to serve /icons/manifest (mappings) and /icons/svg (assets);
-#   • the client plugin under client/builtin-plugins/material-icon-theme/, which
-#     registers the getIcon handler (the `icons` permission) and consumes those
-#     endpoints. The Go server already replicates VS Code's pattern-matching, so no
-#     logic needs porting here.
+#   • the server-side asset pack under config/plugins/material-icon-theme/, which the
+#     Go server (@files-workbench/core) loads to serve /icons/manifest (mappings) and
+#     /icons/svg (assets). THAT is what this script generates;
+#   • the client plugin, whose code now lives in the standalone
+#     files-workbench-material-icons package (../files-workbench-plugins/, a root
+#     file: dependency re-exported by plugins/material-icon-theme/). It registers the
+#     getIcon handler (the `icons` permission) and consumes those endpoints. The Go
+#     server already replicates VS Code's pattern-matching, so no logic needs porting.
+#
+# The assets stay app-side because they are served from FW_CONFIG_DIR — a host app's
+# tree, not the plugin package's. (The package's TODO tracks turning this into a
+# package-owned script that takes the target dir as an argument, so any host can run
+# it.)
 #
 # This script (re)generates the FIRST layer's vendored assets (gitignored). It is
 # safe to re-run; it stages into a temp dir and swaps atomically, and never clobbers
