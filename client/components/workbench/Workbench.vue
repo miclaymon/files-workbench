@@ -246,7 +246,7 @@ import { ACTIVITIES } from '~/activities/index.js'
 import { callPluginRpc } from '@files-workbench/core'
 import { EXPLORER_PLUGIN, OPTIONAL_PLUGIN_LOADERS } from '~/builtin-plugins/index.js'
 import { installFwSdk } from '~/sdk.js'
-import { hardenIntrinsics } from '@workbench/plugin-sdk'
+import { hardenIntrinsics, SDK_VERSION } from '@workbench/plugin-sdk'
 import { loadRuntimePlugins } from '~/composables/plugins/useRuntimePlugins.js'
 import { useArchive } from '~/composables/workbench/useArchive.js'
 import { useFileOperations } from '~/composables/workbench/useFileOperations.js'
@@ -372,6 +372,9 @@ const workbench = createWorkbench({
   // read the registry during setup); the instance ensures registration and
   // instantiates their runtime APIs.
   activities: ACTIVITIES,
+  // Contract versions a plugin manifest's `engines` block is checked against
+  // before it loads (an incompatible plugin is refused with a legible error).
+  engines: { sdk: SDK_VERSION },
 })
 const host = workbench.host
 

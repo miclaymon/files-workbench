@@ -186,12 +186,17 @@ async function buildClientPlugins() {
     }
 
     const clientHash = sha256(fs.readFileSync(outClient))
+    // `engines` / `dependencies` must survive into the runtime manifest — the host
+    // checks them before loading (framework pluginHost), and a stripped field means
+    // a silently unenforced contract.
     const runtimeManifest = {
       id,
       name: mf.name,
       version: mf.version,
       icon: mf.icon,
       permissions: mf.permissions || [],
+      ...(mf.engines ? { engines: mf.engines } : {}),
+      ...(mf.dependencies ? { dependencies: mf.dependencies } : {}),
       client: { entry: 'client.js', hash: clientHash },
     }
     fs.writeFileSync(path.join(outDir, 'plugin.json'), JSON.stringify(runtimeManifest, null, 2) + '\n')

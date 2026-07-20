@@ -10,7 +10,7 @@
     "dev:electron:client": "cd client && npm run dev:electron:client",
     "dev:server": "npm run build:plugins:soft && APP=$PWD && cd ../files-workbench-core/server && FW_CONFIG_DIR=$APP/config FW_DATA_DIR=$APP/config FW_PLUGINS_DIR=$APP/.fw/plugins go run .",
     "build:plugins": "cd client && npm run build:plugins",
-    "build:plugins:soft": "cd client && node scripts/build-plugins.js --soft",
+    "build:plugins:soft": "cd client && node scripts/check-sw-endpoints.js --soft && node scripts/build-plugins.js --soft",
     "go:compile": "cd ../files-workbench-core/server && go build ./...",
     "build:web": "cd client && npm run build:web",
     "build:electron": "cd client && npm run build:electron",

@@ -81,6 +81,10 @@ export async function loadOneRuntimePlugin(p, { pluginHost, log = () => {}, stri
     version: p.version || '0.0.0',
     client: { entry: 'client.js' },
     permissions: p.permissions || [],
+    // Contract declarations the host enforces at load (engines.sdk compatibility,
+    // dependency ranges) — carry them through or the checks silently never fire.
+    ...(p.engines ? { engines: p.engines } : {}),
+    ...(p.dependencies ? { dependencies: p.dependencies } : {}),
   }
   await pluginHost.load(manifest, mod)
   log('runtime-plugins', `loaded ${p.id} (runtime${p.firstParty ? ', first-party' : ''})`)

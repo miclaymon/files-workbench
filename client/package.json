@@ -8,9 +8,10 @@
     "dev:electron:client": "node scripts/dev.js",
     "build:plugins": "node scripts/build-plugins.js",
     "build:web": "vite build",
-    "build:electron": "node scripts/build-server.js && node scripts/build-plugins.js --out .fw/plugins-dist && vite build && electron-builder",
+    "build:electron": "node scripts/check-sw-endpoints.js && node scripts/build-server.js && node scripts/build-plugins.js --out .fw/plugins-dist && vite build && electron-builder",
     "generate": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:sw-endpoints": "node scripts/check-sw-endpoints.js"
   },
   "dependencies": {
     "@files-workbench/core": "file:../../files-workbench-core",

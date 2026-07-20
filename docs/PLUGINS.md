@@ -92,9 +92,9 @@ manifest model; the JSON Schema (and a documented example plugin) ships in the
 | `client` | | `{ entry }` — the client target's entry module (e.g. `client/plugin.js`). |
 | `server` | | `{ entry, runtime, permissions }` — the sandboxed WASM backend (see [Server plugins](#server-plugins)). |
 | `permissions` | | Front-end capabilities — see [Permissions](#permissions). |
-| `engines` | | e.g. `{ "sdk": "^1.0.0" }` — the `@workbench/plugin-sdk` contract version the host checks. |
+| `engines` | | e.g. `{ "sdk": "^1.0.0" }` — contract versions checked **before load**: an unsatisfied range refuses the plugin with a legible error; an engine this host doesn't declare is a warning (forward-compatible). |
 | `description` / `author` / `icon` | | Metadata; `icon` is an MDI path or asset ref. |
-| `dependencies` | | `{ pluginId: semverRange }` that must load first. |
+| `dependencies` | | `{ pluginId: semverRange }` that must load first — the range is enforced against the loaded plugin's version. |
 
 A plugin declares whichever targets it uses — `client`, `server`, or both. Validation
 errors block loading; **unknown permissions are ignored with a warning** (as Chrome

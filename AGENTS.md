@@ -255,7 +255,7 @@ is on disk. See **Packaging & distribution** in `docs/DESIGN.md`.
 
 ### Service worker operations queue
 
-All mutating file ops are enqueued via `useFileOpsQueue.enqueue({ label, kind, params })` — **not** via direct `fs-api.js` calls. The op is serialised and sent to the SW as `{ kind, params }`; the SW maps kind → endpoint using `ENDPOINTS` in `sw.js`. If the SW is unavailable, `sw-queue.js` falls back to a direct fetch with the same ENDPOINTS map. Adding a new write endpoint requires updating `ENDPOINTS` in **both** `client/public/sw.js` and `@files-workbench/core`'s `src/sw-queue.js`.
+All mutating file ops are enqueued via `useFileOpsQueue.enqueue({ label, kind, params })` — **not** via direct `fs-api.js` calls. The op is serialised and sent to the SW as `{ kind, params }`; the SW maps kind → endpoint using `ENDPOINTS` in `sw.js`. If the SW is unavailable, `sw-queue.js` falls back to a direct fetch with the same ENDPOINTS map. Adding a new write endpoint requires updating `ENDPOINTS` in **both** `client/public/sw.js` and `@files-workbench/core`'s `src/sw-queue.js` — `client/scripts/check-sw-endpoints.js` enforces this (hard-fails `build:electron`, warns in the dev prebuild; run it directly with `npm run check:sw-endpoints` from `client/`).
 
 ### Sort and filter live in DirectoryPanel
 `DirectoryPanel.vue` owns all sort/filter state and applies it client-side via a `processedItems` computed property (filter then sort, directories always first). `DirectoryLayout` receives the already-processed item list — it does not sort or filter itself.
