@@ -4,9 +4,113 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Files Workbench</title>
+    <style>
+      /*
+        Boot skeleton — critical CSS, inlined so it paints before any JS runs
+        (in dev, Vite injects the kit's workbench.css via a JS-inserted <style>
+        tag, so nothing external can be relied on here). It evokes the real
+        chrome (titlebar / activity rail / sidebar / editor) without matching
+        it exactly — just enough that the real layout doesn't visibly pop in.
+        Colors come from --boot-bg/--boot-chrome/--boot-chrome-soft, set by the
+        inline script below from localStorage so a saved light/black theme
+        never flashes the browser's white default.
+      */
+      html, body { height: 100%; margin: 0; background: var(--boot-bg, #181818); }
+      #app { height: 100%; }
+
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        background: var(--boot-bg, #181818);
+        opacity: 1;
+        transition: opacity 150ms ease;
+      }
+      #boot.--fade { opacity: 0; pointer-events: none; }
+
+      #boot .boot-titlebar {
+        flex: none;
+        height: 38px;
+        background: var(--boot-chrome, rgba(255, 255, 255, 0.06));
+      }
+      #boot .boot-body { flex: 1; display: flex; min-height: 0; }
+      #boot .boot-activitybar {
+        flex: none;
+        width: 48px;
+        height: 100%;
+        background: var(--boot-chrome, rgba(255, 255, 255, 0.06));
+      }
+      #boot .boot-sidebar {
+        flex: none;
+        width: 300px;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 14px 12px;
+        background: var(--boot-chrome-soft, rgba(255, 255, 255, 0.03));
+      }
+      #boot .boot-sidebar span {
+        display: block;
+        height: 10px;
+        border-radius: 3px;
+        background: var(--boot-chrome, rgba(255, 255, 255, 0.06));
+      }
+      #boot .boot-sidebar span:nth-child(1) { width: 65%; }
+      #boot .boot-sidebar span:nth-child(2) { width: 45%; margin-left: 16px; }
+      #boot .boot-sidebar span:nth-child(3) { width: 55%; margin-left: 16px; }
+      #boot .boot-sidebar span:nth-child(4) { width: 60%; margin-top: 6px; }
+      #boot .boot-sidebar span:nth-child(5) { width: 40%; margin-left: 16px; }
+      #boot .boot-sidebar span:nth-child(6) { width: 50%; margin-left: 16px; }
+      #boot .boot-editor { flex: 1; min-width: 0; height: 100%; }
+    </style>
+    <script>
+      (function () {
+        var DEFAULT_BG = '#181818'
+        var bg = DEFAULT_BG
+        try { bg = localStorage.getItem('fw:theme-bg') || DEFAULT_BG } catch (e) {}
+
+        // Crude relative-luminance check so the skeleton's chrome tint stays
+        // legible against a persisted light theme instead of assuming dark.
+        var isLight = false
+        var m = /^#?([0-9a-f]{6})$/i.exec(bg)
+        if (m) {
+          var n = parseInt(m[1], 16)
+          var r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255
+          isLight = (0.2126 * r + 0.7152 * g + 0.0722 * b) > 150
+        }
+
+        var root = document.documentElement.style
+        root.setProperty('--boot-bg', bg)
+        root.setProperty('--boot-chrome', isLight ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.06)')
+        root.setProperty('--boot-chrome-soft', isLight ? 'rgba(0, 0, 0, 0.03)' : 'rgba(255, 255, 255, 0.03)')
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>
+    <div id="boot">
+      <div class="boot-titlebar"></div>
+      <div class="boot-body">
+        <div class="boot-activitybar"></div>
+        <div class="boot-sidebar">
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="boot-editor"></div>
+      </div>
+    </div>
+    <script>
+      // Hard fallback: main.js normally fades #boot out once the workbench
+      // layout has painted (see dismissBootSkeleton there). If mount throws,
+      // a plugin hangs, or anything else goes wrong, this guarantees the
+      // overlay is never stuck up forever — worst case a plain color instead
+      // of a skeleton, never a frozen screen.
+      setTimeout(function () {
+        var el = document.getElementById('boot')
+        if (el && el.parentNode) el.parentNode.removeChild(el)
+      }, 10000)
+    </script>
     <script type="module" src="/main.js"></script>
   </body>
 </html>

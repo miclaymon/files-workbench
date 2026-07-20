@@ -35,6 +35,31 @@ const DEFAULTS = {
   },
 }
 
+// Boot-skeleton support (client/index.html): mirrors the `--bg` value of each
+// built-in theme in config/themes/*.json. There's no live CSS-variable
+// application from those files yet (workbench.css still hardcodes the dark
+// palette on :root) — this only needs to track the *selected* theme id so the
+// next launch's inline skeleton can guess the right background before any CSS
+// loads. Keep in sync with config/themes/*.json and the copy in
+// client/electron/main.js (Node can't share this module — no DOM/fetch there).
+const THEME_BG = {
+  dark: '#181818',
+  light: '#f3f3f3',
+  black: '#000000',
+}
+
+function resolveThemeBg(theme) {
+  if (theme === 'system') {
+    const prefersLight = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches
+    return prefersLight ? THEME_BG.light : THEME_BG.dark
+  }
+  return THEME_BG[theme] ?? THEME_BG.dark
+}
+
+function persistThemeBg(theme) {
+  try { localStorage.setItem('fw:theme-bg', resolveThemeBg(theme)) } catch { /* storage unavailable/full — skeleton falls back to its default */ }
+}
+
 function deepMerge(target, source) {
   for (const key of Object.keys(source)) {
     const val = source[key]
@@ -69,6 +94,7 @@ async function _load() {
     .then(loaded => {
       deepMerge(prefs, loaded)
       _ready = true
+      persistThemeBg(prefs.theme)
     })
     .catch(err => {
       error.value = err?.message ?? 'Failed to load preferences'
@@ -89,6 +115,7 @@ async function save(newPrefs) {
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   deepMerge(prefs, newPrefs)
+  persistThemeBg(prefs.theme)
 }
 
 async function reload() {
