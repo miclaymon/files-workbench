@@ -8,7 +8,7 @@
     "dev:web:client": "cd client && npm run dev:web:client",
     "dev:electron": "concurrently -n client,server -c cyan,green --kill-others \"cd client && npm run dev:electron:client\" \"npm run dev:server\"",
     "dev:electron:client": "cd client && npm run dev:electron:client",
-    "dev:server": "npm run build:plugins:soft && APP=$PWD && cd ../files-workbench-core/server && FW_CONFIG_DIR=$APP/config FW_DATA_DIR=$APP/config FW_PLUGINS_DIR=$APP/.fw/plugins go run .",
+    "dev:server": "npm run build:plugins:soft && APP=$PWD && cd ../files-workbench-core/server && go build -o \"$APP/.fw/fw-indexer\" ./cmd/fw-indexer && FW_CONFIG_DIR=$APP/config FW_DATA_DIR=$APP/config FW_PLUGINS_DIR=$APP/.fw/plugins FW_INDEX_BIN=$APP/.fw/fw-indexer FW_INDEX_ROOTS=\"${FW_INDEX_ROOTS:-$HOME}\" go run .",
     "build:plugins": "cd client && npm run build:plugins",
     "build:plugins:soft": "cd client && node scripts/check-sw-endpoints.js --soft && node scripts/build-plugins.js --soft",
     "go:compile": "cd ../files-workbench-core/server && go build ./...",

@@ -41,6 +41,8 @@ import { useClickDebounce } from '@workbench/vue'
 // Endpoint constants + NON-mutating filesystem helpers only.
 import { API_BASE, API_V, MEDIA_BASE } from '@files-workbench/core'
 import { fsStat, fsDirSize, watchDirSize, fsListDir, fsOpenWithSystem } from '@files-workbench/core'
+// Filesystem search index (read-only query + live change feed).
+import { searchIndex, indexStatus, subscribeIndex } from '@files-workbench/core'
 
 // Safe shared components (leaf). Explorer's core components (ExplorerPanel/DirectoryTab/
 // ExplorerStatusWidget/OpenEditorsView), MonacoEditor, and the media players are added as
@@ -67,6 +69,8 @@ export const sdk = Object.freeze({
   // config + read-only fs
   API_BASE, API_V, MEDIA_BASE,
   fsStat, fsDirSize, watchDirSize, fsListDir, fsOpenWithSystem,
+  // search index
+  searchIndex, indexStatus, subscribeIndex,
   // safe shared components
   PlaceholderPanel, PendingValue, ResolvedIcon,
   // heavy shared components (lazy, host-built)

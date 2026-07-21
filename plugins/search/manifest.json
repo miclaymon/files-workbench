@@ -3,11 +3,12 @@
   "id": "search",
   "name": "Search",
   "version": "1.0.0",
-  "description": "Placeholder for project-wide file and content search, contributed to the Activity Bar.",
+  "description": "Project-wide file search backed by the filesystem index, contributed to the Activity Bar.",
   "author": "Files Workbench",
   "icon": "mdiMagnifyScan",
   "permissions": [
-    "activities"
+    "activities",
+    "editor"
   ],
   "engines": {
     "sdk": "^1.0.0"

@@ -1,11 +1,12 @@
 import { markRaw } from 'vue'
 import { mdiMagnifyScan } from '@mdi/js'
 
-import { PlaceholderPanel } from '@workbench/plugin-sdk'
+import SearchPanel from './components/SearchPanel.vue'
 
-// Search plugin — a placeholder for project-wide file/content search (built out
-// later in the roadmap). A first-party plugin contributing a Primary Side Bar
-// panel (an Activity Bar entry) through the permission-scoped `api`.
+// Search plugin — project-wide file search backed by the filesystem index
+// (@files-workbench/core → fw-indexer). Contributes a Primary Side Bar panel (an
+// Activity Bar entry) whose results open through the permission-scoped `api`
+// (needs `editor` to open directory tabs).
 export function activate(api) {
   const { Activity, PanelView, ViewSection } = api
 
@@ -22,8 +23,8 @@ export function activate(api) {
       id: 'searchMain',
       label: 'Search',
       homeView: 'search',
-      component: markRaw(PlaceholderPanel),
-      props: () => ({ title: 'Search', icon: mdiMagnifyScan, note: 'File and content search is coming soon.' }),
+      component: markRaw(SearchPanel),
+      props: () => ({ api }),
     }))
 
   return api.activities.register(activity)

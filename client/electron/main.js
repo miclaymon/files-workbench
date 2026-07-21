@@ -78,6 +78,9 @@ function startServer() {
       // Bundled first-party plugin artifacts (client.js + manifests). Third-party
       // plugins load from the writable <userData>/plugins (the Go server scans both).
       FW_PLUGINS_DIR: path.join(process.resourcesPath, 'plugins'),
+      // Search index: core spawns fw-indexer (bundled next to the server binary) and
+      // indexes these roots. Home by default; the index DB lands under <userData>.
+      FW_INDEX_ROOTS: app.getPath('home'),
     },
     stdio: 'ignore',
   })

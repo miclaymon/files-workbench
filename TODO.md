@@ -53,7 +53,13 @@
 
 - [ ] Truly break up into separate `files-workbench-core` project which has `files-workbench-core-linux`, `files-workbench-core-windows`, `files-workbench-core-darwin` and a separate `files-workbench` (UI) which should be able to connect to any of the core processes using the same standardized methods even if the core has different code for each platform (Windows has NTFS file table, MacOS has journal, Linux...doesn't)
 - [ ] Launch Electron app with `--read-only` flag which disables renaming, deleting, moving, creating (pasting) files. The user can only view and copy files.
-- [ ] Background file indexing and search optimization
+- [~] Background file indexing and search optimization — Phase 1 done (2026-07-20): a
+  standalone `fw-indexer` service (in `@files-workbench/core`, SQLite FTS5) with
+  instant name/path substring search, live incremental updates (fsnotify) + SSE feed,
+  core spawn/supervise + proxy, and the real Search panel. See
+  `../files-workbench-core/docs/INDEX.md`. Remaining: content full-text (Phase 2),
+  native USN/Spotlight backends (Phase 3), roots-as-preference. (Also unblocks the
+  command palette's Go-to-File mode and can back dir-size/recents later.)
 
 - [ ] PowerRename(TM) + Macros
 

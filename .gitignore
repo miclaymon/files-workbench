@@ -36,6 +36,10 @@ config/plugins/source-control/
 # user-installed plugins + their enable/disable state land under config/plugins/.
 config/plugins/state.json
 
+# Search index DB (dev). The fw-indexer writes its SQLite index under the data dir,
+# which aliases config/ in dev.
+config/index/
+
 # Claude Code local settings
 .claude/
 
