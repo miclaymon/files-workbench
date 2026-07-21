@@ -80,6 +80,7 @@
         </span>
         <span class="sp-row-main">
           <span class="sp-row-name">{{ r.name }}</span>
+          <span v-if="metaSummary(r)" class="sp-row-meta">{{ metaSummary(r) }}</span>
           <span class="sp-row-path">{{ parentOf(r.path) }}</span>
         </span>
       </button>
@@ -183,6 +184,20 @@ watch([query, contentMode, filesOnly, dirsOnly], () => {
   clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => run(0), DEBOUNCE_MS)
 })
+
+// A compact one-line summary of a media result's metadata (audio tags, image/video
+// EXIF), picking the most useful fields per type. Returns '' for non-media results.
+function metaSummary(r) {
+  const m = r.meta
+  if (!m || typeof m !== 'object') return ''
+  const parts = []
+  if (m.artist) parts.push(m.artist)
+  if (m.album) parts.push(m.album)
+  else if (m.title && !m.artist) parts.push(m.title)
+  if (m.make || m.model) parts.push([m.make, m.model].filter(Boolean).join(' '))
+  if (m.imageWidth && m.imageHeight) parts.push(`${m.imageWidth}×${m.imageHeight}`)
+  return parts.slice(0, 3).join(' · ')
+}
 
 // ── Icons ───────────────────────────────────────────────────────────────────
 function iconFor(r) {
@@ -368,6 +383,11 @@ onBeforeUnmount(() => {
 .sp-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
 .sp-row-name {
   font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sp-row-meta {
+  font-size: 11px; opacity: 0.7;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--accent-color, #4a9eff);
 }
 .sp-row-path {
   font-size: 11px; opacity: 0.5;
