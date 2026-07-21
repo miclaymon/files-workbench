@@ -8,7 +8,7 @@
         v-model="query"
         class="sp-input"
         type="text"
-        placeholder="Search files by name…"
+        :placeholder="contentMode ? 'Search inside files…' : 'Search files by name…'"
         spellcheck="false"
         @keydown.down.prevent="move(1)"
         @keydown.up.prevent="move(-1)"
@@ -20,10 +20,18 @@
       </button>
     </div>
 
-    <!-- Filters -->
+    <!-- Mode: search names vs file contents -->
+    <div class="sp-modes">
+      <button class="sp-mode" :class="{ 'sp-mode--on': !contentMode }" @click="contentMode = false">Name</button>
+      <button class="sp-mode" :class="{ 'sp-mode--on': contentMode }" @click="contentMode = true">Contents</button>
+    </div>
+
+    <!-- Filters (name mode only — content search is inherently files) -->
     <div class="sp-filters">
-      <button class="sp-chip" :class="{ 'sp-chip--on': filesOnly }" @click="toggleFilter('files')">Files</button>
-      <button class="sp-chip" :class="{ 'sp-chip--on': dirsOnly }" @click="toggleFilter('dirs')">Folders</button>
+      <template v-if="!contentMode">
+        <button class="sp-chip" :class="{ 'sp-chip--on': filesOnly }" @click="toggleFilter('files')">Files</button>
+        <button class="sp-chip" :class="{ 'sp-chip--on': dirsOnly }" @click="toggleFilter('dirs')">Folders</button>
+      </template>
       <span class="sp-spacer" />
       <span v-if="page && query" class="sp-count">{{ page.total }} result{{ page.total === 1 ? '' : 's' }}<span v-if="page.tookMs != null" class="sp-took"> · {{ page.tookMs }}ms</span></span>
     </div>
@@ -39,6 +47,10 @@
     <div v-else-if="indexing" class="sp-state">
       <span class="sp-spinner" />
       <div>Building index… <span class="sp-state-sub">{{ status?.fileCount?.toLocaleString?.() ?? 0 }} files so far</span></div>
+    </div>
+    <div v-else-if="contentMode && contentPending > 0" class="sp-state">
+      <span class="sp-spinner" />
+      <div>Indexing file contents… <span class="sp-state-sub">{{ contentPending.toLocaleString() }} to go</span></div>
     </div>
 
     <!-- Results -->
@@ -93,6 +105,7 @@ const DEBOUNCE_MS = 200
 
 const inputRef = ref(null)
 const query = ref('')
+const contentMode = ref(false) // false = name/path search, true = file-contents full-text
 const filesOnly = ref(false)
 const dirsOnly = ref(false)
 
@@ -105,6 +118,7 @@ const failedIcons = ref(new Set())
 const status = ref(null)
 const unavailable = ref(false)
 const indexing = computed(() => status.value?.state === 'building')
+const contentPending = computed(() => status.value?.contentPending ?? 0)
 
 const { resolveIcon } = useIconRegistry()
 
@@ -122,8 +136,9 @@ function buildQuery(offset = 0) {
   return {
     text: query.value.trim(),
     match: 'substring',
-    filesOnly: filesOnly.value,
-    dirsOnly: dirsOnly.value,
+    content: contentMode.value,
+    filesOnly: contentMode.value ? false : filesOnly.value,
+    dirsOnly: contentMode.value ? false : dirsOnly.value,
     sort: 'relevance',
     limit: PAGE_SIZE,
     offset,
@@ -164,7 +179,7 @@ function loadMore() {
 }
 
 // Debounced re-query on input / filter change.
-watch([query, filesOnly, dirsOnly], () => {
+watch([query, contentMode, filesOnly, dirsOnly], () => {
   clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => run(0), DEBOUNCE_MS)
 })
@@ -227,7 +242,9 @@ onMounted(() => {
   focusInput()
   refreshStatus()
   // Poll status while the index is still building so the banner clears itself.
-  statusTimer = setInterval(() => { if (indexing.value || !status.value) refreshStatus() }, 2000)
+  // Keep refreshing while the name index builds or content is still being scanned,
+  // so the "building"/"indexing contents" affordances clear themselves.
+  statusTimer = setInterval(() => { if (indexing.value || contentPending.value > 0 || !status.value) refreshStatus() }, 2000)
   // Live results: when the index changes, re-run the current query (debounced).
   stopSub = subscribeIndex(() => {
     if (!query.value.trim()) return
@@ -282,9 +299,25 @@ onBeforeUnmount(() => {
 }
 .sp-clear:hover { opacity: 1; background: rgba(255, 255, 255, 0.08); }
 
+.sp-modes {
+  display: flex; margin: 0 8px 8px; gap: 0;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 4px; overflow: hidden; width: fit-content;
+}
+.sp-mode {
+  padding: 3px 12px; font-size: 11px; border: none; background: transparent;
+  color: inherit; opacity: 0.7; cursor: pointer;
+}
+.sp-mode:hover { opacity: 1; }
+.sp-mode--on {
+  opacity: 1;
+  background: var(--accent-color, #4a9eff);
+  color: #fff;
+}
+
 .sp-filters {
   display: flex; align-items: center; gap: 6px;
-  margin: 0 8px 8px;
+  margin: 0 8px 8px; min-height: 20px;
 }
 .sp-chip {
   padding: 2px 10px; font-size: 11px;
